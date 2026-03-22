@@ -216,7 +216,19 @@ def login(credentials: UserLogin):
         cursor.execute("SELECT * FROM users WHERE username = %s", (credentials.username,))
         user = cursor.fetchone()
         
-    if not user or not verify_password(credentials.password, user['password']):
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Check if password is hashed (starts with $2b$ for bcrypt) or plain text
+    password_valid = False
+    if user['password'].startswith('$2b$') or user['password'].startswith('$2a$'):
+        # Hashed password - use bcrypt verification
+        password_valid = verify_password(credentials.password, user['password'])
+    else:
+        # Plain text password (legacy) - direct comparison
+        password_valid = (credentials.password == user['password'])
+    
+    if not password_valid:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     access_token = create_access_token(data={"sub": str(user['id'])})
