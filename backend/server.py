@@ -243,8 +243,12 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 # ============= Builder Routes =============
 @api_router.get("/builders", response_model=List[BuilderResponse])
-async def get_builders(current_user: dict = Depends(get_current_user)):
-    builders = await db.builders.find().sort("created_at", -1).to_list(1000)
+async def get_builders(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    builders = await db.builders.find().sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     return [
         BuilderResponse(
             id=str(b["_id"]),
@@ -317,8 +321,12 @@ async def delete_builder(builder_id: str, current_user: dict = Depends(get_curre
 
 # ============= Lead Routes =============
 @api_router.get("/leads", response_model=List[LeadResponse])
-async def get_leads(current_user: dict = Depends(get_current_user)):
-    leads = await db.leads.find().sort("created_at", -1).to_list(1000)
+async def get_leads(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    leads = await db.leads.find().sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     return [
         LeadResponse(
             id=str(lead["_id"]),
@@ -440,8 +448,12 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
 
 # ============= Reminder Routes =============
 @api_router.get("/reminders", response_model=List[ReminderResponse])
-async def get_reminders(current_user: dict = Depends(get_current_user)):
-    reminders = await db.reminders.find().sort("reminder_date", 1).to_list(1000)
+async def get_reminders(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    reminders = await db.reminders.find().sort("reminder_date", 1).skip(skip).limit(limit).to_list(limit)
     return [
         ReminderResponse(
             id=str(r["_id"]),
