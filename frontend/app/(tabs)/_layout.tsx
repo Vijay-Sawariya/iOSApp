@@ -34,11 +34,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="leads"
+        name="clients"
         options={{
-          title: 'Leads',
+          title: 'Clients',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="inventory"
+        options={{
+          title: 'Inventory',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
@@ -58,6 +67,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="notifications" size={size} color={color} />
           ),
+        }}
+      />
+      {/* Hide the old leads tab */}
+      <Tabs.Screen
+        name="leads"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

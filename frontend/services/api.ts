@@ -6,6 +6,8 @@ export const setAuthToken = (token: string | null) => {
   authToken = token;
 };
 
+export const getAuthToken = () => authToken;
+
 const getHeaders = () => ({
   'Content-Type': 'application/json',
   ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -21,12 +23,30 @@ export const api = {
     return response.json();
   },
 
-  // Leads
+  // Leads - All
   getLeads: async () => {
     const response = await fetch(`${API_URL}/api/leads`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch leads');
+    return response.json();
+  },
+
+  // Leads - Clients (Buyer, Tenant)
+  getClientLeads: async () => {
+    const response = await fetch(`${API_URL}/api/leads/clients`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch client leads');
+    return response.json();
+  },
+
+  // Leads - Inventory (Seller, Landlord, Builder)
+  getInventoryLeads: async () => {
+    const response = await fetch(`${API_URL}/api/leads/inventory`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch inventory leads');
     return response.json();
   },
 
