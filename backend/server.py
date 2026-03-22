@@ -299,11 +299,11 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """INSERT INTO leads (name, phone, email, lead_type, location, bhk, budget, 
-               property_type, lead_temperature, status, notes, created_at, created_by)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            """INSERT INTO leads (name, phone, email, lead_type, location, bhk, budget_min, budget_max,
+               property_type, lead_temperature, lead_status, notes, created_at, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (lead.name, lead.phone, lead.email, lead.lead_type, lead.location, lead.bhk,
-             lead.budget, lead.property_type, lead.lead_temperature, lead.status, 
+             lead.budget_min, lead.budget_max, lead.property_type, lead.lead_temperature, lead.lead_status, 
              lead.notes, datetime.utcnow(), current_user['id'])
         )
         conn.commit()
@@ -320,10 +320,10 @@ def update_lead(lead_id: int, lead: LeadCreate, current_user: dict = Depends(get
         cursor = conn.cursor()
         cursor.execute(
             """UPDATE leads SET name=%s, phone=%s, email=%s, lead_type=%s, location=%s,
-               bhk=%s, budget=%s, property_type=%s, lead_temperature=%s, status=%s, notes=%s
+               bhk=%s, budget_min=%s, budget_max=%s, property_type=%s, lead_temperature=%s, lead_status=%s, notes=%s
                WHERE id=%s""",
             (lead.name, lead.phone, lead.email, lead.lead_type, lead.location, lead.bhk,
-             lead.budget, lead.property_type, lead.lead_temperature, lead.status, lead.notes, lead_id)
+             lead.budget_min, lead.budget_max, lead.property_type, lead.lead_temperature, lead.lead_status, lead.notes, lead_id)
         )
         conn.commit()
         
