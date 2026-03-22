@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,8 +54,12 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Ionicons name="business" size={60} color="#3B82F6" />
-          <Text style={styles.title}>Lead Management</Text>
+          <Image 
+            source={require('../assets/logo.png')} 
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>Sagar Home</Text>
           <Text style={styles.subtitle}>
             {isRegistering ? 'Create Account' : 'Sign in to continue'}
           </Text>
@@ -149,6 +154,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    marginBottom: 16,
   },
   title: {
     fontSize: 28,

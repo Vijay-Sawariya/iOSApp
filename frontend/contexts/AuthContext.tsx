@@ -38,11 +38,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedUser = await SecureStore.getItemAsync('user');
 
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        const user = JSON.parse(storedUser);
+        // Check if user ID is a number (MySQL) or string (MongoDB ObjectID)
+        // Clear old MongoDB auth data
+        if (typeof user.id === 'string' && user.id.length === 24) {
+          console.log('Clearing old MongoDB auth data');
+          await SecureStore.deleteItemAsync('token');
+          await SecureStore.deleteItemAsync('user');
+        } else {
+          setToken(storedToken);
+          setUser(user);
+        }
       }
     } catch (error) {
       console.error('Failed to load auth:', error);
+      // Clear corrupted data
+      await SecureStore.deleteItemAsync('token');
+      await SecureStore.deleteItemAsync('user');
     } finally {
       setLoading(false);
     }
@@ -113,10 +125,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    setUser(null);
-    setToken(null);
-    await SecureStore.deleteItemAsync('token');
-    await SecureStore.deleteItemAsync('user');
+    try {
+      setUser(null);
+      setToken(null);
+      await SecureStore.deleteItemAsync('token');
+      await SecureStore.deleteItemAsync('user');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   return (
