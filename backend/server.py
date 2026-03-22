@@ -2,24 +2,31 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import jwt
-from bson import ObjectId
+import pymysql
+from pymysql.cursors import DictCursor
+from contextlib import contextmanager
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MySQL connection config
+MYSQL_CONFIG = {
+    'host': os.environ.get('MYSQL_HOST'),
+    'port': int(os.environ.get('MYSQL_PORT', 3306)),
+    'user': os.environ.get('MYSQL_USER'),
+    'password': os.environ.get('MYSQL_PASSWORD'),
+    'database': os.environ.get('MYSQL_DATABASE'),
+    'charset': 'utf8mb4',
+    'cursorclass': DictCursor
+}
 
 # Security
 SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
@@ -31,6 +38,15 @@ security = HTTPBearer()
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# ============= Database Helper =============
+@contextmanager
+def get_db():
+    connection = pymysql.connect(**MYSQL_CONFIG)
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 # ============= Helper Functions =============
 def verify_password(plain_password, hashed_password):
@@ -46,7 +62,7 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         token = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -54,15 +70,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
         
-        user = await db.users.find_one({"_id": ObjectId(user_id)})
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
         
-        user["_id"] = str(user["_id"])
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except Exception as e:
+        logging.error(f"Auth error: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
 # ============= Models =============
@@ -71,114 +91,92 @@ class UserCreate(BaseModel):
     password: str
     full_name: str
     email: EmailStr
-    role: str = "user"  # admin, manager, user, caller
+    role: str = "user"
 
 class UserLogin(BaseModel):
     username: str
     password: str
 
 class UserResponse(BaseModel):
-    id: str
+    id: int
     username: str
     full_name: str
     email: str
     role: str
-    created_at: datetime
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
 
-class BuilderCreate(BaseModel):
-    builder_name: str
-    company_name: str
-    phone: str
-    address: Optional[str] = None
-
-class BuilderResponse(BaseModel):
-    id: str
-    builder_name: str
-    company_name: str
-    phone: str
-    address: Optional[str]
-    created_at: datetime
-
-class LeadCreate(BaseModel):
+class LeadResponse(BaseModel):
+    id: int
     name: str
-    email: Optional[str] = None
     phone: Optional[str] = None
-    lead_type: Optional[str] = "buyer"  # buyer, seller, rent, landlord, tenant
+    email: Optional[str] = None
+    lead_type: Optional[str] = None
     location: Optional[str] = None
-    address: Optional[str] = None
     bhk: Optional[str] = None
     budget_min: Optional[float] = None
     budget_max: Optional[float] = None
     property_type: Optional[str] = None
-    lead_status: Optional[str] = "New"
-    lead_temperature: Optional[str] = "Hot"  # Hot, Warm, Cold
+    lead_temperature: Optional[str] = None
+    lead_status: Optional[str] = None
     notes: Optional[str] = None
-    builder_id: Optional[str] = None
-    next_followup_date: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    builder_id: Optional[int] = None
 
-class LeadResponse(BaseModel):
-    id: str
+class LeadCreate(BaseModel):
     name: str
-    email: Optional[str]
-    phone: Optional[str]
-    lead_type: Optional[str]
-    location: Optional[str]
-    address: Optional[str]
-    bhk: Optional[str]
-    budget_min: Optional[float]
-    budget_max: Optional[float]
-    property_type: Optional[str]
-    lead_status: Optional[str]
-    lead_temperature: Optional[str]
-    notes: Optional[str]
-    builder_id: Optional[str]
-    next_followup_date: Optional[datetime]
-    created_at: datetime
-    created_by: Optional[str]
-
-class ReminderCreate(BaseModel):
-    lead_id: Optional[str] = None
-    title: str
-    reminder_date: datetime
-    reminder_type: str  # Call, WhatsApp, Email, Meeting, Site Visit
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    lead_type: Optional[str] = "buyer"
+    location: Optional[str] = None
+    bhk: Optional[str] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    property_type: Optional[str] = None
+    lead_temperature: Optional[str] = "Hot"
+    lead_status: Optional[str] = "New"
     notes: Optional[str] = None
-    send_whatsapp: bool = False
-    whatsapp_message: Optional[str] = None
+    builder_id: Optional[int] = None
+
+class BuilderResponse(BaseModel):
+    id: int
+    builder_name: str
+    company_name: Optional[str]
+    phone: Optional[str]
+    address: Optional[str]
+    created_at: Optional[datetime]
+
+class BuilderCreate(BaseModel):
+    builder_name: str
+    company_name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
 
 class ReminderResponse(BaseModel):
-    id: str
-    lead_id: Optional[str]
+    id: int
+    lead_id: Optional[int]
     title: str
     reminder_date: datetime
     reminder_type: str
     notes: Optional[str]
     status: str
-    send_whatsapp: bool
-    whatsapp_message: Optional[str]
-    created_by: str
-    created_at: datetime
-    notified: bool
+    created_at: Optional[datetime]
 
-class WhatsAppMessageCreate(BaseModel):
-    phone: str
-    message: str
-    lead_id: Optional[str] = None
-
-class WhatsAppLogResponse(BaseModel):
-    id: str
-    phone: str
-    message: str
-    lead_id: Optional[str]
-    status: str
-    created_at: datetime
+class ReminderCreate(BaseModel):
+    lead_id: Optional[int] = None
+    title: str
+    reminder_date: datetime
+    reminder_type: str
+    notes: Optional[str] = None
+    status: str = "pending"
 
 class DashboardStats(BaseModel):
     total_leads: int
+    client_leads: int  # buyer, tenant
+    inventory_leads: int  # seller, landlord, builder
     hot_leads: int
     warm_leads: int
     cold_leads: int
@@ -188,410 +186,336 @@ class DashboardStats(BaseModel):
 
 # ============= Auth Routes =============
 @api_router.post("/auth/register", response_model=UserResponse)
-async def register(user_data: UserCreate):
-    # Check if user exists
-    existing = await db.users.find_one({"username": user_data.username})
-    if existing:
-        raise HTTPException(status_code=400, detail="Username already exists")
-    
-    user_dict = user_data.dict()
-    user_dict["password"] = get_password_hash(user_data.password)
-    user_dict["created_at"] = datetime.utcnow()
-    
-    result = await db.users.insert_one(user_dict)
-    user = await db.users.find_one({"_id": result.inserted_id})
-    
-    return UserResponse(
-        id=str(user["_id"]),
-        username=user["username"],
-        full_name=user["full_name"],
-        email=user["email"],
-        role=user["role"],
-        created_at=user["created_at"]
-    )
+def register(user_data: UserCreate):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Check if user exists
+        cursor.execute("SELECT id FROM users WHERE username = %s", (user_data.username,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Username already exists")
+        
+        # Create user
+        hashed_password = get_password_hash(user_data.password)
+        cursor.execute(
+            "INSERT INTO users (username, password, full_name, email, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+            (user_data.username, hashed_password, user_data.full_name, user_data.email, user_data.role, datetime.utcnow())
+        )
+        conn.commit()
+        user_id = cursor.lastrowid
+        
+        cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        
+    return UserResponse(**user)
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(credentials: UserLogin):
-    user = await db.users.find_one({"username": credentials.username})
-    if not user or not verify_password(credentials.password, user["password"]):
+def login(credentials: UserLogin):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE username = %s", (credentials.username,))
+        user = cursor.fetchone()
+        
+    if not user or not verify_password(credentials.password, user['password']):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    access_token = create_access_token(data={"sub": str(user["_id"])})
+    access_token = create_access_token(data={"sub": str(user['id'])})
     
     return TokenResponse(
         access_token=access_token,
-        user=UserResponse(
-            id=str(user["_id"]),
-            username=user["username"],
-            full_name=user["full_name"],
-            email=user["email"],
-            role=user["role"],
-            created_at=user["created_at"]
-        )
+        user=UserResponse(**user)
     )
 
 @api_router.get("/auth/me", response_model=UserResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
-    return UserResponse(
-        id=current_user["_id"],
-        username=current_user["username"],
-        full_name=current_user["full_name"],
-        email=current_user["email"],
-        role=current_user["role"],
-        created_at=current_user["created_at"]
-    )
-
-# ============= Builder Routes =============
-@api_router.get("/builders", response_model=List[BuilderResponse])
-async def get_builders(
-    skip: int = 0,
-    limit: int = 100,
-    current_user: dict = Depends(get_current_user)
-):
-    builders = await db.builders.find().sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return [
-        BuilderResponse(
-            id=str(b["_id"]),
-            builder_name=b["builder_name"],
-            company_name=b["company_name"],
-            phone=b["phone"],
-            address=b.get("address"),
-            created_at=b["created_at"]
-        )
-        for b in builders
-    ]
-
-@api_router.post("/builders", response_model=BuilderResponse)
-async def create_builder(builder: BuilderCreate, current_user: dict = Depends(get_current_user)):
-    builder_dict = builder.dict()
-    builder_dict["created_at"] = datetime.utcnow()
-    
-    result = await db.builders.insert_one(builder_dict)
-    created = await db.builders.find_one({"_id": result.inserted_id})
-    
-    return BuilderResponse(
-        id=str(created["_id"]),
-        builder_name=created["builder_name"],
-        company_name=created["company_name"],
-        phone=created["phone"],
-        address=created.get("address"),
-        created_at=created["created_at"]
-    )
-
-@api_router.get("/builders/{builder_id}", response_model=BuilderResponse)
-async def get_builder(builder_id: str, current_user: dict = Depends(get_current_user)):
-    builder = await db.builders.find_one({"_id": ObjectId(builder_id)})
-    if not builder:
-        raise HTTPException(status_code=404, detail="Builder not found")
-    
-    return BuilderResponse(
-        id=str(builder["_id"]),
-        builder_name=builder["builder_name"],
-        company_name=builder["company_name"],
-        phone=builder["phone"],
-        address=builder.get("address"),
-        created_at=builder["created_at"]
-    )
-
-@api_router.put("/builders/{builder_id}", response_model=BuilderResponse)
-async def update_builder(builder_id: str, builder: BuilderCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.builders.update_one(
-        {"_id": ObjectId(builder_id)},
-        {"$set": builder.dict()}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Builder not found")
-    
-    updated = await db.builders.find_one({"_id": ObjectId(builder_id)})
-    return BuilderResponse(
-        id=str(updated["_id"]),
-        builder_name=updated["builder_name"],
-        company_name=updated["company_name"],
-        phone=updated["phone"],
-        address=updated.get("address"),
-        created_at=updated["created_at"]
-    )
-
-@api_router.delete("/builders/{builder_id}")
-async def delete_builder(builder_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.builders.delete_one({"_id": ObjectId(builder_id)})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Builder not found")
-    return {"message": "Builder deleted successfully"}
+def get_me(current_user: dict = Depends(get_current_user)):
+    return UserResponse(**current_user)
 
 # ============= Lead Routes =============
-@api_router.get("/leads", response_model=List[LeadResponse])
-async def get_leads(
+@api_router.get("/leads/clients", response_model=List[LeadResponse])
+def get_client_leads(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
-    leads = await db.leads.find().sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return [
-        LeadResponse(
-            id=str(lead["_id"]),
-            name=lead["name"],
-            email=lead.get("email"),
-            phone=lead.get("phone"),
-            lead_type=lead.get("lead_type"),
-            location=lead.get("location"),
-            address=lead.get("address"),
-            bhk=lead.get("bhk"),
-            budget_min=lead.get("budget_min"),
-            budget_max=lead.get("budget_max"),
-            property_type=lead.get("property_type"),
-            lead_status=lead.get("lead_status"),
-            lead_temperature=lead.get("lead_temperature"),
-            notes=lead.get("notes"),
-            builder_id=lead.get("builder_id"),
-            next_followup_date=lead.get("next_followup_date"),
-            created_at=lead["created_at"],
-            created_by=lead.get("created_by")
+    """Get CLIENT leads (buyer, tenant)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM leads WHERE lead_type IN ('buyer', 'tenant') ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (limit, skip)
         )
-        for lead in leads
-    ]
+        leads = cursor.fetchall()
+    
+    return [LeadResponse(**lead) for lead in leads]
 
-@api_router.post("/leads", response_model=LeadResponse)
-async def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)):
-    lead_dict = lead.dict()
-    lead_dict["created_at"] = datetime.utcnow()
-    lead_dict["created_by"] = current_user["_id"]
+@api_router.get("/leads/inventory", response_model=List[LeadResponse])
+def get_inventory_leads(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get INVENTORY leads (seller, landlord, builder)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder') ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (limit, skip)
+        )
+        leads = cursor.fetchall()
     
-    result = await db.leads.insert_one(lead_dict)
-    created = await db.leads.find_one({"_id": result.inserted_id})
+    return [LeadResponse(**lead) for lead in leads]
+
+@api_router.get("/leads", response_model=List[LeadResponse])
+def get_all_leads(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all leads"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM leads ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (limit, skip)
+        )
+        leads = cursor.fetchall()
     
-    return LeadResponse(
-        id=str(created["_id"]),
-        name=created["name"],
-        email=created.get("email"),
-        phone=created.get("phone"),
-        lead_type=created.get("lead_type"),
-        location=created.get("location"),
-        address=created.get("address"),
-        bhk=created.get("bhk"),
-        budget_min=created.get("budget_min"),
-        budget_max=created.get("budget_max"),
-        property_type=created.get("property_type"),
-        lead_status=created.get("lead_status"),
-        lead_temperature=created.get("lead_temperature"),
-        notes=created.get("notes"),
-        builder_id=created.get("builder_id"),
-        next_followup_date=created.get("next_followup_date"),
-        created_at=created["created_at"],
-        created_by=created.get("created_by")
-    )
+    return [LeadResponse(**lead) for lead in leads]
 
 @api_router.get("/leads/{lead_id}", response_model=LeadResponse)
-async def get_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
-    lead = await db.leads.find_one({"_id": ObjectId(lead_id)})
+def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
+        lead = cursor.fetchone()
+        
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
-    return LeadResponse(
-        id=str(lead["_id"]),
-        name=lead["name"],
-        email=lead.get("email"),
-        phone=lead.get("phone"),
-        lead_type=lead.get("lead_type"),
-        location=lead.get("location"),
-        address=lead.get("address"),
-        bhk=lead.get("bhk"),
-        budget_min=lead.get("budget_min"),
-        budget_max=lead.get("budget_max"),
-        property_type=lead.get("property_type"),
-        lead_status=lead.get("lead_status"),
-        lead_temperature=lead.get("lead_temperature"),
-        notes=lead.get("notes"),
-        builder_id=lead.get("builder_id"),
-        next_followup_date=lead.get("next_followup_date"),
-        created_at=lead["created_at"],
-        created_by=lead.get("created_by")
-    )
+    return LeadResponse(**lead)
+
+@api_router.post("/leads", response_model=LeadResponse)
+def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO leads (name, phone, email, lead_type, location, bhk, budget, 
+               property_type, lead_temperature, status, notes, created_at, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (lead.name, lead.phone, lead.email, lead.lead_type, lead.location, lead.bhk,
+             lead.budget, lead.property_type, lead.lead_temperature, lead.status, 
+             lead.notes, datetime.utcnow(), current_user['id'])
+        )
+        conn.commit()
+        lead_id = cursor.lastrowid
+        
+        cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
+        created = cursor.fetchone()
+    
+    return LeadResponse(**created)
 
 @api_router.put("/leads/{lead_id}", response_model=LeadResponse)
-async def update_lead(lead_id: str, lead: LeadCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.leads.update_one(
-        {"_id": ObjectId(lead_id)},
-        {"$set": lead.dict()}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Lead not found")
+def update_lead(lead_id: int, lead: LeadCreate, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """UPDATE leads SET name=%s, phone=%s, email=%s, lead_type=%s, location=%s,
+               bhk=%s, budget=%s, property_type=%s, lead_temperature=%s, status=%s, notes=%s
+               WHERE id=%s""",
+            (lead.name, lead.phone, lead.email, lead.lead_type, lead.location, lead.bhk,
+             lead.budget, lead.property_type, lead.lead_temperature, lead.status, lead.notes, lead_id)
+        )
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
+        updated = cursor.fetchone()
     
-    updated = await db.leads.find_one({"_id": ObjectId(lead_id)})
-    return LeadResponse(
-        id=str(updated["_id"]),
-        name=updated["name"],
-        email=updated.get("email"),
-        phone=updated.get("phone"),
-        lead_type=updated.get("lead_type"),
-        location=updated.get("location"),
-        address=updated.get("address"),
-        bhk=updated.get("bhk"),
-        budget_min=updated.get("budget_min"),
-        budget_max=updated.get("budget_max"),
-        property_type=updated.get("property_type"),
-        lead_status=updated.get("lead_status"),
-        lead_temperature=updated.get("lead_temperature"),
-        notes=updated.get("notes"),
-        builder_id=updated.get("builder_id"),
-        next_followup_date=updated.get("next_followup_date"),
-        created_at=updated["created_at"],
-        created_by=updated.get("created_by")
-    )
+    return LeadResponse(**updated)
 
 @api_router.delete("/leads/{lead_id}")
-async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.leads.delete_one({"_id": ObjectId(lead_id)})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Lead not found")
+def delete_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Lead not found")
+    
     return {"message": "Lead deleted successfully"}
 
-# ============= Reminder Routes =============
-@api_router.get("/reminders", response_model=List[ReminderResponse])
-async def get_reminders(
+# ============= Builder Routes =============
+@api_router.get("/builders", response_model=List[BuilderResponse])
+def get_builders(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
-    reminders = await db.reminders.find().sort("reminder_date", 1).skip(skip).limit(limit).to_list(limit)
-    return [
-        ReminderResponse(
-            id=str(r["_id"]),
-            lead_id=r.get("lead_id"),
-            title=r["title"],
-            reminder_date=r["reminder_date"],
-            reminder_type=r["reminder_type"],
-            notes=r.get("notes"),
-            status=r.get("status", "pending"),
-            send_whatsapp=r.get("send_whatsapp", False),
-            whatsapp_message=r.get("whatsapp_message"),
-            created_by=r.get("created_by"),
-            created_at=r["created_at"],
-            notified=r.get("notified", False)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM builders ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (limit, skip)
         )
-        for r in reminders
-    ]
+        builders = cursor.fetchall()
+    
+    return [BuilderResponse(**builder) for builder in builders]
+
+@api_router.get("/builders/{builder_id}", response_model=BuilderResponse)
+def get_builder(builder_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM builders WHERE id = %s", (builder_id,))
+        builder = cursor.fetchone()
+        
+    if not builder:
+        raise HTTPException(status_code=404, detail="Builder not found")
+    
+    return BuilderResponse(**builder)
+
+@api_router.post("/builders", response_model=BuilderResponse)
+def create_builder(builder: BuilderCreate, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO builders (builder_name, company_name, phone, address, created_at)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (builder.builder_name, builder.company_name, builder.phone, builder.address, datetime.utcnow())
+        )
+        conn.commit()
+        builder_id = cursor.lastrowid
+        
+        cursor.execute("SELECT * FROM builders WHERE id = %s", (builder_id,))
+        created = cursor.fetchone()
+    
+    return BuilderResponse(**created)
+
+@api_router.put("/builders/{builder_id}", response_model=BuilderResponse)
+def update_builder(builder_id: int, builder: BuilderCreate, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """UPDATE builders SET builder_name=%s, company_name=%s, phone=%s, address=%s
+               WHERE id=%s""",
+            (builder.builder_name, builder.company_name, builder.phone, builder.address, builder_id)
+        )
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Builder not found")
+        
+        cursor.execute("SELECT * FROM builders WHERE id = %s", (builder_id,))
+        updated = cursor.fetchone()
+    
+    return BuilderResponse(**updated)
+
+@api_router.delete("/builders/{builder_id}")
+def delete_builder(builder_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM builders WHERE id = %s", (builder_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Builder not found")
+    
+    return {"message": "Builder deleted successfully"}
+
+# ============= Reminder Routes =============
+@api_router.get("/reminders", response_model=List[ReminderResponse])
+def get_reminders(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM reminders ORDER BY reminder_date ASC LIMIT %s OFFSET %s",
+            (limit, skip)
+        )
+        reminders = cursor.fetchall()
+    
+    return [ReminderResponse(**reminder) for reminder in reminders]
 
 @api_router.post("/reminders", response_model=ReminderResponse)
-async def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_current_user)):
-    reminder_dict = reminder.dict()
-    reminder_dict["created_at"] = datetime.utcnow()
-    reminder_dict["created_by"] = current_user["_id"]
-    reminder_dict["status"] = "pending"
-    reminder_dict["notified"] = False
+def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO reminders (lead_id, title, reminder_date, reminder_type, notes, status, created_at, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (reminder.lead_id, reminder.title, reminder.reminder_date, reminder.reminder_type,
+             reminder.notes, reminder.status, datetime.utcnow(), current_user['id'])
+        )
+        conn.commit()
+        reminder_id = cursor.lastrowid
+        
+        cursor.execute("SELECT * FROM reminders WHERE id = %s", (reminder_id,))
+        created = cursor.fetchone()
     
-    result = await db.reminders.insert_one(reminder_dict)
-    created = await db.reminders.find_one({"_id": result.inserted_id})
-    
-    # If WhatsApp is enabled, send message (mock for now)
-    if created.get("send_whatsapp") and created.get("lead_id"):
-        lead = await db.leads.find_one({"_id": ObjectId(created["lead_id"])})
-        if lead and lead.get("phone"):
-            await send_whatsapp_message_internal(
-                lead["phone"],
-                created.get("whatsapp_message", f"Reminder: {created['title']}"),
-                created["lead_id"]
-            )
-    
-    return ReminderResponse(
-        id=str(created["_id"]),
-        lead_id=created.get("lead_id"),
-        title=created["title"],
-        reminder_date=created["reminder_date"],
-        reminder_type=created["reminder_type"],
-        notes=created.get("notes"),
-        status=created.get("status"),
-        send_whatsapp=created.get("send_whatsapp", False),
-        whatsapp_message=created.get("whatsapp_message"),
-        created_by=created.get("created_by"),
-        created_at=created["created_at"],
-        notified=created.get("notified", False)
-    )
-
-@api_router.put("/reminders/{reminder_id}", response_model=ReminderResponse)
-async def update_reminder(reminder_id: str, reminder: ReminderCreate, current_user: dict = Depends(get_current_user)):
-    result = await db.reminders.update_one(
-        {"_id": ObjectId(reminder_id)},
-        {"$set": reminder.dict()}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Reminder not found")
-    
-    updated = await db.reminders.find_one({"_id": ObjectId(reminder_id)})
-    return ReminderResponse(
-        id=str(updated["_id"]),
-        lead_id=updated.get("lead_id"),
-        title=updated["title"],
-        reminder_date=updated["reminder_date"],
-        reminder_type=updated["reminder_type"],
-        notes=updated.get("notes"),
-        status=updated.get("status"),
-        send_whatsapp=updated.get("send_whatsapp", False),
-        whatsapp_message=updated.get("whatsapp_message"),
-        created_by=updated.get("created_by"),
-        created_at=updated["created_at"],
-        notified=updated.get("notified", False)
-    )
+    return ReminderResponse(**created)
 
 @api_router.delete("/reminders/{reminder_id}")
-async def delete_reminder(reminder_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.reminders.delete_one({"_id": ObjectId(reminder_id)})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Reminder not found")
+def delete_reminder(reminder_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM reminders WHERE id = %s", (reminder_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Reminder not found")
+    
     return {"message": "Reminder deleted successfully"}
 
-# ============= WhatsApp Routes (Mock) =============
-async def send_whatsapp_message_internal(phone: str, message: str, lead_id: Optional[str] = None):
-    """Internal function to send WhatsApp (mock implementation)"""
-    log_data = {
-        "phone": phone,
-        "message": message,
-        "lead_id": lead_id,
-        "status": "sent",  # Mock: always successful
-        "created_at": datetime.utcnow()
-    }
-    await db.whatsapp_logs.insert_one(log_data)
-    return True
-
-@api_router.post("/whatsapp/send")
-async def send_whatsapp(data: WhatsAppMessageCreate, current_user: dict = Depends(get_current_user)):
-    """Send WhatsApp message (mock implementation)"""
-    await send_whatsapp_message_internal(data.phone, data.message, data.lead_id)
-    return {"message": "WhatsApp message sent successfully", "status": "sent"}
-
-@api_router.get("/whatsapp/logs", response_model=List[WhatsAppLogResponse])
-async def get_whatsapp_logs(current_user: dict = Depends(get_current_user)):
-    logs = await db.whatsapp_logs.find().sort("created_at", -1).limit(100).to_list(100)
-    return [
-        WhatsAppLogResponse(
-            id=str(log["_id"]),
-            phone=log["phone"],
-            message=log["message"],
-            lead_id=log.get("lead_id"),
-            status=log["status"],
-            created_at=log["created_at"]
-        )
-        for log in logs
-    ]
-
-# ============= Dashboard Route =============
+# ============= Dashboard Routes =============
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
-async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
-    total_leads = await db.leads.count_documents({})
-    hot_leads = await db.leads.count_documents({"lead_temperature": "Hot"})
-    warm_leads = await db.leads.count_documents({"lead_temperature": "Warm"})
-    cold_leads = await db.leads.count_documents({"lead_temperature": "Cold"})
-    total_builders = await db.builders.count_documents({})
-    
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=999999)
-    today_reminders = await db.reminders.count_documents({
-        "reminder_date": {"$gte": today_start, "$lte": today_end}
-    })
-    pending_reminders = await db.reminders.count_documents({"status": "pending"})
+def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Total leads
+        cursor.execute("SELECT COUNT(*) as count FROM leads")
+        total_leads = cursor.fetchone()['count']
+        
+        # Client leads (buyer, tenant)
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant')")
+        client_leads = cursor.fetchone()['count']
+        
+        # Inventory leads (seller, landlord, builder)
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder')")
+        inventory_leads = cursor.fetchone()['count']
+        
+        # Temperature counts
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Hot'")
+        hot_leads = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Warm'")
+        warm_leads = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Cold'")
+        cold_leads = cursor.fetchone()['count']
+        
+        # Builders
+        cursor.execute("SELECT COUNT(*) as count FROM builders")
+        total_builders = cursor.fetchone()['count']
+        
+        # Today's reminders
+        today = datetime.utcnow().date()
+        cursor.execute("SELECT COUNT(*) as count FROM reminders WHERE DATE(reminder_date) = %s", (today,))
+        today_reminders = cursor.fetchone()['count']
+        
+        # Pending reminders
+        cursor.execute("SELECT COUNT(*) as count FROM reminders WHERE status = 'pending'")
+        pending_reminders = cursor.fetchone()['count']
     
     return DashboardStats(
         total_leads=total_leads,
+        client_leads=client_leads,
+        inventory_leads=inventory_leads,
         hot_leads=hot_leads,
         warm_leads=warm_leads,
         cold_leads=cold_leads,
@@ -616,7 +540,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
