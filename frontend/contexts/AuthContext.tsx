@@ -1,0 +1,135 @@
+import React, { createContext, useState, useContext, useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store';
+import { Alert } from 'react-native';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  email: string;
+  role: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  loading: boolean;
+  login: (username: string, password: string) => Promise<boolean>;
+  register: (username: string, password: string, fullName: string, email: string) => Promise<boolean>;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadStoredAuth();
+  }, []);
+
+  const loadStoredAuth = async () => {
+    try {
+      const storedToken = await SecureStore.getItemAsync('token');
+      const storedUser = await SecureStore.getItemAsync('user');
+
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      }
+    } catch (error) {
+      console.error('Failed to load auth:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async (username: string, password: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setToken(data.access_token);
+        setUser(data.user);
+        await SecureStore.setItemAsync('token', data.access_token);
+        await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+        return true;
+      } else {
+        Alert.alert('Login Failed', data.detail || 'Invalid credentials');
+        return false;
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to connect to server');
+      console.error('Login error:', error);
+      return false;
+    }
+  };
+
+  const register = async (
+    username: string,
+    password: string,
+    fullName: string,
+    email: string
+  ): Promise<boolean> => {
+    try {
+      const registerResponse = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          password,
+          full_name: fullName,
+          email,
+          role: 'user',
+        }),
+      });
+
+      if (registerResponse.ok) {
+        return await login(username, password);
+      } else {
+        const data = await registerResponse.json();
+        Alert.alert('Registration Failed', data.detail || 'Could not create account');
+        return false;
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to connect to server');
+      console.error('Register error:', error);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    setUser(null);
+    setToken(null);
+    await SecureStore.deleteItemAsync('token');
+    await SecureStore.deleteItemAsync('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
