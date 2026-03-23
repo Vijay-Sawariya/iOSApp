@@ -66,7 +66,8 @@ export default function AddLeadScreen() {
   const [possessionMonth, setPossessionMonth] = useState('');
   const [possessionYear, setPossessionYear] = useState('');
   const [areaSize, setAreaSize] = useState('');
-  const [floor, setFloor] = useState('');
+  const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
+  const [floorPricing, setFloorPricing] = useState<{[key: string]: string}>({});
   const [parking, setParking] = useState('');
   const [lift, setLift] = useState('');
   const [facing, setFacing] = useState('');
@@ -125,10 +126,11 @@ export default function AddLeadScreen() {
           googleMapUrl && `Map: ${googleMapUrl}`,
           possessionMonth && possessionYear && `Possession: ${possessionMonth}/${possessionYear}`,
           areaSize && `Area: ${areaSize} sq ft`,
-          floor && `Floor: ${floor}`,
+          selectedFloors.length > 0 && `Floors: ${selectedFloors.join(', ')}`,
           parking && `Parking: ${parking}`,
           lift && `Lift: ${lift}`,
           facing && `Facing: ${facing}`,
+          Object.keys(floorPricing).length > 0 && `Floor Pricing: ${Object.entries(floorPricing).map(([f, p]) => `${f}: ₹${p}`).join(', ')}`,
           inventoryAmenities.length > 0 && `Amenities: ${inventoryAmenities.join(', ')}`,
         ].filter(Boolean).join('\n');
         
@@ -160,6 +162,22 @@ export default function AddLeadScreen() {
         setInventoryAmenities([...inventoryAmenities, amenity]);
       }
     }
+  };
+
+  const toggleFloor = (floor: string) => {
+    if (selectedFloors.includes(floor)) {
+      setSelectedFloors(selectedFloors.filter(f => f !== floor));
+      // Remove pricing for unselected floor
+      const newPricing = {...floorPricing};
+      delete newPricing[floor];
+      setFloorPricing(newPricing);
+    } else {
+      setSelectedFloors([...selectedFloors, floor]);
+    }
+  };
+
+  const updateFloorPrice = (floor: string, price: string) => {
+    setFloorPricing({...floorPricing, [floor]: price});
   };
 
   return (
@@ -482,29 +500,60 @@ export default function AddLeadScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Floor</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={floor}
-                    onValueChange={setFloor}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Select Floor" value="" color="#9CA3AF" />
-                    {FLOORS.map((f) => (
-                      <Picker.Item key={f} label={f} value={f} color="#000000" />
-                    ))}
-                  </Picker>
+                <Text style={styles.label}>Floor (Select Multiple)</Text>
+                <View style={styles.amenitiesContainer}>
+                  {FLOORS.map((floorOption) => (
+                    <TouchableOpacity
+                      key={floorOption}
+                      style={[
+                        styles.amenityChip,
+                        selectedFloors.includes(floorOption) && styles.amenityChipSelected,
+                      ]}
+                      onPress={() => toggleFloor(floorOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.amenityChipText,
+                          selectedFloors.includes(floorOption) && styles.amenityChipTextSelected,
+                        ]}
+                      >
+                        {floorOption}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
 
+              {/* Floor-wise Pricing */}
+              {selectedFloors.length > 0 && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Floor-wise Pricing</Text>
+                  {selectedFloors.map((floor) => (
+                    <View key={floor} style={styles.floorPricingRow}>
+                      <View style={styles.floorLabel}>
+                        <Text style={styles.floorLabelText}>{floor}</Text>
+                      </View>
+                      <TextInput
+                        style={styles.floorPriceInput}
+                        value={floorPricing[floor] || ''}
+                        onChangeText={(text) => updateFloorPrice(floor, text)}
+                        placeholder="Amount (₹)"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  ))}
+                </View>
+              )}
+
               <View style={styles.row}>
                 <View style={[styles.inputGroup, styles.halfWidth]}>
-                  <Text style={styles.label}>Parking</Text>
+                  <Text style={styles.label}>Parking (Number)</Text>
                   <TextInput
                     style={styles.input}
                     value={parking}
                     onChangeText={setParking}
-                    placeholder="Number"
+                    placeholder="Number of spaces"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="numeric"
                   />
@@ -706,5 +755,34 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  floorPricingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  floorLabel: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 100,
+  },
+  floorLabelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E40AF',
+    textAlign: 'center',
+  },
+  floorPriceInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#1F2937',
+    backgroundColor: '#FFFFFF',
   },
 });
