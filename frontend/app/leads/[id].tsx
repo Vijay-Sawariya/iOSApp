@@ -13,42 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { api } from '../../services/api';
 
-interface Lead {
-  id: number;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  lead_type: string | null;
-  lead_temperature: string | null;
-  lead_status: string | null;
-  location: string | null;
-  address: string | null;
-  bhk: string | null;
-  budget_min: number | null;
-  budget_max: number | null;
-  property_type: string | null;
-  notes: string | null;
-  builder_id: number | null;
-  created_at: string;
-  calculations?: {
-    circle_values?: Array<{
-      label: string;
-      percent: number;
-      value: number;
-    }>;
-    plot_specifications?: {
-      total_builtup: number;
-      per_floor_builtup: number;
-      far: number;
-      coverage: number;
-    };
-    floor_pricing?: {[key: string]: number};
-  };
-}
-
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams();
-  const [lead, setLead] = useState<Lead | null>(null);
+  const [lead, setLead] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,7 +24,7 @@ export default function LeadDetailScreen() {
 
   const loadLead = async () => {
     try {
-      const data = await api.getLead(id as string);
+      const data = await api.getLead(String(id));
       setLead(data);
     } catch (error) {
       console.error('Failed to load lead:', error);
@@ -67,54 +34,22 @@ export default function LeadDetailScreen() {
     }
   };
 
-  const getTemperatureColor = (temp: string | null) => {
-    switch (temp) {
-      case 'Hot':
-        return '#EF4444';
-      case 'Warm':
-        return '#F59E0B';
-      case 'Cold':
-        return '#6366F1';
-      default:
-        return '#9CA3AF';
-    }
-  };
-
-  const getTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'buyer':
-      case 'tenant':
-        return '#3B82F6';
-      case 'seller':
-      case 'landlord':
-      case 'builder':
-        return '#10B981';
-      default:
-        return '#6B7280';
-    }
-  };
-
-  const getTypeLabel = (type: string | null) => {
-    if (!type) return 'Unknown';
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  };
-
   const handleCall = () => {
     if (lead?.phone) {
       Linking.openURL(`tel:${lead.phone}`);
     }
   };
 
-  const handleEmail = () => {
-    if (lead?.email) {
-      Linking.openURL(`mailto:${lead.email}`);
+  const handleWhatsApp = () => {
+    if (lead?.phone) {
+      const cleanPhone = String(lead.phone).replace(/[^0-9]/g, '');
+      Linking.openURL(`https://wa.me/${cleanPhone}`);
     }
   };
 
-  const handleWhatsApp = () => {
-    if (lead?.phone) {
-      const cleanPhone = lead.phone.replace(/[^0-9]/g, '');
-      Linking.openURL(`https://wa.me/${cleanPhone}`);
+  const handleEmail = () => {
+    if (lead?.email) {
+      Linking.openURL(`mailto:${lead.email}`);
     }
   };
 
@@ -129,7 +64,7 @@ export default function LeadDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.deleteLead(id as string);
+              await api.deleteLead(String(id));
               Alert.alert('Success', 'Lead deleted successfully');
               router.back();
             } catch (error) {
@@ -145,7 +80,7 @@ export default function LeadDetailScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={styles.loadingText}>Loading lead details...</Text>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
@@ -153,7 +88,6 @@ export default function LeadDetailScreen() {
   if (!lead) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={64} color="#EF4444" />
         <Text style={styles.errorText}>Lead not found</Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Go Back</Text>
@@ -162,42 +96,46 @@ export default function LeadDetailScreen() {
     );
   }
 
+  const getTypeLabel = (type: string) => {
+    if (!type) return 'Unknown';
+    return String(type).charAt(0).toUpperCase() + String(type).slice(1);
+  };
+
+  const formatBudget = () => {
+    const min = lead.budget_min ? Number(lead.budget_min).toLocaleString() : '0';
+    const max = lead.budget_max ? Number(lead.budget_max).toLocaleString() : '0';
+    return `₹${min} - ₹${max}`;
+  };
+
   return (
     <ScrollView style={styles.container}>
-      {/* Header Card */}
+      {/* Header */}
       <View style={styles.headerCard}>
-        <View style={styles.nameSection}>
-          <Text style={styles.leadName}>{lead.name}</Text>
-          <View style={styles.badges}>
-            <View style={[styles.typeBadge, { backgroundColor: getTypeColor(lead.lead_type) + '20' }]}>
-              <Text style={[styles.typeBadgeText, { color: getTypeColor(lead.lead_type) }]}>
-                {getTypeLabel(lead.lead_type)}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.temperatureBadge,
-                { backgroundColor: getTemperatureColor(lead.lead_temperature) },
-              ]}
-            >
-              <Text style={styles.temperatureText}>{lead.lead_temperature || 'N/A'}</Text>
-            </View>
+        <Text style={styles.leadName}>{String(lead.name || 'Unknown')}</Text>
+        <View style={styles.badges}>
+          <View style={styles.typeBadge}>
+            <Text style={styles.typeBadgeText}>{getTypeLabel(lead.lead_type)}</Text>
           </View>
+          {lead.lead_temperature && (
+            <View style={styles.temperatureBadge}>
+              <Text style={styles.temperatureText}>{String(lead.lead_temperature)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           {lead.phone && (
-            <>
-              <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-                <Ionicons name="call" size={24} color="#3B82F6" />
-                <Text style={styles.actionButtonText}>Call</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
-                <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
-                <Text style={styles.actionButtonText}>WhatsApp</Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+              <Ionicons name="call" size={24} color="#3B82F6" />
+              <Text style={styles.actionButtonText}>Call</Text>
+            </TouchableOpacity>
+          )}
+          {lead.phone && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
+              <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
+              <Text style={styles.actionButtonText}>WhatsApp</Text>
+            </TouchableOpacity>
           )}
           {lead.email && (
             <TouchableOpacity style={styles.actionButton} onPress={handleEmail}>
@@ -208,7 +146,7 @@ export default function LeadDetailScreen() {
         </View>
       </View>
 
-      {/* Contact Information */}
+      {/* Contact Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Contact Information</Text>
         
@@ -216,7 +154,7 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="call" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Phone</Text>
-            <Text style={styles.detailValue}>{lead.phone}</Text>
+            <Text style={styles.detailValue}>{String(lead.phone)}</Text>
           </View>
         )}
 
@@ -224,7 +162,7 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="mail" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Email</Text>
-            <Text style={styles.detailValue}>{lead.email}</Text>
+            <Text style={styles.detailValue}>{String(lead.email)}</Text>
           </View>
         )}
 
@@ -253,7 +191,7 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="business" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Type</Text>
-            <Text style={styles.detailValue}>{lead.property_type}</Text>
+            <Text style={styles.detailValue}>{String(lead.property_type)}</Text>
           </View>
         )}
 
@@ -261,7 +199,7 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="bed" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>BHK</Text>
-            <Text style={styles.detailValue}>{lead.bhk}</Text>
+            <Text style={styles.detailValue}>{String(lead.bhk)}</Text>
           </View>
         )}
 
@@ -269,77 +207,75 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="cash" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Budget</Text>
-            <Text style={styles.detailValue}>
-              {`₹${lead.budget_min?.toLocaleString() || '0'} - ₹${lead.budget_max?.toLocaleString() || '0'}`}
-            </Text>
+            <Text style={styles.detailValue}>{formatBudget()}</Text>
           </View>
         )}
 
         <View style={styles.detailRow}>
           <Ionicons name="flag" size={20} color="#6B7280" />
           <Text style={styles.detailLabel}>Status</Text>
-          <Text style={styles.detailValue}>{lead.lead_status || 'New'}</Text>
+          <Text style={styles.detailValue}>{String(lead.lead_status || 'New')}</Text>
         </View>
       </View>
 
-      {/* Notes */}
-      {lead.notes && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notes</Text>
-          <Text style={styles.notesText}>{lead.notes}</Text>
-        </View>
-      )}
-
-      {/* Circle Value Section */}
-      {lead.calculations?.circle_values && lead.calculations.circle_values.length > 0 && (
+      {/* Circle Value */}
+      {lead.calculations?.circle_values && Array.isArray(lead.calculations.circle_values) && lead.calculations.circle_values.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Circle Value (approx)</Text>
-          {lead.calculations.circle_values.map((cv, index) => (
-            <View style={styles.calculationRow} key={index}>
-              <View style={styles.calcLabelContainer}>
-                <Text style={styles.calcLabel}>{cv.label}:</Text>
-                <Text style={styles.calcPercent}>({cv.percent}%)</Text>
+          {lead.calculations.circle_values.map((cv: any, index: number) => (
+            <View style={styles.calcRow} key={String(index)}>
+              <View style={styles.calcLabelWrap}>
+                <Text style={styles.calcLabel}>{String(cv.label || '')}:</Text>
+                <Text style={styles.calcPercent}>({String(cv.percent || 0)}%)</Text>
               </View>
-              <Text style={styles.calcValue}>₹{cv.value.toFixed(2)} Cr</Text>
+              <Text style={styles.calcValue}>₹{Number(cv.value || 0).toFixed(2)} Cr</Text>
             </View>
           ))}
         </View>
       )}
 
-      {/* Floor Pricing Section */}
-      {lead.calculations?.floor_pricing && Object.keys(lead.calculations.floor_pricing).length > 0 && (
+      {/* Floor Pricing */}
+      {lead.calculations?.floor_pricing && typeof lead.calculations.floor_pricing === 'object' && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Available Floors & Pricing</Text>
-          {Object.entries(lead.calculations.floor_pricing).map(([floor, price]) => (
-            <View style={styles.calculationRow} key={floor}>
-              <Text style={styles.calcLabel}>{floor}</Text>
-              <Text style={styles.calcValue}>₹{price.toFixed(2)} Cr</Text>
+          {Object.entries(lead.calculations.floor_pricing).map(([floor, price]: [string, any]) => (
+            <View style={styles.calcRow} key={String(floor)}>
+              <Text style={styles.calcLabel}>{String(floor)}</Text>
+              <Text style={styles.calcValue}>₹{Number(price || 0).toFixed(2)} Cr</Text>
             </View>
           ))}
         </View>
       )}
 
-      {/* Plot Size Specifications */}
+      {/* Plot Specs */}
       {lead.calculations?.plot_specifications && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Plot Size Specification</Text>
-          <View style={styles.calculationRow}>
+          <View style={styles.calcRow}>
             <Text style={styles.calcLabel}>Total Built-up:</Text>
             <Text style={styles.calcValue}>
-              {lead.calculations.plot_specifications.total_builtup.toLocaleString()} sq.ft
+              {Number(lead.calculations.plot_specifications.total_builtup || 0).toLocaleString()} sq.ft
             </Text>
           </View>
-          <View style={styles.calculationRow}>
+          <View style={styles.calcRow}>
             <Text style={styles.calcLabel}>Per Floor Built-up:</Text>
             <Text style={styles.calcValue}>
-              {lead.calculations.plot_specifications.per_floor_builtup.toLocaleString()} sq.ft
+              {Number(lead.calculations.plot_specifications.per_floor_builtup || 0).toLocaleString()} sq.ft
             </Text>
           </View>
           <Text style={styles.specNote}>(Balcony Excluded)</Text>
         </View>
       )}
 
-      {/* Action Buttons */}
+      {/* Notes */}
+      {lead.notes && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notes</Text>
+          <Text style={styles.notesText}>{String(lead.notes)}</Text>
+        </View>
+      )}
+
+      {/* Delete */}
       <View style={styles.bottomActions}>
         <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
           <Ionicons name="trash" size={20} color="#FFFFFF" />
@@ -397,9 +333,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
-  nameSection: {
-    marginBottom: 16,
-  },
   leadName: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -409,8 +342,10 @@ const styles = StyleSheet.create({
   badges: {
     flexDirection: 'row',
     gap: 8,
+    marginBottom: 16,
   },
   typeBadge: {
+    backgroundColor: '#DBEAFE',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -418,8 +353,10 @@ const styles = StyleSheet.create({
   typeBadgeText: {
     fontSize: 14,
     fontWeight: '600',
+    color: '#1E40AF',
   },
   temperatureBadge: {
+    backgroundColor: '#EF4444',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -477,30 +414,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
   },
-  notesText: {
-    fontSize: 14,
-    color: '#4B5563',
-    lineHeight: 22,
-  },
-  bottomActions: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    backgroundColor: '#EF4444',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  deleteButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  calculationRow: {
+  calcRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -508,7 +422,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  calcLabelContainer: {
+  calcLabelWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -532,5 +446,28 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontStyle: 'italic',
     marginTop: 8,
+  },
+  notesText: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 22,
+  },
+  bottomActions: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    backgroundColor: '#EF4444',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
