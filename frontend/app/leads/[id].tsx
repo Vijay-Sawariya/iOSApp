@@ -290,6 +290,55 @@ export default function LeadDetailScreen() {
         </View>
       )}
 
+      {/* Circle Value Section */}
+      {lead.calculations?.circle_values && lead.calculations.circle_values.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Circle Value (approx)</Text>
+          {lead.calculations.circle_values.map((cv, index) => (
+            <View style={styles.calculationRow} key={index}>
+              <View style={styles.calcLabelContainer}>
+                <Text style={styles.calcLabel}>{cv.label}:</Text>
+                <Text style={styles.calcPercent}>({cv.percent}%)</Text>
+              </View>
+              <Text style={styles.calcValue}>₹{cv.value.toFixed(2)} Cr</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Floor Pricing Section */}
+      {lead.calculations?.floor_pricing && Object.keys(lead.calculations.floor_pricing).length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Available Floors & Pricing</Text>
+          {Object.entries(lead.calculations.floor_pricing).map(([floor, price]) => (
+            <View style={styles.calculationRow} key={floor}>
+              <Text style={styles.calcLabel}>{floor}</Text>
+              <Text style={styles.calcValue}>₹{price.toFixed(2)} Cr</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Plot Size Specifications */}
+      {lead.calculations?.plot_specifications && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Plot Size Specification</Text>
+          <View style={styles.calculationRow}>
+            <Text style={styles.calcLabel}>Total Built-up:</Text>
+            <Text style={styles.calcValue}>
+              {lead.calculations.plot_specifications.total_builtup.toLocaleString()} sq.ft
+            </Text>
+          </View>
+          <View style={styles.calculationRow}>
+            <Text style={styles.calcLabel}>Per Floor Built-up:</Text>
+            <Text style={styles.calcValue}>
+              {lead.calculations.plot_specifications.per_floor_builtup.toLocaleString()} sq.ft
+            </Text>
+          </View>
+          <Text style={styles.specNote}>(Balcony Excluded)</Text>
+        </View>
+      )}
+
       {/* Action Buttons */}
       <View style={styles.bottomActions}>
         <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
@@ -450,5 +499,38 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  calculationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  calcLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  calcLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  calcPercent: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  calcValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  specNote: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
 });
