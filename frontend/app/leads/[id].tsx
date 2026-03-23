@@ -232,7 +232,7 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="location" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Location</Text>
-            <Text style={styles.detailValue}>{lead.location}</Text>
+            <Text style={styles.detailValue}>{String(lead.location)}</Text>
           </View>
         )}
 
@@ -240,7 +240,7 @@ export default function LeadDetailScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="home" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Address</Text>
-            <Text style={styles.detailValue}>{lead.address}</Text>
+            <Text style={styles.detailValue}>{String(lead.address)}</Text>
           </View>
         )}
       </View>
@@ -270,7 +270,7 @@ export default function LeadDetailScreen() {
             <Ionicons name="cash" size={20} color="#6B7280" />
             <Text style={styles.detailLabel}>Budget</Text>
             <Text style={styles.detailValue}>
-              ₹{lead.budget_min?.toLocaleString() || '0'} - ₹{lead.budget_max?.toLocaleString() || '0'}
+              {`₹${lead.budget_min?.toLocaleString() || '0'} - ₹${lead.budget_max?.toLocaleString() || '0'}`}
             </Text>
           </View>
         )}
