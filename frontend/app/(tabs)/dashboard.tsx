@@ -64,8 +64,16 @@ export default function DashboardScreen() {
       <View style={styles.statsGrid}>
         <View style={[styles.statCard, { backgroundColor: '#3B82F6' }]}>
           <Ionicons name="people" size={32} color="#FFFFFF" />
-          <Text style={styles.statValue}>{stats?.total_leads || 0}</Text>
-          <Text style={styles.statLabel}>Total Leads</Text>
+          <Text style={styles.statValue}>{stats?.client_leads || 0}</Text>
+          <Text style={styles.statLabel}>Client Leads</Text>
+          <Text style={styles.statSubtext}>Buyers & Tenants</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: '#10B981' }]}>
+          <Ionicons name="home" size={32} color="#FFFFFF" />
+          <Text style={styles.statValue}>{stats?.inventory_leads || 0}</Text>
+          <Text style={styles.statLabel}>Inventory Leads</Text>
+          <Text style={styles.statSubtext}>Sellers & Landlords</Text>
         </View>
 
         <View style={[styles.statCard, { backgroundColor: '#EF4444' }]}>
@@ -79,12 +87,6 @@ export default function DashboardScreen() {
           <Text style={styles.statValue}>{stats?.warm_leads || 0}</Text>
           <Text style={styles.statLabel}>Warm Leads</Text>
         </View>
-
-        <View style={[styles.statCard, { backgroundColor: '#6366F1' }]}>
-          <Ionicons name="snow" size={32} color="#FFFFFF" />
-          <Text style={styles.statValue}>{stats?.cold_leads || 0}</Text>
-          <Text style={styles.statLabel}>Cold Leads</Text>
-        </View>
       </View>
 
       <View style={styles.section}>
@@ -92,42 +94,42 @@ export default function DashboardScreen() {
         
         <TouchableOpacity
           style={styles.actionCard}
-          onPress={() => router.push('/leads/add')}
+          onPress={() => router.push('/(tabs)/clients')}
         >
           <View style={styles.actionIcon}>
             <Ionicons name="person-add" size={24} color="#3B82F6" />
           </View>
           <View style={styles.actionContent}>
+            <Text style={styles.actionTitle}>View Clients</Text>
+            <Text style={styles.actionSubtitle}>Buyers & Tenants</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionCard}
+          onPress={() => router.push('/(tabs)/inventory')}
+        >
+          <View style={styles.actionIcon}>
+            <Ionicons name="home" size={24} color="#10B981" />
+          </View>
+          <View style={styles.actionContent}>
+            <Text style={styles.actionTitle}>View Inventory</Text>
+            <Text style={styles.actionSubtitle}>Sellers, Landlords & Builders</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionCard}
+          onPress={() => router.push('/leads/add')}
+        >
+          <View style={styles.actionIcon}>
+            <Ionicons name="add-circle" size={24} color="#F59E0B" />
+          </View>
+          <View style={styles.actionContent}>
             <Text style={styles.actionTitle}>Add New Lead</Text>
-            <Text style={styles.actionSubtitle}>Create a new lead entry</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/builders/add')}
-        >
-          <View style={styles.actionIcon}>
-            <Ionicons name="business" size={24} color="#10B981" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Add Builder</Text>
-            <Text style={styles.actionSubtitle}>Register a new builder</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/reminders/add')}
-        >
-          <View style={styles.actionIcon}>
-            <Ionicons name="notifications" size={24} color="#F59E0B" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Set Reminder</Text>
-            <Text style={styles.actionSubtitle}>Schedule a follow-up</Text>
+            <Text style={styles.actionSubtitle}>Client or Inventory</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
         </TouchableOpacity>
@@ -205,6 +207,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginTop: 4,
     opacity: 0.9,
+  },
+  statSubtext: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    marginTop: 2,
+    opacity: 0.7,
   },
   section: {
     padding: 20,

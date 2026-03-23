@@ -107,18 +107,20 @@ export default function AddLeadScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Lead Type</Text>
+            <Text style={styles.label}>Lead Type *</Text>
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={leadType}
                 onValueChange={setLeadType}
                 style={styles.picker}
               >
-                <Picker.Item label="Buyer" value="buyer" />
-                <Picker.Item label="Seller" value="seller" />
-                <Picker.Item label="Rent" value="rent" />
-                <Picker.Item label="Landlord" value="landlord" />
-                <Picker.Item label="Tenant" value="tenant" />
+                <Picker.Item label="-- Client Leads --" value="" enabled={false} />
+                <Picker.Item label="Buyer (Client)" value="buyer" />
+                <Picker.Item label="Tenant (Client)" value="tenant" />
+                <Picker.Item label="-- Inventory Leads --" value="" enabled={false} />
+                <Picker.Item label="Seller (Inventory)" value="seller" />
+                <Picker.Item label="Landlord (Inventory)" value="landlord" />
+                <Picker.Item label="Builder (Inventory)" value="builder" />
               </Picker>
             </View>
           </View>
