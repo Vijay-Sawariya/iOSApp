@@ -704,10 +704,12 @@ const styles = StyleSheet.create({
   picker: {
     height: 50,
     color: '#1F2937',
+    backgroundColor: '#FFFFFF',
   },
   pickerItem: {
     fontSize: 16,
     color: '#1F2937',
+    backgroundColor: '#FFFFFF',
   },
   row: {
     flexDirection: 'row',
