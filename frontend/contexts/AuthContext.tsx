@@ -1,8 +1,34 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import * as SecureStore from 'expo-secure-store';
 import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+// Unified storage using AsyncStorage (works on web and native)
+const storage = {
+  async getItem(key: string): Promise<string | null> {
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch (error) {
+      console.error('Storage getItem error:', error);
+      return null;
+    }
+  },
+  async setItem(key: string, value: string): Promise<void> {
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (error) {
+      console.error('Storage setItem error:', error);
+    }
+  },
+  async deleteItem(key: string): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error('Storage deleteItem error:', error);
+    }
+  }
+};
 
 interface User {
   id: string;
@@ -34,8 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadStoredAuth = async () => {
     try {
-      const storedToken = await SecureStore.getItemAsync('token');
-      const storedUser = await SecureStore.getItemAsync('user');
+      const storedToken = await storage.getItem('token');
+      const storedUser = await storage.getItem('user');
 
       if (storedToken && storedUser) {
         const user = JSON.parse(storedUser);
@@ -43,8 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Clear old MongoDB auth data
         if (typeof user.id === 'string' && user.id.length === 24) {
           console.log('Clearing old MongoDB auth data');
-          await SecureStore.deleteItemAsync('token');
-          await SecureStore.deleteItemAsync('user');
+          await storage.deleteItem('token');
+          await storage.deleteItem('user');
         } else {
           setToken(storedToken);
           setUser(user);
@@ -53,8 +79,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Failed to load auth:', error);
       // Clear corrupted data
-      await SecureStore.deleteItemAsync('token');
-      await SecureStore.deleteItemAsync('user');
+      await storage.deleteItem('token');
+      await storage.deleteItem('user');
     } finally {
       setLoading(false);
     }
@@ -75,8 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         setToken(data.access_token);
         setUser(data.user);
-        await SecureStore.setItemAsync('token', data.access_token);
-        await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+        await storage.setItem('token', data.access_token);
+        await storage.setItem('user', JSON.stringify(data.user));
         return true;
       } else {
         Alert.alert('Login Failed', data.detail || 'Invalid credentials');
@@ -128,8 +154,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setUser(null);
       setToken(null);
-      await SecureStore.deleteItemAsync('token');
-      await SecureStore.deleteItemAsync('user');
+      await storage.deleteItem('token');
+      await storage.deleteItem('user');
     } catch (error) {
       console.error('Logout error:', error);
     }
