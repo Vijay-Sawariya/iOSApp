@@ -30,6 +30,20 @@ interface Lead {
   notes: string | null;
   builder_id: number | null;
   created_at: string;
+  calculations?: {
+    circle_values?: Array<{
+      label: string;
+      percent: number;
+      value: number;
+    }>;
+    plot_specifications?: {
+      total_builtup: number;
+      per_floor_builtup: number;
+      far: number;
+      coverage: number;
+    };
+    floor_pricing?: {[key: string]: number};
+  };
 }
 
 export default function LeadDetailScreen() {

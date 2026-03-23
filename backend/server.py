@@ -6,13 +6,14 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import jwt
 import pymysql
 from pymysql.cursors import DictCursor
 from contextlib import contextmanager
+import re
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -61,6 +62,165 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+# ============= Calculation Helper Functions =============
+def normalize_floor_label(label: str) -> str:
+    """Normalize floor labels for consistent matching"""
+    mapping = {
+        'T': 'TF', 'F+TT': 'TF+TT', 'TF+TT': 'TF+TT',
+        'BASEMENT': 'BMT', 'BAS': 'BMT', 'B': 'BMT'
+    }
+    upper = label.strip().upper()
+    return mapping.get(upper, upper)
+
+def floor_share_percent(label: str) -> Optional[float]:
+    """Get floor share percentage for circle value calculation"""
+    n = normalize_floor_label(label)
+    if n == 'BMT+GF':
+        return 32.5
+    twenty_two = ['FF', 'SF', 'T', 'TF', 'F+TT', 'TF+TT', 'TF+TERR']
+    if n in twenty_two:
+        return 22.5
+    return None
+
+def norms_from_bucket(plot_sqm: float) -> dict:
+    """Get FAR and Coverage norms based on plot size in sq meters"""
+    # [min, max, FAR, coverage%]
+    rows = [
+        (0, 32, 350, 90),
+        (32, 50, 350, 90),
+        (50, 100, 350, 90),
+        (100, 250, 300, 75),
+        (250, 750, 225, 75),
+        (750, 1000, 250, 50),
+        (1000, 1500, 200, 50),
+        (1500, 2250, 250, 50),
+        (2250, 3000, 200, 50),
+        (3000, 3750, 200, 50),
+        (3750, float('inf'), 200, 50),
+    ]
+    for min_val, max_val, far, cov in rows:
+        if plot_sqm < 32 and max_val == 32:
+            return {'far': far, 'cov': cov}
+        if min_val <= plot_sqm <= max_val:
+            return {'far': far, 'cov': cov}
+    return {'far': 200, 'cov': 50}
+
+def to_sq_meter(value: float, unit: str) -> float:
+    """Convert area to square meters"""
+    if unit == 'sqm':
+        return value
+    elif unit == 'sq_yd':
+        return value * 0.83612736
+    elif unit == 'sq_ft':
+        return value / 10.764
+    return value
+
+def calculate_circle_values(location: str, area_size: float, floors_str: str, conn) -> List[Dict]:
+    """Calculate circle value for each floor"""
+    circle_values = []
+    
+    # Get circle rate from location table
+    cursor = conn.cursor()
+    cursor.execute("SELECT circle_rate FROM locations WHERE LOWER(name) = LOWER(%s)", (location,))
+    result = cursor.fetchone()
+    
+    if not result or not result['circle_rate']:
+        return []
+    
+    circle_rate_per_sqm = float(result['circle_rate'])
+    
+    # Constants
+    construction_cost_per_100_sqyd = 10000000.0  # 1 Crore per 100 sq yd
+    sqyd_to_sqm = 0.83612736
+    construction_cost_per_sqyd = construction_cost_per_100_sqyd / 100.0
+    construction_cost_per_sqm = construction_cost_per_sqyd / sqyd_to_sqm
+    
+    # Convert area to sq meters (assuming sq_yd as default)
+    area_sqm = to_sq_meter(area_size, 'sq_yd')
+    
+    # Parse floors
+    if not floors_str:
+        return []
+    
+    floors = [f.strip() for f in floors_str.split(',') if f.strip()]
+    
+    for floor in floors:
+        share = floor_share_percent(floor)
+        if share is not None:
+            value = (circle_rate_per_sqm + construction_cost_per_sqm) * area_sqm * (share / 100.0)
+            circle_values.append({
+                'label': floor,
+                'percent': share,
+                'value': round(value / 10000000, 2),  # Convert to Crores
+            })
+    
+    return circle_values
+
+def calculate_plot_specifications(area_size: float, floors_count: int, unit: str = 'sq_yd') -> Dict:
+    """Calculate plot size specifications"""
+    # Convert to sq ft
+    if unit == 'sqm':
+        plot_sqft = area_size * 10.764
+        plot_sqm = area_size
+    elif unit == 'sq_yd':
+        plot_sqft = area_size * 9
+        plot_sqm = area_size * 0.83612736
+    else:  # sq_ft
+        plot_sqft = area_size
+        plot_sqm = area_size / 10.764
+    
+    # Get FAR and Coverage norms
+    norms = norms_from_bucket(plot_sqm)
+    far = norms['far']
+    cov = norms['cov']
+    
+    # Calculate total built-up (FAR-based)
+    if unit == 'sqm':
+        total_builtup_sqft = plot_sqft * far / 100
+    else:  # sq_yd or sq_ft
+        total_builtup_sqft = plot_sqft * far / 100
+    
+    # Calculate per-floor built-up
+    if floors_count > 0:
+        ideal_per_floor = total_builtup_sqft / floors_count
+        ground_coverage_sqft = plot_sqft * (cov / 100)
+        per_floor_builtup = min(ideal_per_floor, ground_coverage_sqft) + 200
+    else:
+        per_floor_builtup = 0
+    
+    return {
+        'total_builtup': round(total_builtup_sqft, 2),
+        'per_floor_builtup': round(per_floor_builtup, 2),
+        'far': far,
+        'coverage': cov,
+    }
+
+def parse_floor_pricing_from_notes(notes: str) -> Dict[str, float]:
+    """Parse floor pricing from notes field"""
+    floor_pricing = {}
+    if not notes:
+        return floor_pricing
+    
+    # Look for "Floor Pricing: BMT+GF: ₹50000000, FF: ₹55000000"
+    match = re.search(r'Floor Pricing:\s*(.+?)(?:\n|$)', notes)
+    if match:
+        pricing_str = match.group(1)
+        # Parse each floor pricing
+        for item in pricing_str.split(','):
+            item = item.strip()
+            if ':' in item:
+                parts = item.split(':')
+                if len(parts) >= 2:
+                    floor = parts[0].strip()
+                    price_str = parts[1].strip().replace('₹', '').replace(',', '')
+                    try:
+                        price = float(price_str)
+                        floor_pricing[floor] = price / 10000000  # Convert to Crores
+                    except ValueError:
+                        continue
+    
+    return floor_pricing
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
@@ -294,7 +454,7 @@ def get_all_leads(
     
     return [LeadResponse(**lead) for lead in leads]
 
-@api_router.get("/leads/{lead_id}", response_model=LeadResponse)
+@api_router.get("/leads/{lead_id}")
 def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -304,7 +464,54 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
-    return LeadResponse(**lead)
+    # Calculate circle values and plot specifications
+    calculations = {}
+    
+    # Only calculate for inventory leads with required data
+    if lead.get('lead_type') in ['seller', 'landlord', 'builder'] and lead.get('area_size') and lead.get('location'):
+        try:
+            # Parse floors from notes
+            floors_str = None
+            notes = lead.get('notes', '')
+            if notes:
+                match = re.search(r'Floors:\s*([^\\n]+)', notes)
+                if match:
+                    floors_str = match.group(1).strip()
+            
+            # Calculate circle values
+            if floors_str:
+                with get_db() as conn:
+                    circle_values = calculate_circle_values(
+                        lead['location'],
+                        float(lead['area_size']),
+                        floors_str,
+                        conn
+                    )
+                    calculations['circle_values'] = circle_values
+                
+                # Calculate plot specifications
+                floors_count = len([f.strip() for f in floors_str.split(',') if f.strip()])
+                plot_specs = calculate_plot_specifications(
+                    float(lead['area_size']),
+                    floors_count,
+                    'sq_yd'  # Default unit
+                )
+                calculations['plot_specifications'] = plot_specs
+            
+            # Parse floor pricing
+            floor_pricing = parse_floor_pricing_from_notes(notes)
+            if floor_pricing:
+                calculations['floor_pricing'] = floor_pricing
+                
+        except Exception as e:
+            logging.error(f"Calculation error for lead {lead_id}: {e}")
+            calculations['error'] = str(e)
+    
+    # Return lead with calculations
+    response = dict(lead)
+    response['calculations'] = calculations
+    
+    return response
 
 @api_router.post("/leads", response_model=LeadResponse)
 def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)):
