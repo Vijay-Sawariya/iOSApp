@@ -12,6 +12,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { router } from 'expo-router';
 
+interface FloorPricing {
+  floor_label: string;
+  floor_amount: number;
+}
+
 interface Lead {
   id: number;
   name: string;
@@ -22,6 +27,8 @@ interface Lead {
   lead_status: string | null;
   location: string | null;
   property_type: string | null;
+  unit: string | null;
+  floor_pricing?: FloorPricing[];
 }
 
 export default function InventoryLeadsScreen() {
@@ -118,8 +125,32 @@ export default function InventoryLeadsScreen() {
     }
   };
 
+  const formatUnit = (unit: string | null): string => {
+    if (!unit) return '';
+    switch (unit.toUpperCase()) {
+      case 'CR':
+        return 'Cr';
+      case 'L':
+        return 'L';
+      case 'K':
+      case 'TH':
+        return 'K';
+      default:
+        return unit;
+    }
+  };
+
+  const formatFloorPricing = (item: Lead): string => {
+    if (!item.floor_pricing || item.floor_pricing.length === 0) return '';
+    const unit = formatUnit(item.unit);
+    return item.floor_pricing
+      .map((fp) => `${fp.floor_label}: ${fp.floor_amount}${unit}`)
+      .join(' | ');
+  };
+
   const renderLead = ({ item }: { item: Lead }) => {
     const typeColor = getTypeColor(item.lead_type);
+    const floorPricingText = formatFloorPricing(item);
     
     return (
       <TouchableOpacity
@@ -167,6 +198,14 @@ export default function InventoryLeadsScreen() {
             <Text style={styles.temperatureText}>{item.lead_temperature || 'N/A'}</Text>
           </View>
         </View>
+
+        {/* Floor Pricing Section */}
+        {floorPricingText ? (
+          <View style={styles.floorPricingContainer}>
+            <Ionicons name="layers" size={14} color="#10B981" />
+            <Text style={styles.floorPricingText}>{floorPricingText}</Text>
+          </View>
+        ) : null}
 
         <View style={styles.leadFooter}>
           <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
@@ -373,12 +412,29 @@ const styles = StyleSheet.create({
   },
   leadFooter: {
     flexDirection: 'row',
-    gap: 8,
+    marginRight: 8,
+  },
+  floorPricingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  floorPricingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#047857',
+    marginLeft: 6,
+    flex: 1,
   },
   typeBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
+    marginRight: 8,
   },
   typeBadgeText: {
     fontSize: 12,

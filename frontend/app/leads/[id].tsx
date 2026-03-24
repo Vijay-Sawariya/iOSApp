@@ -125,6 +125,31 @@ export default function LeadDetailScreen() {
     return `₹${min} - ₹${max}`;
   };
 
+  const formatUnit = (unit: string | null): string => {
+    if (!unit) return '';
+    switch (unit.toUpperCase()) {
+      case 'CR':
+        return 'Cr';
+      case 'L':
+        return 'L';
+      case 'K':
+      case 'TH':
+        return 'K';
+      default:
+        return unit;
+    }
+  };
+
+  const isInventoryLead = (): boolean => {
+    const type = safeStr(lead.lead_type).toLowerCase();
+    return ['seller', 'landlord', 'builder'].includes(type);
+  };
+
+  const isClientLead = (): boolean => {
+    const type = safeStr(lead.lead_type).toLowerCase();
+    return ['buyer', 'tenant'].includes(type);
+  };
+
   // Render a detail row safely
   const renderDetailRow = (icon: string, label: string, value: any) => {
     const strValue = safeStr(value);
@@ -208,6 +233,38 @@ export default function LeadDetailScreen() {
           <Text style={styles.detailValue}>{safeStr(lead.lead_status) || 'New'}</Text>
         </View>
       </View>
+
+      {/* Floor Pricing - For Inventory Leads */}
+      {isInventoryLead() && lead.floor_pricing && lead.floor_pricing.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{'Floor-wise Pricing'}</Text>
+          <View style={styles.floorPricingGrid}>
+            {lead.floor_pricing.map((fp: any, index: number) => (
+              <View key={index} style={styles.floorPricingCard}>
+                <Text style={styles.floorLabel}>{safeStr(fp.floor_label)}</Text>
+                <Text style={styles.floorPrice}>
+                  {`${safeNum(fp.floor_amount)} ${formatUnit(lead.unit)}`}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Client Preferences - For Client Leads */}
+      {isClientLead() ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{'Client Preferences'}</Text>
+          {renderDetailRow('layers', 'Preferred Floors', lead.floor)}
+          {(lead.budget_min || lead.budget_max) ? (
+            <View style={styles.detailRow}>
+              <Ionicons name="wallet" size={20} color="#6B7280" />
+              <Text style={styles.detailLabel}>{'Expected Budget'}</Text>
+              <Text style={styles.detailValue}>{`${formatBudget()} ${formatUnit(lead.unit)}`}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* Additional Features */}
       {(lead.park_facing || lead.wide_road || lead.peaceful_location || lead.main_road || lead.corner) ? (
@@ -373,6 +430,31 @@ const styles = StyleSheet.create({
   featuresGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+  },
+  floorPricingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  floorPricingCard: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginRight: 12,
+    marginBottom: 12,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  floorLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#065F46',
+    marginBottom: 4,
+  },
+  floorPrice: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#047857',
   },
   featureBadge: {
     backgroundColor: '#E0F2FE',

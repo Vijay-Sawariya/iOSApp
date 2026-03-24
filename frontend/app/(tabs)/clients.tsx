@@ -21,6 +21,10 @@ interface Lead {
   lead_temperature: string | null;
   lead_status: string | null;
   location: string | null;
+  floor: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  unit: string | null;
 }
 
 export default function ClientLeadsScreen() {
@@ -81,59 +85,109 @@ export default function ClientLeadsScreen() {
     return type === 'buyer' ? 'cart' : 'key';
   };
 
-  const renderLead = ({ item }: { item: Lead }) => (
-    <TouchableOpacity
-      style={styles.leadCard}
-      onPress={() => router.push(`/leads/${item.id}` as any)}
-    >
-      <View style={styles.leadHeader}>
-        <View style={styles.leadInfo}>
-          <View style={styles.nameRow}>
-            <Ionicons 
-              name={getTypeIcon(item.lead_type) as any} 
-              size={16} 
-              color="#3B82F6" 
-              style={styles.typeIcon}
-            />
-            <Text style={styles.leadName}>{item.name}</Text>
-          </View>
-          <View style={styles.leadMeta}>
-            {item.phone && (
-              <View style={styles.metaItem}>
-                <Ionicons name="call" size={12} color="#6B7280" />
-                <Text style={styles.metaText}>{item.phone}</Text>
-              </View>
-            )}
-            {item.location && (
-              <View style={styles.metaItem}>
-                <Ionicons name="location" size={12} color="#6B7280" />
-                <Text style={styles.metaText}>{item.location}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-        <View
-          style={[
-            styles.temperatureBadge,
-            { backgroundColor: getTemperatureColor(item.lead_temperature) },
-          ]}
-        >
-          <Text style={styles.temperatureText}>{item.lead_temperature || 'N/A'}</Text>
-        </View>
-      </View>
+  const formatUnit = (unit: string | null): string => {
+    if (!unit) return '';
+    switch (unit.toUpperCase()) {
+      case 'CR':
+        return 'Cr';
+      case 'L':
+        return 'L';
+      case 'K':
+      case 'TH':
+        return 'K';
+      default:
+        return unit;
+    }
+  };
 
-      <View style={styles.leadFooter}>
-        <View style={[styles.typeBadge, { backgroundColor: '#DBEAFE' }]}>
-          <Text style={[styles.typeBadgeText, { color: '#1E40AF' }]}>
-            {item.lead_type === 'buyer' ? 'Buyer' : 'Tenant'}
-          </Text>
+  const formatBudget = (item: Lead): string => {
+    if (!item.budget_min && !item.budget_max) return '';
+    const unit = formatUnit(item.unit);
+    if (item.budget_min && item.budget_max) {
+      return `₹${item.budget_min}-${item.budget_max}${unit}`;
+    } else if (item.budget_min) {
+      return `₹${item.budget_min}${unit}+`;
+    } else if (item.budget_max) {
+      return `Up to ₹${item.budget_max}${unit}`;
+    }
+    return '';
+  };
+
+  const renderLead = ({ item }: { item: Lead }) => {
+    const budgetText = formatBudget(item);
+    
+    return (
+      <TouchableOpacity
+        style={styles.leadCard}
+        onPress={() => router.push(`/leads/${item.id}` as any)}
+      >
+        <View style={styles.leadHeader}>
+          <View style={styles.leadInfo}>
+            <View style={styles.nameRow}>
+              <Ionicons 
+                name={getTypeIcon(item.lead_type) as any} 
+                size={16} 
+                color="#3B82F6" 
+                style={styles.typeIcon}
+              />
+              <Text style={styles.leadName}>{item.name}</Text>
+            </View>
+            <View style={styles.leadMeta}>
+              {item.phone && (
+                <View style={styles.metaItem}>
+                  <Ionicons name="call" size={12} color="#6B7280" />
+                  <Text style={styles.metaText}>{item.phone}</Text>
+                </View>
+              )}
+              {item.location && (
+                <View style={styles.metaItem}>
+                  <Ionicons name="location" size={12} color="#6B7280" />
+                  <Text style={styles.metaText}>{item.location}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+          <View
+            style={[
+              styles.temperatureBadge,
+              { backgroundColor: getTemperatureColor(item.lead_temperature) },
+            ]}
+          >
+            <Text style={styles.temperatureText}>{item.lead_temperature || 'N/A'}</Text>
+          </View>
         </View>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusBadgeText}>{item.lead_status || 'New'}</Text>
+
+        {/* Client Preferences Section */}
+        {(item.floor || budgetText) ? (
+          <View style={styles.preferencesContainer}>
+            {item.floor ? (
+              <View style={styles.preferenceItem}>
+                <Ionicons name="layers" size={14} color="#3B82F6" />
+                <Text style={styles.preferenceText}>{'Floors: '}{item.floor}</Text>
+              </View>
+            ) : null}
+            {budgetText ? (
+              <View style={styles.preferenceItem}>
+                <Ionicons name="wallet" size={14} color="#10B981" />
+                <Text style={styles.preferenceText}>{'Budget: '}{budgetText}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.leadFooter}>
+          <View style={[styles.typeBadge, { backgroundColor: '#DBEAFE' }]}>
+            <Text style={[styles.typeBadgeText, { color: '#1E40AF' }]}>
+              {item.lead_type === 'buyer' ? 'Buyer' : 'Tenant'}
+            </Text>
+          </View>
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>{item.lead_status || 'New'}</Text>
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -255,16 +309,18 @@ const styles = StyleSheet.create({
     color: '#1F2937',
   },
   leadMeta: {
-    gap: 8,
+    marginBottom: 4,
   },
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginRight: 8,
+    marginBottom: 4,
   },
   metaText: {
     fontSize: 12,
     color: '#6B7280',
+    marginLeft: 4,
   },
   temperatureBadge: {
     paddingHorizontal: 12,
@@ -278,12 +334,31 @@ const styles = StyleSheet.create({
   },
   leadFooter: {
     flexDirection: 'row',
-    gap: 8,
+    marginRight: 8,
+  },
+  preferencesContainer: {
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  preferenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  preferenceText: {
+    fontSize: 13,
+    color: '#1E3A5F',
+    marginLeft: 6,
+    fontWeight: '500',
   },
   typeBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
+    marginRight: 8,
   },
   typeBadgeText: {
     fontSize: 12,

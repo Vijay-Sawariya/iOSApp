@@ -420,13 +420,13 @@ def get_client_leads(
     
     return [LeadResponse(**lead) for lead in leads]
 
-@api_router.get("/leads/inventory", response_model=List[LeadResponse])
+@api_router.get("/leads/inventory")
 def get_inventory_leads(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get INVENTORY leads (seller, landlord, builder)"""
+    """Get INVENTORY leads (seller, landlord, builder) with floor pricing"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -434,8 +434,33 @@ def get_inventory_leads(
             (limit, skip)
         )
         leads = cursor.fetchall()
+        
+        # Fetch floor pricing for all leads
+        if leads:
+            lead_ids = [lead['id'] for lead in leads]
+            placeholders = ','.join(['%s'] * len(lead_ids))
+            cursor.execute(
+                f"SELECT * FROM inventory_floor_pricing WHERE lead_id IN ({placeholders}) ORDER BY lead_id, id",
+                lead_ids
+            )
+            all_floor_pricing = cursor.fetchall()
+            
+            # Group floor pricing by lead_id
+            floor_pricing_map = {}
+            for fp in all_floor_pricing:
+                lead_id = fp['lead_id']
+                if lead_id not in floor_pricing_map:
+                    floor_pricing_map[lead_id] = []
+                floor_pricing_map[lead_id].append({
+                    'floor_label': fp['floor_label'],
+                    'floor_amount': float(fp['floor_amount']) if fp['floor_amount'] else 0
+                })
+            
+            # Add floor pricing to each lead
+            for lead in leads:
+                lead['floor_pricing'] = floor_pricing_map.get(lead['id'], [])
     
-    return [LeadResponse(**lead) for lead in leads]
+    return leads
 
 @api_router.get("/leads", response_model=List[LeadResponse])
 def get_all_leads(
@@ -461,8 +486,23 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
         cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         lead = cursor.fetchone()
         
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        
+        # Fetch floor pricing from database
+        cursor.execute(
+            "SELECT floor_label, floor_amount FROM inventory_floor_pricing WHERE lead_id = %s ORDER BY id",
+            (lead_id,)
+        )
+        floor_pricing_rows = cursor.fetchall()
+        
+    # Build floor pricing list
+    floor_pricing = []
+    for row in floor_pricing_rows:
+        floor_pricing.append({
+            'floor_label': row['floor_label'],
+            'floor_amount': float(row['floor_amount']) if row['floor_amount'] else 0
+        })
     
     # Calculate circle values and plot specifications
     calculations = {}
@@ -498,17 +538,13 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
                 )
                 calculations['plot_specifications'] = plot_specs
             
-            # Parse floor pricing
-            floor_pricing = parse_floor_pricing_from_notes(notes)
-            if floor_pricing:
-                calculations['floor_pricing'] = floor_pricing
-                
         except Exception as e:
             logging.error(f"Calculation error for lead {lead_id}: {e}")
             calculations['error'] = str(e)
     
-    # Return lead with calculations
+    # Return lead with floor pricing and calculations
     response = dict(lead)
+    response['floor_pricing'] = floor_pricing
     response['calculations'] = calculations
     
     return response
