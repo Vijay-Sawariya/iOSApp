@@ -10,7 +10,7 @@
 // ===========================================
 // CONFIGURATION
 // ===========================================
-$API_KEY = 'sagar_home_mobile_2024_secure_key'; // Same key as upload script
+$API_KEY = 'SagarHome_Upload_2024_Secret'; // Same key as upload script
 
 // ===========================================
 // CORS HEADERS

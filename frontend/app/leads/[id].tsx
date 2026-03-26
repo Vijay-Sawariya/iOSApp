@@ -23,7 +23,7 @@ import { api } from '../../services/api';
 
 // GoDaddy API Configuration
 const GODADDY_BASE_URL = 'http://sagarhomelms.com';
-const GODADDY_API_KEY = 'sagar_home_mobile_2024_secure_key';
+const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
 
 // Safe string helper - converts any value to string safely
 const safeStr = (val: any): string => {

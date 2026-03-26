@@ -21,7 +21,7 @@
 // ===========================================
 // CONFIGURATION - CHANGE THESE VALUES
 // ===========================================
-$API_KEY = 'sagar_home_mobile_2024_secure_key'; // Change this to a secure key
+$API_KEY = 'SagarHome_Upload_2024_Secret'; // Change this to a secure key
 $ALLOWED_ORIGINS = [
     'https://lead-mgmt-app-1.preview.emergentagent.com',
     'http://localhost:3000',
