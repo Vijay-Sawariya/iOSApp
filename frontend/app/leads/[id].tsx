@@ -120,9 +120,24 @@ export default function LeadDetailScreen() {
   };
 
   const formatBudget = (): string => {
-    const min = lead.budget_min ? safeNum(lead.budget_min).toLocaleString() : '0';
-    const max = lead.budget_max ? safeNum(lead.budget_max).toLocaleString() : '0';
-    return `₹${min} - ₹${max}`;
+    const min = lead.budget_min ? safeNum(lead.budget_min) : 0;
+    const max = lead.budget_max ? safeNum(lead.budget_max) : 0;
+    const unit = formatUnit(lead.unit);
+    
+    // If min and max are same, show only one value
+    if (min === max && min > 0) {
+      return `₹${min} ${unit}`;
+    }
+    // If only min exists
+    if (min > 0 && max === 0) {
+      return `₹${min}+ ${unit}`;
+    }
+    // If only max exists
+    if (max > 0 && min === 0) {
+      return `Up to ₹${max} ${unit}`;
+    }
+    // Both exist
+    return `₹${min} - ₹${max} ${unit}`;
   };
 
   const formatUnit = (unit: string | null): string => {
@@ -243,7 +258,7 @@ export default function LeadDetailScreen() {
               <View key={index} style={styles.floorPricingCard}>
                 <Text style={styles.floorLabel}>{safeStr(fp.floor_label)}</Text>
                 <Text style={styles.floorPrice}>
-                  {`${safeNum(fp.floor_amount)} ${formatUnit(lead.unit)}`}
+                  {`₹${safeNum(fp.floor_amount)} ${formatUnit(lead.unit)}`}
                 </Text>
               </View>
             ))}
@@ -251,18 +266,95 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
-      {/* Client Preferences - For Client Leads */}
-      {isClientLead() ? (
+      {/* Matched Property List - For Client Leads */}
+      {isClientLead() && lead.matched_properties && lead.matched_properties.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{'Client Preferences'}</Text>
-          {renderDetailRow('layers', 'Preferred Floors', lead.floor)}
-          {(lead.budget_min || lead.budget_max) ? (
-            <View style={styles.detailRow}>
-              <Ionicons name="wallet" size={20} color="#6B7280" />
-              <Text style={styles.detailLabel}>{'Expected Budget'}</Text>
-              <Text style={styles.detailValue}>{`${formatBudget()} ${formatUnit(lead.unit)}`}</Text>
+          <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
+          {lead.matched_properties.map((prop: any, index: number) => (
+            <View key={index} style={styles.matchedPropertyCard}>
+              {/* Property Header */}
+              <View style={styles.matchedPropertyHeader}>
+                <Text style={styles.matchedPropertyName}>{safeStr(prop.property_name)}</Text>
+                <View style={styles.matchedPropertyTypeBadge}>
+                  <Text style={styles.matchedPropertyTypeText}>{getTypeLabel(prop.property_type)}</Text>
+                </View>
+              </View>
+              
+              {/* Created By Phone */}
+              {(prop.created_by_username || prop.created_by_phone) ? (
+                <TouchableOpacity 
+                  style={styles.matchedPropertyRow}
+                  onPress={() => prop.created_by_phone && Linking.openURL(`tel:${prop.created_by_phone}`)}
+                >
+                  <Ionicons name="call" size={14} color="#6B7280" />
+                  <Text style={styles.matchedPropertyRowText}>
+                    {`${safeStr(prop.created_by_username)} ${prop.created_by_phone ? `(${prop.created_by_phone})` : ''}`}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              
+              {/* Address with Google Maps link */}
+              {prop.property_address ? (
+                <TouchableOpacity 
+                  style={styles.matchedPropertyRow}
+                  onPress={() => {
+                    if (prop.property_map_url) {
+                      Linking.openURL(prop.property_map_url);
+                    }
+                  }}
+                >
+                  <Ionicons name="location" size={14} color={prop.property_map_url ? '#3B82F6' : '#6B7280'} />
+                  <Text style={[styles.matchedPropertyRowText, prop.property_map_url && styles.linkText]}>
+                    {safeStr(prop.property_address)}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              
+              {/* Property Details Row */}
+              <View style={styles.matchedPropertyDetails}>
+                {prop.property_location ? (
+                  <Text style={styles.matchedPropertyDetailText}>{safeStr(prop.property_location)}</Text>
+                ) : null}
+                {prop.property_floor ? (
+                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_floor)}`}</Text>
+                ) : null}
+                {prop.property_bhk ? (
+                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_bhk)}`}</Text>
+                ) : null}
+                {prop.property_size ? (
+                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_size)} sq.yds`}</Text>
+                ) : null}
+                {prop.property_status ? (
+                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_status)}`}</Text>
+                ) : null}
+              </View>
+              
+              {/* Notes */}
+              {prop.property_notes ? (
+                <View style={styles.matchedPropertyNotesRow}>
+                  <Ionicons name="document-text" size={14} color="#6B7280" />
+                  <Text style={styles.matchedPropertyNotesText}>{safeStr(prop.property_notes)}</Text>
+                </View>
+              ) : null}
+              
+              {/* Floor-wise Pricing */}
+              {prop.floor_pricing && prop.floor_pricing.length > 0 ? (
+                <View style={styles.matchedPropertyFloorPricing}>
+                  <Text style={styles.matchedPropertyFloorPricingTitle}>{'Floor-wise Pricing:'}</Text>
+                  {prop.floor_pricing.map((fp: any, fpIndex: number) => (
+                    <Text key={fpIndex} style={styles.matchedPropertyFloorPricingItem}>
+                      {`• ${safeStr(fp.floor_label)}: ₹${safeNum(fp.floor_amount)} ${formatUnit(prop.property_unit)}`}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
             </View>
-          ) : null}
+          ))}
+        </View>
+      ) : isClientLead() ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
+          <Text style={styles.noMatchedText}>{'No matched properties found'}</Text>
         </View>
       ) : null}
 
@@ -473,6 +565,103 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4B5563',
     lineHeight: 22,
+  },
+  noMatchedText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  matchedPropertyCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  matchedPropertyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  matchedPropertyName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
+  },
+  matchedPropertyTypeBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  matchedPropertyTypeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#1E40AF',
+  },
+  matchedPropertyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  matchedPropertyRowText: {
+    fontSize: 14,
+    color: '#475569',
+    marginLeft: 8,
+    flex: 1,
+  },
+  linkText: {
+    color: '#3B82F6',
+    textDecorationLine: 'underline',
+  },
+  matchedPropertyDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: '#F1F5F9',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  matchedPropertyDetailText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  matchedPropertyNotesRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  matchedPropertyNotesText: {
+    fontSize: 13,
+    color: '#92400E',
+    marginLeft: 8,
+    flex: 1,
+  },
+  matchedPropertyFloorPricing: {
+    backgroundColor: '#ECFDF5',
+    padding: 12,
+    borderRadius: 8,
+  },
+  matchedPropertyFloorPricingTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#065F46',
+    marginBottom: 6,
+  },
+  matchedPropertyFloorPricingItem: {
+    fontSize: 14,
+    color: '#047857',
+    fontWeight: '500',
+    marginLeft: 4,
+    marginBottom: 2,
   },
   bottomActions: {
     padding: 20,

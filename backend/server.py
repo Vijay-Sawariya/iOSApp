@@ -547,6 +547,58 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     response['floor_pricing'] = floor_pricing
     response['calculations'] = calculations
     
+    # Fetch matched properties for client leads (buyer, tenant)
+    if lead.get('lead_type') in ['buyer', 'tenant']:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            # Get matched properties from preferred_leads
+            cursor.execute("""
+                SELECT 
+                    pl.id as match_id,
+                    pl.reaction,
+                    m.id as property_id,
+                    m.name as property_name,
+                    m.lead_type as property_type,
+                    m.phone as property_phone,
+                    m.floor as property_floor,
+                    m.bhk as property_bhk,
+                    m.area_size as property_size,
+                    m.lead_status as property_status,
+                    m.location as property_location,
+                    m.address as property_address,
+                    m.Property_locationUrl as property_map_url,
+                    m.notes as property_notes,
+                    m.unit as property_unit,
+                    m.created_by as property_created_by,
+                    u.username as created_by_username,
+                    u.phone as created_by_phone
+                FROM preferred_leads pl
+                LEFT JOIN leads m ON pl.matching_lead_id = m.id
+                LEFT JOIN users u ON m.created_by = u.id
+                WHERE pl.lead_id = %s
+                ORDER BY pl.created_at DESC
+            """, (lead_id,))
+            matched_properties = cursor.fetchall()
+            
+            # Fetch floor pricing for each matched property
+            for prop in matched_properties:
+                if prop.get('property_id'):
+                    cursor.execute(
+                        "SELECT floor_label, floor_amount FROM inventory_floor_pricing WHERE lead_id = %s ORDER BY id",
+                        (prop['property_id'],)
+                    )
+                    prop_floor_pricing = cursor.fetchall()
+                    prop['floor_pricing'] = [
+                        {'floor_label': fp['floor_label'], 'floor_amount': float(fp['floor_amount']) if fp['floor_amount'] else 0}
+                        for fp in prop_floor_pricing
+                    ]
+                else:
+                    prop['floor_pricing'] = []
+            
+            response['matched_properties'] = matched_properties
+    else:
+        response['matched_properties'] = []
+    
     return response
 
 @api_router.post("/leads", response_model=LeadResponse)
