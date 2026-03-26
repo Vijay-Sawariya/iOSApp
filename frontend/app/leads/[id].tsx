@@ -80,10 +80,14 @@ export default function LeadDetailScreen() {
       const data = await api.getLead(String(id));
       console.log('Lead data loaded:', JSON.stringify(data, null, 2));
       setLead(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load lead:', err);
-      setError('Failed to load lead details');
-      Alert.alert('Error', 'Failed to load lead details');
+      const errorMessage = err?.message || 'Failed to load lead details';
+      setError(errorMessage);
+      // Don't show alert for "no cached data" errors - the error UI will handle it
+      if (!errorMessage.includes('No cached data')) {
+        Alert.alert('Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -406,9 +410,26 @@ export default function LeadDetailScreen() {
   }
 
   if (error || !lead) {
+    const isOfflineError = error?.includes('No cached data') || error?.includes('offline');
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{error || 'Lead not found'}</Text>
+        <Ionicons 
+          name={isOfflineError ? "cloud-offline" : "alert-circle"} 
+          size={48} 
+          color={isOfflineError ? "#6B7280" : "#EF4444"} 
+        />
+        <Text style={styles.errorText}>
+          {isOfflineError 
+            ? 'No offline data available' 
+            : (error || 'Lead not found')
+          }
+        </Text>
+        <Text style={styles.errorSubText}>
+          {isOfflineError 
+            ? 'This lead hasn\'t been viewed before while online. Please connect to the internet to load it.'
+            : 'There was an error loading this lead.'
+          }
+        </Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>{'Go Back'}</Text>
         </TouchableOpacity>
@@ -1007,8 +1028,16 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#EF4444',
+    color: '#374151',
     marginTop: 16,
+    textAlign: 'center',
+  },
+  errorSubText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
   backButton: {
     marginTop: 24,

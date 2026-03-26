@@ -406,7 +406,7 @@ def get_me(current_user: dict = Depends(get_current_user)):
 @api_router.get("/leads/clients", response_model=List[LeadResponse])
 def get_client_leads(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
     """Get CLIENT leads (buyer, tenant)"""
@@ -423,7 +423,7 @@ def get_client_leads(
 @api_router.get("/leads/inventory")
 def get_inventory_leads(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
     """Get INVENTORY leads (seller, landlord, builder) with floor pricing"""
@@ -465,7 +465,7 @@ def get_inventory_leads(
 @api_router.get("/leads", response_model=List[LeadResponse])
 def get_all_leads(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
     """Get all leads"""
