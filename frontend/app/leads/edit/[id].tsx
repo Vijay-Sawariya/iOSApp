@@ -23,7 +23,6 @@ const PROPERTY_TYPES = ['Apartment', 'Builder', 'Plot', 'Vila'];
 const PROPERTY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const UNITS = ['CR', 'L', 'K'];
 const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
-const FACING = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
 
 const LOCATIONS = [
   "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
@@ -42,18 +41,27 @@ const LOCATIONS = [
   "Rajdoot Marg", "Hanuman Road"
 ];
 
+interface FloorPrice {
+  floor: string;
+  price: string;
+}
+
 export default function EditLeadScreen() {
   const { id } = useLocalSearchParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
-  // Form fields
+  // Basic Info
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  
+  // Lead Classification
   const [leadType, setLeadType] = useState('buyer');
   const [leadTemperature, setLeadTemperature] = useState('Warm');
   const [leadStatus, setLeadStatus] = useState('New');
+  
+  // Property Details
   const [location, setLocation] = useState('');
   const [address, setAddress] = useState('');
   const [propertyType, setPropertyType] = useState('');
@@ -61,13 +69,22 @@ export default function EditLeadScreen() {
   const [bhk, setBhk] = useState('');
   const [floor, setFloor] = useState('');
   const [areaSize, setAreaSize] = useState('');
+  
+  // Budget (for Clients)
   const [budgetMin, setBudgetMin] = useState('');
   const [budgetMax, setBudgetMax] = useState('');
   const [unit, setUnit] = useState('CR');
+  
+  // Floor-wise Pricing (for Inventory)
+  const [floorPrices, setFloorPrices] = useState<FloorPrice[]>([]);
+  
+  // Other
   const [parking, setParking] = useState('');
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
+
+  const isInventory = ['seller', 'landlord', 'builder'].includes(leadType);
 
   useEffect(() => {
     loadLead();
@@ -76,6 +93,8 @@ export default function EditLeadScreen() {
   const loadLead = async () => {
     try {
       const data = await api.getLead(String(id));
+      console.log('Loaded lead data:', data);
+      
       setName(data.name || '');
       setPhone(data.phone || '');
       setEmail(data.email || '');
@@ -92,16 +111,39 @@ export default function EditLeadScreen() {
       setBudgetMin(data.budget_min ? String(data.budget_min) : '');
       setBudgetMax(data.budget_max ? String(data.budget_max) : '');
       setUnit(data.unit || 'CR');
-      setParking(data.car_parking_number || '');
-      setLift(data.lift_available || '');
+      setParking(data.car_parking_number ? String(data.car_parking_number) : '');
+      setLift(data.lift_available ? String(data.lift_available) : '');
       setNotes(data.notes || '');
-      setGoogleMapUrl(data.Property_locationUrl || '');
+      setGoogleMapUrl(data.Property_locationUrl || data.google_map_url || '');
+      
+      // Load floor pricing if available
+      if (data.floor_pricing && Array.isArray(data.floor_pricing)) {
+        const prices = data.floor_pricing.map((fp: any) => ({
+          floor: fp.floor_label || '',
+          price: fp.floor_amount ? String(fp.floor_amount) : ''
+        }));
+        setFloorPrices(prices);
+      }
     } catch (err) {
       console.error('Failed to load lead:', err);
       Alert.alert('Error', 'Failed to load lead details');
     } finally {
       setLoading(false);
     }
+  };
+
+  const addFloorPrice = () => {
+    setFloorPrices([...floorPrices, { floor: '', price: '' }]);
+  };
+
+  const updateFloorPrice = (index: number, field: 'floor' | 'price', value: string) => {
+    const updated = [...floorPrices];
+    updated[index][field] = value;
+    setFloorPrices(updated);
+  };
+
+  const removeFloorPrice = (index: number) => {
+    setFloorPrices(floorPrices.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -112,7 +154,7 @@ export default function EditLeadScreen() {
 
     setSaving(true);
     try {
-      await api.updateLead(String(id), {
+      const updateData: any = {
         name: name.trim(),
         phone: phone.trim(),
         email: email.trim(),
@@ -126,14 +168,23 @@ export default function EditLeadScreen() {
         bhk,
         floor,
         area_size: areaSize ? parseFloat(areaSize) : null,
-        budget_min: budgetMin ? parseFloat(budgetMin) : null,
-        budget_max: budgetMax ? parseFloat(budgetMax) : null,
         unit,
         car_parking_number: parking,
         lift_available: lift,
         notes: notes.trim(),
         Property_locationUrl: googleMapUrl.trim(),
-      });
+      };
+
+      if (isInventory) {
+        // For inventory, include floor pricing
+        updateData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
+      } else {
+        // For clients, include budget
+        updateData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
+        updateData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
+      }
+
+      await api.updateLead(String(id), updateData);
       Alert.alert('Success', 'Lead updated successfully', [
         { text: 'OK', onPress: () => router.back() }
       ]);
@@ -153,8 +204,6 @@ export default function EditLeadScreen() {
       </View>
     );
   }
-
-  const isInventory = ['seller', 'landlord', 'builder'].includes(leadType);
 
   return (
     <KeyboardAvoidingView 
@@ -190,6 +239,7 @@ export default function EditLeadScreen() {
             value={name}
             onChangeText={setName}
             placeholder="Enter name"
+            placeholderTextColor="#9CA3AF"
           />
 
           <Text style={styles.label}>Phone</Text>
@@ -197,7 +247,8 @@ export default function EditLeadScreen() {
             style={styles.input}
             value={phone}
             onChangeText={setPhone}
-            placeholder="Enter phone"
+            placeholder="Enter phone number"
+            placeholderTextColor="#9CA3AF"
             keyboardType="phone-pad"
           />
 
@@ -207,6 +258,7 @@ export default function EditLeadScreen() {
             value={email}
             onChangeText={setEmail}
             placeholder="Enter email"
+            placeholderTextColor="#9CA3AF"
             keyboardType="email-address"
           />
         </View>
@@ -221,9 +273,10 @@ export default function EditLeadScreen() {
               selectedValue={leadType}
               onValueChange={setLeadType}
               style={styles.picker}
+              itemStyle={styles.pickerItem}
             >
               {LEAD_TYPES.map((type) => (
-                <Picker.Item key={type} label={type.charAt(0).toUpperCase() + type.slice(1)} value={type} />
+                <Picker.Item key={type} label={type.charAt(0).toUpperCase() + type.slice(1)} value={type} color="#1F2937" />
               ))}
             </Picker>
           </View>
@@ -234,9 +287,10 @@ export default function EditLeadScreen() {
               selectedValue={leadTemperature}
               onValueChange={setLeadTemperature}
               style={styles.picker}
+              itemStyle={styles.pickerItem}
             >
               {LEAD_TEMPERATURES.map((temp) => (
-                <Picker.Item key={temp} label={temp} value={temp} />
+                <Picker.Item key={temp} label={temp} value={temp} color="#1F2937" />
               ))}
             </Picker>
           </View>
@@ -247,9 +301,10 @@ export default function EditLeadScreen() {
               selectedValue={leadStatus}
               onValueChange={setLeadStatus}
               style={styles.picker}
+              itemStyle={styles.pickerItem}
             >
               {LEAD_STATUSES.map((status) => (
-                <Picker.Item key={status} label={status} value={status} />
+                <Picker.Item key={status} label={status} value={status} color="#1F2937" />
               ))}
             </Picker>
           </View>
@@ -265,10 +320,11 @@ export default function EditLeadScreen() {
               selectedValue={location}
               onValueChange={setLocation}
               style={styles.picker}
+              itemStyle={styles.pickerItem}
             >
-              <Picker.Item label="Select Location" value="" />
+              <Picker.Item label="Select Location" value="" color="#9CA3AF" />
               {LOCATIONS.map((loc) => (
-                <Picker.Item key={loc} label={loc} value={loc} />
+                <Picker.Item key={loc} label={loc} value={loc} color="#1F2937" />
               ))}
             </Picker>
           </View>
@@ -281,6 +337,7 @@ export default function EditLeadScreen() {
                 value={address}
                 onChangeText={setAddress}
                 placeholder="Enter property address"
+                placeholderTextColor="#9CA3AF"
               />
 
               <Text style={styles.label}>Google Map URL</Text>
@@ -289,6 +346,7 @@ export default function EditLeadScreen() {
                 value={googleMapUrl}
                 onChangeText={setGoogleMapUrl}
                 placeholder="https://maps.google.com/..."
+                placeholderTextColor="#9CA3AF"
               />
             </>
           )}
@@ -299,10 +357,11 @@ export default function EditLeadScreen() {
               selectedValue={propertyType}
               onValueChange={setPropertyType}
               style={styles.picker}
+              itemStyle={styles.pickerItem}
             >
-              <Picker.Item label="Select Type" value="" />
+              <Picker.Item label="Select Type" value="" color="#9CA3AF" />
               {PROPERTY_TYPES.map((type) => (
-                <Picker.Item key={type} label={type} value={type} />
+                <Picker.Item key={type} label={type} value={type} color="#1F2937" />
               ))}
             </Picker>
           </View>
@@ -315,10 +374,11 @@ export default function EditLeadScreen() {
                   selectedValue={propertyStatus}
                   onValueChange={setPropertyStatus}
                   style={styles.picker}
+                  itemStyle={styles.pickerItem}
                 >
-                  <Picker.Item label="Select Status" value="" />
+                  <Picker.Item label="Select Status" value="" color="#9CA3AF" />
                   {PROPERTY_STATUSES.map((status) => (
-                    <Picker.Item key={status} label={status} value={status} />
+                    <Picker.Item key={status} label={status} value={status} color="#1F2937" />
                   ))}
                 </Picker>
               </View>
@@ -333,16 +393,24 @@ export default function EditLeadScreen() {
                 value={bhk}
                 onChangeText={setBhk}
                 placeholder="e.g., 3 BHK"
+                placeholderTextColor="#9CA3AF"
               />
             </View>
             <View style={styles.halfField}>
               <Text style={styles.label}>Floor</Text>
-              <TextInput
-                style={styles.input}
-                value={floor}
-                onChangeText={setFloor}
-                placeholder="e.g., GF, FF, SF"
-              />
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={floor}
+                  onValueChange={setFloor}
+                  style={styles.picker}
+                  itemStyle={styles.pickerItem}
+                >
+                  <Picker.Item label="Select Floor" value="" color="#9CA3AF" />
+                  {FLOORS.map((f) => (
+                    <Picker.Item key={f} label={f} value={f} color="#1F2937" />
+                  ))}
+                </Picker>
+              </View>
             </View>
           </View>
 
@@ -353,7 +421,8 @@ export default function EditLeadScreen() {
                 style={styles.input}
                 value={areaSize}
                 onChangeText={setAreaSize}
-                placeholder="Enter area"
+                placeholder="e.g., 200"
+                placeholderTextColor="#9CA3AF"
                 keyboardType="numeric"
               />
             </View>
@@ -364,52 +433,134 @@ export default function EditLeadScreen() {
                 value={parking}
                 onChangeText={setParking}
                 placeholder="e.g., 2"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
               />
             </View>
           </View>
+
+          {isInventory && (
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Lift</Text>
+                <TextInput
+                  style={styles.input}
+                  value={lift}
+                  onChangeText={setLift}
+                  placeholder="e.g., Yes / 1"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Unit</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={unit}
+                    onValueChange={setUnit}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {UNITS.map((u) => (
+                      <Picker.Item key={u} label={u} value={u} color="#1F2937" />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
-        {/* Budget */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Budget</Text>
-          
-          <View style={styles.row}>
-            <View style={styles.thirdField}>
-              <Text style={styles.label}>Min</Text>
-              <TextInput
-                style={styles.input}
-                value={budgetMin}
-                onChangeText={setBudgetMin}
-                placeholder="Min"
-                keyboardType="numeric"
-              />
+        {/* Floor-wise Pricing (for Inventory) */}
+        {isInventory && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Asking Price (Floor-wise)</Text>
+              <TouchableOpacity style={styles.addButton} onPress={addFloorPrice}>
+                <Ionicons name="add-circle" size={24} color="#10B981" />
+              </TouchableOpacity>
             </View>
-            <View style={styles.thirdField}>
-              <Text style={styles.label}>Max</Text>
-              <TextInput
-                style={styles.input}
-                value={budgetMax}
-                onChangeText={setBudgetMax}
-                placeholder="Max"
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.thirdField}>
-              <Text style={styles.label}>Unit</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={unit}
-                  onValueChange={setUnit}
-                  style={styles.picker}
-                >
-                  {UNITS.map((u) => (
-                    <Picker.Item key={u} label={u} value={u} />
-                  ))}
-                </Picker>
+
+            {floorPrices.length === 0 && (
+              <Text style={styles.emptyText}>No floor prices added. Tap + to add.</Text>
+            )}
+
+            {floorPrices.map((fp, index) => (
+              <View key={index} style={styles.floorPriceRow}>
+                <View style={styles.floorPickerContainer}>
+                  <Picker
+                    selectedValue={fp.floor}
+                    onValueChange={(value) => updateFloorPrice(index, 'floor', value)}
+                    style={styles.floorPicker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    <Picker.Item label="Floor" value="" color="#9CA3AF" />
+                    {FLOORS.map((f) => (
+                      <Picker.Item key={f} label={f} value={f} color="#1F2937" />
+                    ))}
+                  </Picker>
+                </View>
+                <TextInput
+                  style={styles.priceInput}
+                  value={fp.price}
+                  onChangeText={(value) => updateFloorPrice(index, 'price', value)}
+                  placeholder="Price"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity onPress={() => removeFloorPrice(index)} style={styles.removeButton}>
+                  <Ionicons name="close-circle" size={24} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Budget (for Clients) */}
+        {!isInventory && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Budget</Text>
+            
+            <View style={styles.row}>
+              <View style={styles.thirdField}>
+                <Text style={styles.label}>Min</Text>
+                <TextInput
+                  style={styles.input}
+                  value={budgetMin}
+                  onChangeText={setBudgetMin}
+                  placeholder="Min"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.thirdField}>
+                <Text style={styles.label}>Max</Text>
+                <TextInput
+                  style={styles.input}
+                  value={budgetMax}
+                  onChangeText={setBudgetMax}
+                  placeholder="Max"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.thirdField}>
+                <Text style={styles.label}>Unit</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={unit}
+                    onValueChange={setUnit}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {UNITS.map((u) => (
+                      <Picker.Item key={u} label={u} value={u} color="#1F2937" />
+                    ))}
+                  </Picker>
+                </View>
               </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Notes */}
         <View style={styles.section}>
@@ -419,6 +570,7 @@ export default function EditLeadScreen() {
             value={notes}
             onChangeText={setNotes}
             placeholder="Add notes..."
+            placeholderTextColor="#9CA3AF"
             multiline
             numberOfLines={4}
           />
@@ -488,6 +640,12 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -518,6 +676,10 @@ const styles = StyleSheet.create({
     height: 50,
     color: '#1F2937',
   },
+  pickerItem: {
+    color: '#1F2937',
+    fontSize: 14,
+  },
   row: {
     flexDirection: 'row',
     marginHorizontal: -8,
@@ -533,6 +695,44 @@ const styles = StyleSheet.create({
   notesInput: {
     textAlignVertical: 'top',
     minHeight: 100,
+  },
+  addButton: {
+    padding: 4,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  floorPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  floorPickerContainer: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    marginRight: 8,
+    overflow: 'hidden',
+  },
+  floorPicker: {
+    height: 50,
+    color: '#1F2937',
+  },
+  priceInput: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 14,
+    fontSize: 14,
+    color: '#1F2937',
+    marginRight: 8,
+  },
+  removeButton: {
+    padding: 4,
   },
   bottomPadding: {
     height: 40,
