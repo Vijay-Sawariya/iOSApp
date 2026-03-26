@@ -22,7 +22,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { api } from '../../services/api';
 
 // GoDaddy API Configuration
-const GODADDY_BASE_URL = 'http://sagarhomelms.com';
+const GODADDY_BASE_URL = 'https://sagarhomelms.com';
 const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
 
 // Safe string helper - converts any value to string safely
