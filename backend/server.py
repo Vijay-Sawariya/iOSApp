@@ -570,7 +570,7 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
                     m.notes as property_notes,
                     m.unit as property_unit,
                     m.created_by as property_created_by,
-                    u.username as created_by_username,
+                    u.full_name as created_by_fullname,
                     u.phone as created_by_phone
                 FROM preferred_leads pl
                 LEFT JOIN leads m ON pl.matching_lead_id = m.id

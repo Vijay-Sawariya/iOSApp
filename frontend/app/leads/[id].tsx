@@ -266,6 +266,14 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
+      {/* Client Notes - Show before Matched Property List */}
+      {isClientLead() && lead.notes ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{'Notes'}</Text>
+          <Text style={styles.notesText}>{safeStr(lead.notes)}</Text>
+        </View>
+      ) : null}
+
       {/* Matched Property List - For Client Leads */}
       {isClientLead() && lead.matched_properties && lead.matched_properties.length > 0 ? (
         <View style={styles.section}>
@@ -280,54 +288,40 @@ export default function LeadDetailScreen() {
                 </View>
               </View>
               
-              {/* Created By Phone */}
-              {(prop.created_by_username || prop.created_by_phone) ? (
+              {/* Phone Number (Full Name) */}
+              {(prop.created_by_fullname || prop.created_by_phone) ? (
                 <TouchableOpacity 
                   style={styles.matchedPropertyRow}
                   onPress={() => prop.created_by_phone && Linking.openURL(`tel:${prop.created_by_phone}`)}
                 >
                   <Ionicons name="call" size={14} color="#6B7280" />
                   <Text style={styles.matchedPropertyRowText}>
-                    {`${safeStr(prop.created_by_username)} ${prop.created_by_phone ? `(${prop.created_by_phone})` : ''}`}
+                    {`${safeStr(prop.created_by_phone)}${prop.created_by_fullname ? ` (${safeStr(prop.created_by_fullname)})` : ''}`}
                   </Text>
                 </TouchableOpacity>
               ) : null}
               
-              {/* Address with Google Maps link */}
-              {prop.property_address ? (
-                <TouchableOpacity 
-                  style={styles.matchedPropertyRow}
-                  onPress={() => {
-                    if (prop.property_map_url) {
-                      Linking.openURL(prop.property_map_url);
-                    }
-                  }}
-                >
-                  <Ionicons name="location" size={14} color={prop.property_map_url ? '#3B82F6' : '#6B7280'} />
-                  <Text style={[styles.matchedPropertyRowText, prop.property_map_url && styles.linkText]}>
-                    {safeStr(prop.property_address)}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              
-              {/* Property Details Row */}
-              <View style={styles.matchedPropertyDetails}>
-                {prop.property_location ? (
-                  <Text style={styles.matchedPropertyDetailText}>{safeStr(prop.property_location)}</Text>
-                ) : null}
-                {prop.property_floor ? (
-                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_floor)}`}</Text>
-                ) : null}
-                {prop.property_bhk ? (
-                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_bhk)}`}</Text>
-                ) : null}
-                {prop.property_size ? (
-                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_size)} sq.yds`}</Text>
-                ) : null}
-                {prop.property_status ? (
-                  <Text style={styles.matchedPropertyDetailText}>{` | ${safeStr(prop.property_status)}`}</Text>
-                ) : null}
-              </View>
+              {/* Address with property details on same line - clickable for Google Maps */}
+              <TouchableOpacity 
+                style={styles.matchedPropertyRow}
+                onPress={() => {
+                  if (prop.property_map_url) {
+                    Linking.openURL(prop.property_map_url);
+                  }
+                }}
+              >
+                <Ionicons name="location" size={14} color={prop.property_map_url ? '#3B82F6' : '#6B7280'} />
+                <Text style={[styles.matchedPropertyRowText, prop.property_map_url && styles.linkText]}>
+                  {[
+                    prop.property_address,
+                    prop.property_location,
+                    prop.property_floor,
+                    prop.property_bhk,
+                    prop.property_size ? `${prop.property_size} sq.yds` : null,
+                    prop.property_status
+                  ].filter(Boolean).join(' | ')}
+                </Text>
+              </TouchableOpacity>
               
               {/* Notes */}
               {prop.property_notes ? (
@@ -372,8 +366,8 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
-      {/* Notes */}
-      {lead.notes ? (
+      {/* Notes - For Inventory Leads only (Client notes shown before Matched Properties) */}
+      {isInventoryLead() && lead.notes ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{'Notes'}</Text>
           <Text style={styles.notesText}>{safeStr(lead.notes)}</Text>
