@@ -45,6 +45,8 @@ export default function LeadDetailScreen() {
   const [logChannel, setLogChannel] = useState('Call');
   const [logOutcome, setLogOutcome] = useState('Connected');
   const [logNotes, setLogNotes] = useState('');
+  const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
+  const [nextReminderDate, setNextReminderDate] = useState('');
   const [savingLog, setSavingLog] = useState(false);
 
   useEffect(() => {
@@ -88,12 +90,16 @@ export default function LeadDetailScreen() {
         channel: logChannel,
         outcome: logOutcome,
         notes: logNotes,
+        followup_date: logDate,
+        next_followup: nextReminderDate ? `${nextReminderDate}T09:00` : undefined,
       });
       Alert.alert('Success', 'Conversation logged successfully');
       setShowLogModal(false);
       setLogChannel('Call');
       setLogOutcome('Connected');
       setLogNotes('');
+      setLogDate(new Date().toISOString().split('T')[0]);
+      setNextReminderDate('');
       loadFollowups();
     } catch (err) {
       console.error('Failed to save log:', err);
@@ -344,62 +350,72 @@ export default function LeadDetailScreen() {
           <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
           {lead.matched_properties.map((prop: any, index: number) => (
             <View key={index} style={styles.matchedPropertyCard}>
-              {/* Property Header */}
+              {/* Property Header with Action Icons */}
               <View style={styles.matchedPropertyHeader}>
-                <Text style={styles.matchedPropertyName}>{safeStr(prop.property_name)}</Text>
-                <View style={styles.matchedPropertyTypeBadge}>
-                  <Text style={styles.matchedPropertyTypeText}>{getTypeLabel(prop.property_type)}</Text>
+                <View style={styles.matchedPropertyNameContainer}>
+                  <Text style={styles.matchedPropertyName}>{safeStr(prop.property_name)}</Text>
+                  <Text style={styles.matchedPropertyType}>{` (${getTypeLabel(prop.property_type)})`}</Text>
                 </View>
-              </View>
-              
-              {/* Phone Number (Full Name) */}
-              {(prop.created_by_fullname || prop.created_by_phone) ? (
-                <TouchableOpacity 
-                  style={styles.matchedPropertyRow}
-                  onPress={() => prop.created_by_phone && Linking.openURL(`tel:${prop.created_by_phone}`)}
-                >
-                  <Ionicons name="call" size={14} color="#6B7280" />
-                  <Text style={styles.matchedPropertyRowText}>
-                    {`${safeStr(prop.created_by_phone)}${prop.created_by_fullname ? ` (${safeStr(prop.created_by_fullname)})` : ''}`}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              
-              {/* Address (hyperlinked) and Property Details (not hyperlinked) on same line */}
-              <View style={styles.matchedPropertyRow}>
-                <Ionicons name="location" size={14} color={prop.property_map_url ? '#3B82F6' : '#6B7280'} />
-                <View style={styles.matchedPropertyAddressContainer}>
-                  {prop.property_address ? (
+                <View style={styles.matchedPropertyActions}>
+                  {prop.created_by_phone ? (
                     <TouchableOpacity 
-                      onPress={() => {
-                        if (prop.property_map_url) {
-                          Linking.openURL(prop.property_map_url);
-                        }
-                      }}
+                      style={styles.actionIcon}
+                      onPress={() => Linking.openURL(`tel:${prop.created_by_phone}`)}
                     >
-                      <Text style={[styles.matchedPropertyAddressText, prop.property_map_url && styles.linkText]}>
-                        {safeStr(prop.property_address)}
-                      </Text>
+                      <Ionicons name="call" size={18} color="#22C55E" />
                     </TouchableOpacity>
                   ) : null}
-                  <Text style={styles.matchedPropertyDetailsText}>
-                    {[
-                      prop.property_location,
-                      prop.property_floor,
-                      prop.property_bhk,
-                      prop.property_size ? `${prop.property_size} sq.yds` : null,
-                      prop.property_status
-                    ].filter(Boolean).join(' | ')}
-                  </Text>
+                  {prop.property_map_url ? (
+                    <TouchableOpacity 
+                      style={styles.actionIcon}
+                      onPress={() => Linking.openURL(prop.property_map_url)}
+                    >
+                      <Ionicons name="location" size={18} color="#3B82F6" />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               </View>
+              
+              {/* Phone with Gen By */}
+              {(prop.created_by_fullname || prop.created_by_phone) ? (
+                <View style={styles.matchedPropertyInfoRow}>
+                  <Ionicons name="call-outline" size={16} color="#22C55E" />
+                  <Text style={styles.matchedPropertyInfoText}>
+                    {safeStr(prop.created_by_phone)}
+                    {prop.created_by_fullname ? (
+                      <Text style={styles.genByText}>{`  (Gen By: ${safeStr(prop.created_by_fullname)})`}</Text>
+                    ) : null}
+                  </Text>
+                </View>
+              ) : null}
+              
+              {/* Property Details Row - Address | Location | Floor | BHK | Size */}
+              <View style={styles.matchedPropertyInfoRow}>
+                <Ionicons name="home-outline" size={16} color="#6B7280" />
+                <Text style={styles.matchedPropertyInfoText}>
+                  {[
+                    prop.property_address,
+                    prop.property_location,
+                    prop.property_floor,
+                    prop.property_bhk,
+                    prop.property_size ? `${prop.property_size} sq yds` : null
+                  ].filter(Boolean).join(' | ')}
+                </Text>
+              </View>
+              
+              {/* Status Row */}
+              {prop.property_status ? (
+                <View style={styles.matchedPropertyInfoRow}>
+                  <Text style={styles.statusLabel}>{'Status: '}</Text>
+                  <Text style={styles.statusValue}>{safeStr(prop.property_status)}</Text>
+                </View>
+              ) : null}
               
               {/* Notes */}
               {prop.property_notes ? (
-                <View style={styles.matchedPropertyNotesRow}>
-                  <Ionicons name="document-text" size={14} color="#6B7280" />
-                  <Text style={styles.matchedPropertyNotesText}>{safeStr(prop.property_notes)}</Text>
-                </View>
+                <Text style={styles.matchedPropertyNotes}>
+                  {'Notes: '}{safeStr(prop.property_notes)}
+                </Text>
               ) : null}
               
               {/* Floor-wise Pricing */}
@@ -408,9 +424,10 @@ export default function LeadDetailScreen() {
                   <Text style={styles.matchedPropertyFloorPricingTitle}>{'Floor-wise Pricing:'}</Text>
                   {prop.floor_pricing.map((fp: any, fpIndex: number) => (
                     <Text key={fpIndex} style={styles.matchedPropertyFloorPricingItem}>
-                      {`• ${safeStr(fp.floor_label)}: ₹${safeNum(fp.floor_amount)} ${formatUnit(prop.property_unit)}`}
+                      {`• ${safeStr(fp.floor_label)}: ₹${safeNum(fp.floor_amount)} ${formatUnit(prop.property_unit).toUpperCase()}`}
                     </Text>
                   ))}
+                  <Text style={styles.negotiableText}>{'(All prices are negotiable)'}</Text>
                 </View>
               ) : null}
             </View>
@@ -532,41 +549,59 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
             </View>
             
-            <Text style={styles.modalLabel}>{'Channel'}</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={logChannel}
-                onValueChange={setLogChannel}
-                style={styles.picker}
-              >
-                {CHANNELS.map((channel) => (
-                  <Picker.Item key={channel} label={channel} value={channel} />
-                ))}
-              </Picker>
-            </View>
-            
-            <Text style={styles.modalLabel}>{'Outcome'}</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={logOutcome}
-                onValueChange={setLogOutcome}
-                style={styles.picker}
-              >
-                {OUTCOMES.map((outcome) => (
-                  <Picker.Item key={outcome} label={outcome} value={outcome} />
-                ))}
-              </Picker>
-            </View>
-            
-            <Text style={styles.modalLabel}>{'Notes'}</Text>
-            <TextInput
-              style={styles.notesInput}
-              multiline
-              numberOfLines={4}
-              placeholder="Add notes about this conversation..."
-              value={logNotes}
-              onChangeText={setLogNotes}
-            />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>{'Date of Conversation'}</Text>
+              <TextInput
+                style={styles.dateInput}
+                placeholder="YYYY-MM-DD"
+                value={logDate}
+                onChangeText={setLogDate}
+              />
+              
+              <Text style={styles.modalLabel}>{'Channel'}</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={logChannel}
+                  onValueChange={setLogChannel}
+                  style={styles.picker}
+                >
+                  {CHANNELS.map((channel) => (
+                    <Picker.Item key={channel} label={channel} value={channel} />
+                  ))}
+                </Picker>
+              </View>
+              
+              <Text style={styles.modalLabel}>{'Outcome'}</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={logOutcome}
+                  onValueChange={setLogOutcome}
+                  style={styles.picker}
+                >
+                  {OUTCOMES.map((outcome) => (
+                    <Picker.Item key={outcome} label={outcome} value={outcome} />
+                  ))}
+                </Picker>
+              </View>
+              
+              <Text style={styles.modalLabel}>{'Notes'}</Text>
+              <TextInput
+                style={styles.notesInput}
+                multiline
+                numberOfLines={3}
+                placeholder="Add notes about this conversation..."
+                value={logNotes}
+                onChangeText={setLogNotes}
+              />
+              
+              <Text style={styles.modalLabel}>{'Next Reminder Date (Optional)'}</Text>
+              <TextInput
+                style={styles.dateInput}
+                placeholder="YYYY-MM-DD"
+                value={nextReminderDate}
+                onChangeText={setNextReminderDate}
+              />
+            </ScrollView>
             
             <View style={styles.modalActions}>
               <TouchableOpacity 
@@ -788,13 +823,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  matchedPropertyNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   matchedPropertyName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1E293B',
+  },
+  matchedPropertyType: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  matchedPropertyActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  matchedPropertyInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  matchedPropertyInfoText: {
+    fontSize: 14,
+    color: '#374151',
+    marginLeft: 8,
     flex: 1,
+    lineHeight: 20,
+  },
+  genByText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  statusLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 24,
+  },
+  statusValue: {
+    fontSize: 14,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  matchedPropertyNotes: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 4,
+    marginBottom: 8,
+    paddingLeft: 24,
   },
   matchedPropertyTypeBadge: {
     backgroundColor: '#DBEAFE',
@@ -862,9 +954,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   matchedPropertyFloorPricing: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#F0FDF4',
     padding: 12,
     borderRadius: 8,
+    marginTop: 8,
   },
   matchedPropertyFloorPricingTitle: {
     fontSize: 13,
@@ -878,6 +971,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 4,
     marginBottom: 2,
+  },
+  negotiableText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 6,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1004,7 +1103,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
     textAlignVertical: 'top',
-    minHeight: 100,
+    minHeight: 80,
+  },
+  dateInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 14,
+    color: '#1F2937',
+    marginBottom: 4,
   },
   modalActions: {
     flexDirection: 'row',
