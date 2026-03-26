@@ -8,9 +8,12 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
+import { Picker } from '@react-native-picker/picker';
 import { api } from '../../services/api';
 
 // Safe string helper - converts any value to string safely
@@ -26,14 +29,27 @@ const safeNum = (val: any): number => {
   return isNaN(num) ? 0 : num;
 };
 
+// Channel and Outcome options
+const CHANNELS = ['Call', 'WhatsApp', 'SMS', 'Email', 'Visit'];
+const OUTCOMES = ['Connected', 'No Answer', 'Call Back', 'Left VM', 'Rescheduled', 'Not Interested', 'Deal Won', 'Deal Lost', 'Other'];
+
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams();
   const [lead, setLead] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Followup/Conversation state
+  const [followups, setFollowups] = useState<any[]>([]);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [logChannel, setLogChannel] = useState('Call');
+  const [logOutcome, setLogOutcome] = useState('Connected');
+  const [logNotes, setLogNotes] = useState('');
+  const [savingLog, setSavingLog] = useState(false);
 
   useEffect(() => {
     loadLead();
+    loadFollowups();
   }, [id]);
 
   const loadLead = async () => {
@@ -49,6 +65,54 @@ export default function LeadDetailScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadFollowups = async () => {
+    try {
+      const data = await api.getLeadFollowups(String(id));
+      setFollowups(data || []);
+    } catch (err) {
+      console.error('Failed to load followups:', err);
+    }
+  };
+
+  const handleSaveLog = async () => {
+    if (!logChannel || !logOutcome) {
+      Alert.alert('Error', 'Please select channel and outcome');
+      return;
+    }
+    
+    setSavingLog(true);
+    try {
+      await api.createFollowup(String(id), {
+        channel: logChannel,
+        outcome: logOutcome,
+        notes: logNotes,
+      });
+      Alert.alert('Success', 'Conversation logged successfully');
+      setShowLogModal(false);
+      setLogChannel('Call');
+      setLogOutcome('Connected');
+      setLogNotes('');
+      loadFollowups();
+    } catch (err) {
+      console.error('Failed to save log:', err);
+      Alert.alert('Error', 'Failed to save conversation log');
+    } finally {
+      setSavingLog(false);
+    }
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const handleCall = () => {
@@ -301,27 +365,34 @@ export default function LeadDetailScreen() {
                 </TouchableOpacity>
               ) : null}
               
-              {/* Address with property details on same line - clickable for Google Maps */}
-              <TouchableOpacity 
-                style={styles.matchedPropertyRow}
-                onPress={() => {
-                  if (prop.property_map_url) {
-                    Linking.openURL(prop.property_map_url);
-                  }
-                }}
-              >
+              {/* Address (hyperlinked) and Property Details (not hyperlinked) on same line */}
+              <View style={styles.matchedPropertyRow}>
                 <Ionicons name="location" size={14} color={prop.property_map_url ? '#3B82F6' : '#6B7280'} />
-                <Text style={[styles.matchedPropertyRowText, prop.property_map_url && styles.linkText]}>
-                  {[
-                    prop.property_address,
-                    prop.property_location,
-                    prop.property_floor,
-                    prop.property_bhk,
-                    prop.property_size ? `${prop.property_size} sq.yds` : null,
-                    prop.property_status
-                  ].filter(Boolean).join(' | ')}
-                </Text>
-              </TouchableOpacity>
+                <View style={styles.matchedPropertyAddressContainer}>
+                  {prop.property_address ? (
+                    <TouchableOpacity 
+                      onPress={() => {
+                        if (prop.property_map_url) {
+                          Linking.openURL(prop.property_map_url);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.matchedPropertyAddressText, prop.property_map_url && styles.linkText]}>
+                        {safeStr(prop.property_address)}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  <Text style={styles.matchedPropertyDetailsText}>
+                    {[
+                      prop.property_location,
+                      prop.property_floor,
+                      prop.property_bhk,
+                      prop.property_size ? `${prop.property_size} sq.yds` : null,
+                      prop.property_status
+                    ].filter(Boolean).join(' | ')}
+                  </Text>
+                </View>
+              </View>
               
               {/* Notes */}
               {prop.property_notes ? (
@@ -374,6 +445,69 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
+      {/* Log Conversation Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{'Conversation History'}</Text>
+          <TouchableOpacity 
+            style={styles.addLogButton}
+            onPress={() => setShowLogModal(true)}
+          >
+            <Ionicons name="add-circle" size={24} color="#3B82F6" />
+            <Text style={styles.addLogButtonText}>{'Log'}</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {followups.length > 0 ? (
+          followups.map((followup, index) => (
+            <View key={index} style={styles.followupCard}>
+              <View style={styles.followupHeader}>
+                <View style={styles.followupChannelBadge}>
+                  <Ionicons 
+                    name={
+                      followup.channel === 'Call' ? 'call' :
+                      followup.channel === 'WhatsApp' ? 'logo-whatsapp' :
+                      followup.channel === 'SMS' ? 'chatbubble' :
+                      followup.channel === 'Email' ? 'mail' :
+                      followup.channel === 'Visit' ? 'walk' : 'chatbubbles'
+                    } 
+                    size={14} 
+                    color="#FFFFFF" 
+                  />
+                  <Text style={styles.followupChannelText}>{safeStr(followup.channel)}</Text>
+                </View>
+                <View style={[
+                  styles.followupOutcomeBadge,
+                  { backgroundColor: followup.outcome === 'Connected' ? '#DCFCE7' : 
+                    followup.outcome === 'No Answer' ? '#FEE2E2' :
+                    followup.outcome === 'Deal Won' ? '#D1FAE5' :
+                    followup.outcome === 'Deal Lost' ? '#FEE2E2' : '#F3F4F6' }
+                ]}>
+                  <Text style={[
+                    styles.followupOutcomeText,
+                    { color: followup.outcome === 'Connected' ? '#166534' : 
+                      followup.outcome === 'No Answer' ? '#991B1B' :
+                      followup.outcome === 'Deal Won' ? '#065F46' :
+                      followup.outcome === 'Deal Lost' ? '#991B1B' : '#4B5563' }
+                  ]}>{safeStr(followup.outcome)}</Text>
+                </View>
+              </View>
+              {followup.notes ? (
+                <Text style={styles.followupNotes}>{safeStr(followup.notes)}</Text>
+              ) : null}
+              <View style={styles.followupFooter}>
+                <Text style={styles.followupDate}>{formatDateTime(followup.created_at)}</Text>
+                {followup.owner_name ? (
+                  <Text style={styles.followupOwner}>{'by '}{safeStr(followup.owner_name)}</Text>
+                ) : null}
+              </View>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.noFollowupsText}>{'No conversations logged yet'}</Text>
+        )}
+      </View>
+
       {/* Delete Button */}
       <View style={styles.bottomActions}>
         <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
@@ -381,6 +515,81 @@ export default function LeadDetailScreen() {
           <Text style={styles.deleteButtonText}>{'Delete Lead'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Log Conversation Modal */}
+      <Modal
+        visible={showLogModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowLogModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{'Log Conversation'}</Text>
+              <TouchableOpacity onPress={() => setShowLogModal(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.modalLabel}>{'Channel'}</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={logChannel}
+                onValueChange={setLogChannel}
+                style={styles.picker}
+              >
+                {CHANNELS.map((channel) => (
+                  <Picker.Item key={channel} label={channel} value={channel} />
+                ))}
+              </Picker>
+            </View>
+            
+            <Text style={styles.modalLabel}>{'Outcome'}</Text>
+            <View style={styles.pickerContainer}>
+              <Picker
+                selectedValue={logOutcome}
+                onValueChange={setLogOutcome}
+                style={styles.picker}
+              >
+                {OUTCOMES.map((outcome) => (
+                  <Picker.Item key={outcome} label={outcome} value={outcome} />
+                ))}
+              </Picker>
+            </View>
+            
+            <Text style={styles.modalLabel}>{'Notes'}</Text>
+            <TextInput
+              style={styles.notesInput}
+              multiline
+              numberOfLines={4}
+              placeholder="Add notes about this conversation..."
+              value={logNotes}
+              onChangeText={setLogNotes}
+            />
+            
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.cancelButton}
+                onPress={() => setShowLogModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>{'Cancel'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.saveLogButton, savingLog && styles.disabledButton]}
+                onPress={handleSaveLog}
+                disabled={savingLog}
+              >
+                {savingLog ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.saveLogButtonText}>{'Save Log'}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -609,6 +818,19 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
+  matchedPropertyAddressContainer: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  matchedPropertyAddressText: {
+    fontSize: 14,
+    color: '#475569',
+  },
+  matchedPropertyDetailsText: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
+  },
   linkText: {
     color: '#3B82F6',
     textDecorationLine: 'underline',
@@ -656,6 +878,165 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 4,
     marginBottom: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  addLogButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addLogButtonText: {
+    color: '#3B82F6',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  followupCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+  },
+  followupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  followupChannelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  followupChannelText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  followupOutcomeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  followupOutcomeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  followupNotes: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  followupFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  followupDate: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  followupOwner: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  noFollowupsText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  pickerContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 50,
+    color: '#1F2937',
+  },
+  notesInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 14,
+    color: '#1F2937',
+    textAlignVertical: 'top',
+    minHeight: 100,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    marginTop: 20,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  cancelButtonText: {
+    color: '#6B7280',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveLogButton: {
+    flex: 1,
+    backgroundColor: '#3B82F6',
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  saveLogButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   bottomActions: {
     padding: 20,

@@ -189,4 +189,29 @@ export const api = {
     if (!response.ok) throw new Error('Failed to fetch WhatsApp logs');
     return response.json();
   },
+
+  // Followups/Conversations
+  getLeadFollowups: async (leadId: string) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/followups`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch followups');
+    return response.json();
+  },
+
+  createFollowup: async (leadId: string, data: {
+    channel: string;
+    outcome: string;
+    notes?: string;
+    followup_date?: string;
+    next_followup?: string;
+  }) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/followups`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ ...data, lead_id: parseInt(leadId) }),
+    });
+    if (!response.ok) throw new Error('Failed to create followup');
+    return response.json();
+  },
 };

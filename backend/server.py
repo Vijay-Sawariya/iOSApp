@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from passlib.context import CryptContext
 import jwt
 import pymysql
@@ -730,6 +730,87 @@ def delete_builder(builder_id: int, current_user: dict = Depends(get_current_use
             raise HTTPException(status_code=404, detail="Builder not found")
     
     return {"message": "Builder deleted successfully"}
+
+# ============= Followup/Conversation Routes =============
+class FollowupCreate(BaseModel):
+    lead_id: int
+    channel: str  # Call, WhatsApp, SMS, Email, Visit
+    outcome: str  # Connected, No Answer, Call Back, Left VM, etc.
+    notes: Optional[str] = None
+    followup_date: Optional[str] = None  # Date of this conversation
+    next_followup: Optional[str] = None  # Next followup datetime
+
+class FollowupResponse(BaseModel):
+    id: int
+    lead_id: Optional[int]
+    owner_id: Optional[int]
+    channel: Optional[str]
+    outcome: Optional[str]
+    notes: Optional[str]
+    followup_date: Optional[date]
+    next_followup: Optional[datetime]
+    created_at: datetime
+    owner_name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+@api_router.get("/leads/{lead_id}/followups")
+def get_lead_followups(lead_id: int, current_user: dict = Depends(get_current_user)):
+    """Get all followups/conversations for a lead"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT f.*, u.full_name as owner_name 
+            FROM followups f
+            LEFT JOIN users u ON f.owner_id = u.id
+            WHERE f.lead_id = %s AND (f.is_deleted IS NULL OR f.is_deleted = 0)
+            ORDER BY f.created_at DESC
+        """, (lead_id,))
+        followups = cursor.fetchall()
+    
+    return followups
+
+@api_router.post("/leads/{lead_id}/followups")
+def create_followup(lead_id: int, followup: FollowupCreate, current_user: dict = Depends(get_current_user)):
+    """Log a new conversation/followup for a lead"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Parse dates
+        followup_date = None
+        if followup.followup_date:
+            try:
+                followup_date = datetime.strptime(followup.followup_date, '%Y-%m-%d').date()
+            except:
+                followup_date = datetime.now().date()
+        else:
+            followup_date = datetime.now().date()
+            
+        next_followup = None
+        if followup.next_followup:
+            try:
+                next_followup = datetime.strptime(followup.next_followup, '%Y-%m-%dT%H:%M')
+            except:
+                pass
+        
+        cursor.execute("""
+            INSERT INTO followups (lead_id, owner_id, channel, outcome, notes, followup_date, next_followup, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (lead_id, current_user['id'], followup.channel, followup.outcome, 
+              followup.notes, followup_date, next_followup, datetime.now()))
+        conn.commit()
+        
+        followup_id = cursor.lastrowid
+        cursor.execute("""
+            SELECT f.*, u.full_name as owner_name 
+            FROM followups f
+            LEFT JOIN users u ON f.owner_id = u.id
+            WHERE f.id = %s
+        """, (followup_id,))
+        created = cursor.fetchone()
+    
+    return created
 
 # ============= Reminder Routes =============
 @api_router.get("/reminders", response_model=List[ReminderResponse])
