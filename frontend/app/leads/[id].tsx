@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
@@ -65,11 +65,14 @@ export default function LeadDetailScreen() {
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
 
-  useEffect(() => {
-    loadLead();
-    loadFollowups();
-    loadFiles();
-  }, [id]);
+  // Refresh data when screen comes into focus (e.g., returning from edit)
+  useFocusEffect(
+    useCallback(() => {
+      loadLead();
+      loadFollowups();
+      loadFiles();
+    }, [id])
+  );
 
   const loadLead = async () => {
     try {
