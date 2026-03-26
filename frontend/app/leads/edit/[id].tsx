@@ -19,15 +19,27 @@ import { api } from '../../../services/api';
 const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'];
 const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'];
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'];
-const PROPERTY_TYPES = ['Residential', 'Commercial', 'Plot', 'Farm House', 'Builder Floor'];
-const PROPERTY_STATUSES = ['Ready to Move', 'Under Construction', 'Resale'];
+const PROPERTY_TYPES = ['Apartment', 'Builder', 'Plot', 'Vila'];
+const PROPERTY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const UNITS = ['CR', 'L', 'K'];
+const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
+const FACING = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
 
 const LOCATIONS = [
-  'Vasant Vihar', 'Greater Kailash', 'Hauz Khas', 'Defence Colony', 'Safdarjung Enclave',
-  'Green Park', 'Jor Bagh', 'Panchsheel Park', 'Chanakyapuri', 'Golf Links',
-  'Sundar Nagar', 'Jangpura', 'Friends Colony', 'Neeti Bagh', 'Anand Niketan',
-  'Shanti Niketan', 'Westend', 'Malcha Marg', 'Sarvodaya Enclave', 'Gulmohar Park'
+  "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
+  "Defence Colony", "New Friends Colony", "Golf Links", "Anand Niketan", "Saket", "Shivalik",
+  "Sarvapriya Vihar", "Chanakyapuri", "Lajpat Nagar", "Lajpat Nagar- III", "Anand Lok",
+  "CR Park", "East of Kailash", "Friends Colony", "Friends Colony East", "Friends Colony West",
+  "Gulmohar Park", "Green Park", "Green Park Extension", "Safdarjung Enclave", "SDA",
+  "Malviya Nagar", "Vasant Kunj", "Hauz Khas Enclave", "Jor Bagh", "Lodi Road", "Lodi Colony",
+  "Nizamuddin East", "Nizamuddin West", "Geetanjali Enclave", "Jor Bagh Enclave", "Kalkaji",
+  "Kalkaji Enclave", "Kashmere Gate", "Kashmere Gate Enclave", "Sarvodaya Enclave", "Neeti Bagh",
+  "Pamposh Enclave", "Nehru Enclave", "Munirka Vihar", "Andrews Ganj", "Hamdard Nagar",
+  "Maurice Nagar", "Bhikaji Cama Place", "Basant Lok DDA Complex", "Malcha Marg", "South Ex 1",
+  "South Ex 2", "Uday Park", "National Park", "Chattapur Farm", "Sultanpur Farms", "Maharani Bagh",
+  "Kailash Colony", "Soami Nagar", "Sukhdev Vihar", "Masjid Moth", "Navjeevan Vihar",
+  "Jangpura Extension", "Hemkunt colony", "Chirag Enclave", "West End", "Pashmi Marg",
+  "Rajdoot Marg", "Hanuman Road"
 ];
 
 export default function EditLeadScreen() {
