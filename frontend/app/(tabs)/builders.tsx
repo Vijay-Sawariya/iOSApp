@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../services/api';
-import { router } from 'expo-router';
+import { offlineApi } from '../../services/offlineApi';
+import { useOffline } from '../../contexts/OfflineContext';
+import { router, useFocusEffect } from 'expo-router';
 
 interface Builder {
   id: string;
@@ -23,19 +24,22 @@ interface Builder {
 export default function BuildersScreen() {
   const [builders, setBuilders] = useState<Builder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const { isOnline } = useOffline();
 
   const loadBuilders = async () => {
     try {
-      const data = await api.getBuilders();
+      const data = await offlineApi.getBuilders();
       setBuilders(data);
     } catch (error) {
       console.error('Failed to load builders:', error);
     }
   };
 
-  useEffect(() => {
-    loadBuilders();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadBuilders();
+    }, [])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -44,6 +48,10 @@ export default function BuildersScreen() {
   };
 
   const handleDelete = (id: string, name: string) => {
+    if (!isOnline) {
+      Alert.alert('Offline', 'Cannot delete builder while offline.');
+      return;
+    }
     Alert.alert('Delete Builder', `Are you sure you want to delete ${name}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -51,7 +59,7 @@ export default function BuildersScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await api.deleteBuilder(id);
+            await offlineApi.deleteBuilder(id);
             loadBuilders();
           } catch (error) {
             Alert.alert('Error', 'Failed to delete builder');

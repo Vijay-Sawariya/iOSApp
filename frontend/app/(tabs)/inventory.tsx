@@ -11,8 +11,9 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../services/api';
+import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
+import { useOffline } from '../../contexts/OfflineContext';
 
 interface FloorPricing {
   floor_label: string;
@@ -65,6 +66,7 @@ export default function InventoryLeadsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const { isOnline } = useOffline();
 
   // Filter states
   const [nameFilter, setNameFilter] = useState('');
@@ -82,7 +84,7 @@ export default function InventoryLeadsScreen() {
 
   const loadLeads = async () => {
     try {
-      const data = await api.getInventoryLeads();
+      const data = await offlineApi.getInventoryLeads();
       setLeads(data);
       applyFilters(data);
     } catch (error) {

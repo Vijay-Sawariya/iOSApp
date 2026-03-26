@@ -19,7 +19,8 @@ import { Picker } from '@react-native-picker/picker';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { api } from '../../services/api';
+import { offlineApi } from '../../services/offlineApi';
+import { useOffline } from '../../contexts/OfflineContext';
 
 // GoDaddy API Configuration
 const GODADDY_BASE_URL = 'https://sagarhomelms.com';
@@ -47,6 +48,7 @@ export default function LeadDetailScreen() {
   const [lead, setLead] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { isOnline } = useOffline();
   
   // Followup/Conversation state
   const [followups, setFollowups] = useState<any[]>([]);
@@ -77,7 +79,7 @@ export default function LeadDetailScreen() {
   const loadLead = async () => {
     try {
       setError(null);
-      const data = await api.getLead(String(id));
+      const data = await offlineApi.getLead(String(id));
       console.log('Lead data loaded:', JSON.stringify(data, null, 2));
       setLead(data);
     } catch (err: any) {
@@ -95,7 +97,7 @@ export default function LeadDetailScreen() {
 
   const loadFollowups = async () => {
     try {
-      const data = await api.getLeadFollowups(String(id));
+      const data = await offlineApi.getLeadFollowups(String(id));
       setFollowups(data || []);
     } catch (err) {
       console.error('Failed to load followups:', err);
@@ -250,9 +252,14 @@ export default function LeadDetailScreen() {
       return;
     }
     
+    if (!isOnline) {
+      Alert.alert('Offline', 'Cannot save conversation while offline. Please connect to the internet.');
+      return;
+    }
+    
     setSavingLog(true);
     try {
-      await api.createFollowup(String(id), {
+      await offlineApi.createFollowup(String(id), {
         channel: logChannel,
         outcome: logOutcome,
         notes: logNotes,

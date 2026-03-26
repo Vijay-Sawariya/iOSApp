@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
-import { api } from '../../services/api';
-import { router } from 'expo-router';
+import { offlineApi } from '../../services/offlineApi';
+import { useOffline } from '../../contexts/OfflineContext';
+import { SyncButton } from '../../components/OfflineBanner';
+import { router, useFocusEffect } from 'expo-router';
 
 interface DashboardStats {
   total_leads: number;
@@ -26,19 +28,22 @@ export default function DashboardScreen() {
   const { user, logout } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const { isOnline } = useOffline();
 
   const loadStats = async () => {
     try {
-      const data = await api.getDashboardStats();
+      const data = await offlineApi.getDashboardStats();
       setStats(data);
     } catch (error) {
       console.error('Failed to load stats:', error);
     }
   };
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+    }, [])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -56,9 +61,12 @@ export default function DashboardScreen() {
           <Text style={styles.greeting}>Welcome back,</Text>
           <Text style={styles.userName}>{user?.full_name}</Text>
         </View>
-        <TouchableOpacity onPress={logout} style={styles.logoutButton}>
-          <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <SyncButton />
+          <TouchableOpacity onPress={logout} style={styles.logoutButton}>
+            <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.statsGrid}>
@@ -183,6 +191,11 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     padding: 8,
+    marginLeft: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   statsGrid: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../../services/api';
-import { router } from 'expo-router';
+import { offlineApi } from '../../services/offlineApi';
+import { router, useFocusEffect } from 'expo-router';
+import { useOffline } from '../../contexts/OfflineContext';
 
 interface Lead {
   id: number;
@@ -36,10 +37,11 @@ export default function ClientLeadsScreen() {
   const [temperatureFilter, setTemperatureFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const { isOnline } = useOffline();
 
   const loadLeads = async () => {
     try {
-      const data = await api.getClientLeads();
+      const data = await offlineApi.getClientLeads();
       setLeads(data);
       applyFilters(data, searchQuery, temperatureFilter, sortBy);
     } catch (error) {
@@ -47,9 +49,11 @@ export default function ClientLeadsScreen() {
     }
   };
 
-  useEffect(() => {
-    loadLeads();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadLeads();
+    }, [])
+  );
 
   const applyFilters = (data: Lead[], search: string, temp: string | null, sort: 'name' | 'date' | null) => {
     let filtered = [...data];
