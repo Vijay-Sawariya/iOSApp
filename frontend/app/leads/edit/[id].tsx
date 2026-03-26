@@ -10,16 +10,17 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
 import { api } from '../../../services/api';
 
 const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'];
 const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'];
 const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'];
-const PROPERTY_TYPES = ['Apartment', 'Builder', 'Plot', 'Vila'];
+const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'];
 const PROPERTY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const UNITS = ['CR', 'L', 'K'];
 const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
@@ -45,6 +46,82 @@ interface FloorPrice {
   floor: string;
   price: string;
 }
+
+// Custom Dropdown Component for iOS compatibility
+const CustomDropdown = ({ 
+  label, 
+  value, 
+  options, 
+  onSelect, 
+  placeholder = "Select...",
+  displayValue 
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onSelect: (value: string) => void;
+  placeholder?: string;
+  displayValue?: string;
+}) => {
+  const [modalVisible, setModalVisible] = useState(false);
+  
+  const displayText = displayValue || value || placeholder;
+  const hasValue = !!value;
+
+  return (
+    <>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity 
+        style={styles.dropdownButton}
+        onPress={() => setModalVisible(true)}
+      >
+        <Text style={[styles.dropdownText, !hasValue && styles.dropdownPlaceholder]}>
+          {displayText}
+        </Text>
+        <Ionicons name="chevron-down" size={20} color="#6B7280" />
+      </TouchableOpacity>
+      
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{label}</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={options}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.optionItem, value === item && styles.optionItemSelected]}
+                  onPress={() => {
+                    onSelect(item);
+                    setModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.optionText, value === item && styles.optionTextSelected]}>
+                    {item}
+                  </Text>
+                  {value === item && (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  )}
+                </TouchableOpacity>
+              )}
+              style={styles.optionsList}
+            />
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
 
 export default function EditLeadScreen() {
   const { id } = useLocalSearchParams();
@@ -267,67 +344,40 @@ export default function EditLeadScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lead Classification</Text>
           
-          <Text style={styles.label}>Lead Type</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={leadType}
-              onValueChange={setLeadType}
-              style={styles.picker}
-              itemStyle={styles.pickerItem}
-            >
-              {LEAD_TYPES.map((type) => (
-                <Picker.Item key={type} label={type.charAt(0).toUpperCase() + type.slice(1)} value={type} color="#1F2937" />
-              ))}
-            </Picker>
-          </View>
+          <CustomDropdown
+            label="Lead Type"
+            value={leadType}
+            options={LEAD_TYPES}
+            onSelect={setLeadType}
+            displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
+          />
 
-          <Text style={styles.label}>Temperature</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={leadTemperature}
-              onValueChange={setLeadTemperature}
-              style={styles.picker}
-              itemStyle={styles.pickerItem}
-            >
-              {LEAD_TEMPERATURES.map((temp) => (
-                <Picker.Item key={temp} label={temp} value={temp} color="#1F2937" />
-              ))}
-            </Picker>
-          </View>
+          <CustomDropdown
+            label="Temperature"
+            value={leadTemperature}
+            options={LEAD_TEMPERATURES}
+            onSelect={setLeadTemperature}
+          />
 
-          <Text style={styles.label}>Status</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={leadStatus}
-              onValueChange={setLeadStatus}
-              style={styles.picker}
-              itemStyle={styles.pickerItem}
-            >
-              {LEAD_STATUSES.map((status) => (
-                <Picker.Item key={status} label={status} value={status} color="#1F2937" />
-              ))}
-            </Picker>
-          </View>
+          <CustomDropdown
+            label="Status"
+            value={leadStatus}
+            options={LEAD_STATUSES}
+            onSelect={setLeadStatus}
+          />
         </View>
 
         {/* Property Details */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Property Details</Text>
           
-          <Text style={styles.label}>Location</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={location}
-              onValueChange={setLocation}
-              style={styles.picker}
-              itemStyle={styles.pickerItem}
-            >
-              <Picker.Item label="Select Location" value="" color="#9CA3AF" />
-              {LOCATIONS.map((loc) => (
-                <Picker.Item key={loc} label={loc} value={loc} color="#1F2937" />
-              ))}
-            </Picker>
-          </View>
+          <CustomDropdown
+            label="Location"
+            value={location}
+            options={LOCATIONS}
+            onSelect={setLocation}
+            placeholder="Select Location"
+          />
 
           {isInventory && (
             <>
@@ -351,38 +401,22 @@ export default function EditLeadScreen() {
             </>
           )}
 
-          <Text style={styles.label}>Property Type</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={propertyType}
-              onValueChange={setPropertyType}
-              style={styles.picker}
-              itemStyle={styles.pickerItem}
-            >
-              <Picker.Item label="Select Type" value="" color="#9CA3AF" />
-              {PROPERTY_TYPES.map((type) => (
-                <Picker.Item key={type} label={type} value={type} color="#1F2937" />
-              ))}
-            </Picker>
-          </View>
+          <CustomDropdown
+            label="Property Type"
+            value={propertyType}
+            options={PROPERTY_TYPES}
+            onSelect={setPropertyType}
+            placeholder="Select Type"
+          />
 
           {isInventory && (
-            <>
-              <Text style={styles.label}>Property Status</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={propertyStatus}
-                  onValueChange={setPropertyStatus}
-                  style={styles.picker}
-                  itemStyle={styles.pickerItem}
-                >
-                  <Picker.Item label="Select Status" value="" color="#9CA3AF" />
-                  {PROPERTY_STATUSES.map((status) => (
-                    <Picker.Item key={status} label={status} value={status} color="#1F2937" />
-                  ))}
-                </Picker>
-              </View>
-            </>
+            <CustomDropdown
+              label="Property Status"
+              value={propertyStatus}
+              options={PROPERTY_STATUSES}
+              onSelect={setPropertyStatus}
+              placeholder="Select Status"
+            />
           )}
 
           <View style={styles.row}>
@@ -397,20 +431,13 @@ export default function EditLeadScreen() {
               />
             </View>
             <View style={styles.halfField}>
-              <Text style={styles.label}>Floor</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={floor}
-                  onValueChange={setFloor}
-                  style={styles.picker}
-                  itemStyle={styles.pickerItem}
-                >
-                  <Picker.Item label="Select Floor" value="" color="#9CA3AF" />
-                  {FLOORS.map((f) => (
-                    <Picker.Item key={f} label={f} value={f} color="#1F2937" />
-                  ))}
-                </Picker>
-              </View>
+              <CustomDropdown
+                label="Floor"
+                value={floor}
+                options={FLOORS}
+                onSelect={setFloor}
+                placeholder="Select Floor"
+              />
             </View>
           </View>
 
@@ -452,19 +479,12 @@ export default function EditLeadScreen() {
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={styles.label}>Unit</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={unit}
-                    onValueChange={setUnit}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {UNITS.map((u) => (
-                      <Picker.Item key={u} label={u} value={u} color="#1F2937" />
-                    ))}
-                  </Picker>
-                </View>
+                <CustomDropdown
+                  label="Unit"
+                  value={unit}
+                  options={UNITS}
+                  onSelect={setUnit}
+                />
               </View>
             </View>
           )}
@@ -474,9 +494,9 @@ export default function EditLeadScreen() {
         {isInventory && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Asking Price (Floor-wise)</Text>
+              <Text style={styles.sectionTitleNoMargin}>Asking Price (Floor-wise)</Text>
               <TouchableOpacity style={styles.addButton} onPress={addFloorPrice}>
-                <Ionicons name="add-circle" size={24} color="#10B981" />
+                <Ionicons name="add-circle" size={28} color="#10B981" />
               </TouchableOpacity>
             </View>
 
@@ -486,18 +506,25 @@ export default function EditLeadScreen() {
 
             {floorPrices.map((fp, index) => (
               <View key={index} style={styles.floorPriceRow}>
-                <View style={styles.floorPickerContainer}>
-                  <Picker
-                    selectedValue={fp.floor}
-                    onValueChange={(value) => updateFloorPrice(index, 'floor', value)}
-                    style={styles.floorPicker}
-                    itemStyle={styles.pickerItem}
+                <View style={styles.floorDropdownContainer}>
+                  <TouchableOpacity
+                    style={styles.floorDropdownButton}
+                    onPress={() => {
+                      Alert.alert(
+                        'Select Floor',
+                        '',
+                        FLOORS.map(f => ({
+                          text: f,
+                          onPress: () => updateFloorPrice(index, 'floor', f)
+                        }))
+                      );
+                    }}
                   >
-                    <Picker.Item label="Floor" value="" color="#9CA3AF" />
-                    {FLOORS.map((f) => (
-                      <Picker.Item key={f} label={f} value={f} color="#1F2937" />
-                    ))}
-                  </Picker>
+                    <Text style={[styles.floorDropdownText, !fp.floor && styles.dropdownPlaceholder]}>
+                      {fp.floor || 'Floor'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                  </TouchableOpacity>
                 </View>
                 <TextInput
                   style={styles.priceInput}
@@ -544,19 +571,12 @@ export default function EditLeadScreen() {
                 />
               </View>
               <View style={styles.thirdField}>
-                <Text style={styles.label}>Unit</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={unit}
-                    onValueChange={setUnit}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {UNITS.map((u) => (
-                      <Picker.Item key={u} label={u} value={u} color="#1F2937" />
-                    ))}
-                  </Picker>
-                </View>
+                <CustomDropdown
+                  label="Unit"
+                  value={unit}
+                  options={UNITS}
+                  onSelect={setUnit}
+                />
               </View>
             </View>
           </View>
@@ -652,6 +672,11 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginBottom: 16,
   },
+  sectionTitleNoMargin: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
   label: {
     fontSize: 14,
     fontWeight: '500',
@@ -662,23 +687,73 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     borderRadius: 8,
     padding: 14,
-    fontSize: 14,
+    fontSize: 16,
     color: '#1F2937',
     marginBottom: 16,
   },
-  pickerContainer: {
+  // Custom Dropdown Styles
+  dropdownButton: {
     backgroundColor: '#F3F4F6',
     borderRadius: 8,
+    padding: 14,
     marginBottom: 16,
-    overflow: 'hidden',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  picker: {
-    height: 50,
+  dropdownText: {
+    fontSize: 16,
     color: '#1F2937',
   },
-  pickerItem: {
+  dropdownPlaceholder: {
+    color: '#9CA3AF',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#1F2937',
-    fontSize: 14,
+  },
+  optionsList: {
+    maxHeight: 400,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  optionItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  optionTextSelected: {
+    color: '#3B82F6',
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',
@@ -711,15 +786,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  floorPickerContainer: {
+  floorDropdownContainer: {
     flex: 1,
+    marginRight: 8,
+  },
+  floorDropdownButton: {
     backgroundColor: '#F3F4F6',
     borderRadius: 8,
-    marginRight: 8,
-    overflow: 'hidden',
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  floorPicker: {
-    height: 50,
+  floorDropdownText: {
+    fontSize: 16,
     color: '#1F2937',
   },
   priceInput: {
@@ -727,7 +807,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     borderRadius: 8,
     padding: 14,
-    fontSize: 14,
+    fontSize: 16,
     color: '#1F2937',
     marginRight: 8,
   },
