@@ -177,9 +177,14 @@ export default function LeadDetailScreen() {
     // Build copy text based on PHP format
     details += `${safeStr(lead.name)}\n`;
     if (lead.phone) details += `📞 ${safeStr(lead.phone)}\n`;
-    if (lead.location) details += `📍 ${safeStr(lead.location)}`;
-    if (lead.address) details += `, ${safeStr(lead.address)}`;
-    details += '\n';
+    // Address & Location (inline)
+    if (lead.address || lead.location) {
+      details += '📍 ';
+      if (lead.address) details += safeStr(lead.address);
+      if (lead.address && lead.location) details += ', ';
+      if (lead.location) details += safeStr(lead.location);
+      details += '\n';
+    }
     
     // Property details
     const propDetails = [];

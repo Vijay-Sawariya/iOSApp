@@ -29,6 +29,7 @@ interface Lead {
   property_type: string | null;
   unit: string | null;
   floor_pricing?: FloorPricing[];
+  created_at?: string | null;
 }
 
 export default function InventoryLeadsScreen() {
@@ -36,12 +37,16 @@ export default function InventoryLeadsScreen() {
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [temperatureFilter, setTemperatureFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadLeads = async () => {
     try {
       const data = await api.getInventoryLeads();
       setLeads(data);
-      setFilteredLeads(data);
+      applyFilters(data, searchQuery, temperatureFilter, typeFilter, sortBy);
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
     }
@@ -51,6 +56,40 @@ export default function InventoryLeadsScreen() {
     loadLeads();
   }, []);
 
+  const applyFilters = (data: Lead[], search: string, temp: string | null, type: string | null, sort: 'name' | 'date' | null) => {
+    let filtered = [...data];
+    
+    // Apply search
+    if (search) {
+      filtered = filtered.filter(
+        (lead) =>
+          lead.name.toLowerCase().includes(search.toLowerCase()) ||
+          lead.phone?.includes(search) ||
+          lead.email?.toLowerCase().includes(search.toLowerCase()) ||
+          lead.location?.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    
+    // Apply temperature filter
+    if (temp) {
+      filtered = filtered.filter((lead) => lead.lead_temperature === temp);
+    }
+    
+    // Apply type filter
+    if (type) {
+      filtered = filtered.filter((lead) => lead.lead_type === type);
+    }
+    
+    // Apply sort
+    if (sort === 'name') {
+      filtered.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sort === 'date') {
+      filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    }
+    
+    setFilteredLeads(filtered);
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadLeads();
@@ -59,18 +98,29 @@ export default function InventoryLeadsScreen() {
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    if (text === '') {
-      setFilteredLeads(leads);
-    } else {
-      const filtered = leads.filter(
-        (lead) =>
-          lead.name.toLowerCase().includes(text.toLowerCase()) ||
-          lead.phone?.includes(text) ||
-          lead.email?.toLowerCase().includes(text.toLowerCase()) ||
-          lead.location?.toLowerCase().includes(text.toLowerCase())
-      );
-      setFilteredLeads(filtered);
-    }
+    applyFilters(leads, text, temperatureFilter, typeFilter, sortBy);
+  };
+
+  const handleTemperatureFilter = (temp: string | null) => {
+    setTemperatureFilter(temp);
+    applyFilters(leads, searchQuery, temp, typeFilter, sortBy);
+  };
+
+  const handleTypeFilter = (type: string | null) => {
+    setTypeFilter(type);
+    applyFilters(leads, searchQuery, temperatureFilter, type, sortBy);
+  };
+
+  const handleSort = (sort: 'name' | 'date' | null) => {
+    setSortBy(sort);
+    applyFilters(leads, searchQuery, temperatureFilter, typeFilter, sort);
+  };
+
+  const clearFilters = () => {
+    setTemperatureFilter(null);
+    setTypeFilter(null);
+    setSortBy(null);
+    applyFilters(leads, searchQuery, null, null, null);
   };
 
   const getTemperatureColor = (temp: string | null) => {
@@ -236,7 +286,82 @@ export default function InventoryLeadsScreen() {
           value={searchQuery}
           onChangeText={handleSearch}
         />
+        <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={styles.filterButton}>
+          <Ionicons name="filter" size={20} color={temperatureFilter || typeFilter || sortBy ? '#10B981' : '#6B7280'} />
+        </TouchableOpacity>
       </View>
+
+      {/* Filter Options */}
+      {showFilters ? (
+        <View style={styles.filterContainer}>
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>{'Temperature:'}</Text>
+            <View style={styles.filterOptions}>
+              {['Hot', 'Warm', 'Cold'].map((temp) => (
+                <TouchableOpacity
+                  key={temp}
+                  style={[
+                    styles.filterChip,
+                    temperatureFilter === temp && styles.filterChipActive,
+                    { backgroundColor: temperatureFilter === temp ? getTemperatureColor(temp) : '#F3F4F6' }
+                  ]}
+                  onPress={() => handleTemperatureFilter(temperatureFilter === temp ? null : temp)}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    temperatureFilter === temp && styles.filterChipTextActive
+                  ]}>{temp}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>{'Type:'}</Text>
+            <View style={styles.filterOptions}>
+              {[{key: 'seller', label: 'Seller'}, {key: 'landlord', label: 'Landlord'}, {key: 'builder', label: 'Builder'}].map((t) => (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[
+                    styles.filterChip,
+                    typeFilter === t.key && styles.filterChipActive,
+                    { backgroundColor: typeFilter === t.key ? getTypeColor(t.key).bg : '#F3F4F6' }
+                  ]}
+                  onPress={() => handleTypeFilter(typeFilter === t.key ? null : t.key)}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    { color: typeFilter === t.key ? getTypeColor(t.key).text : '#6B7280' }
+                  ]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>{'Sort by:'}</Text>
+            <View style={styles.filterOptions}>
+              <TouchableOpacity
+                style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
+                onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
+              >
+                <Ionicons name="text" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
+                <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}>{' Name'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterChip, sortBy === 'date' && styles.filterChipActive]}
+                onPress={() => handleSort(sortBy === 'date' ? null : 'date')}
+              >
+                <Ionicons name="calendar" size={14} color={sortBy === 'date' ? '#FFFFFF' : '#6B7280'} />
+                <Text style={[styles.filterChipText, sortBy === 'date' && styles.filterChipTextActive]}>{' Date'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {(temperatureFilter || typeFilter || sortBy) ? (
+            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+              <Text style={styles.clearFiltersText}>{'Clear Filters'}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.statsBar}>
         <View style={styles.statItem}>
@@ -482,5 +607,64 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  filterButton: {
+    padding: 8,
+  },
+  filterContainer: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  filterSection: {
+    marginBottom: 12,
+  },
+  filterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 4,
+    backgroundColor: '#F3F4F6',
+  },
+  filterChipActive: {
+    backgroundColor: '#10B981',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  clearFiltersButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  clearFiltersText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#EF4444',
   },
 });

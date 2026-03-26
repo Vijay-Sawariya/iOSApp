@@ -21,6 +21,7 @@ function RootLayoutContent() {
       <Stack.Screen name="leads/edit/[id]" options={{ headerShown: true, title: 'Edit Lead' }} />
       <Stack.Screen name="builders/add" options={{ headerShown: true, title: 'Add Builder' }} />
       <Stack.Screen name="builders/[id]" options={{ headerShown: true, title: 'Builder Details' }} />
+      <Stack.Screen name="builders/edit/[id]" options={{ headerShown: true, title: 'Edit Builder' }} />
       <Stack.Screen name="reminders/add" options={{ headerShown: true, title: 'Add Reminder' }} />
     </Stack>
   );
