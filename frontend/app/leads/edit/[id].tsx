@@ -19,9 +19,9 @@ import { api } from '../../../services/api';
 
 const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'];
 const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'];
-const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'];
+const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'];
+const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'];
-const PROPERTY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const UNITS = ['CR', 'L', 'K'];
 const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
 
@@ -142,7 +142,6 @@ export default function EditLeadScreen() {
   const [location, setLocation] = useState('');
   const [address, setAddress] = useState('');
   const [propertyType, setPropertyType] = useState('');
-  const [propertyStatus, setPropertyStatus] = useState('');
   const [bhk, setBhk] = useState('');
   const [floor, setFloor] = useState('');
   const [areaSize, setAreaSize] = useState('');
@@ -181,7 +180,6 @@ export default function EditLeadScreen() {
       setLocation(data.location || '');
       setAddress(data.address || '');
       setPropertyType(data.property_type || '');
-      setPropertyStatus(data.property_status || '');
       setBhk(data.bhk || '');
       setFloor(data.floor || '');
       setAreaSize(data.area_size ? String(data.area_size) : '');
@@ -241,7 +239,6 @@ export default function EditLeadScreen() {
         location,
         address: address.trim(),
         property_type: propertyType,
-        property_status: propertyStatus,
         bhk,
         floor,
         area_size: areaSize ? parseFloat(areaSize) : null,
@@ -362,7 +359,7 @@ export default function EditLeadScreen() {
           <CustomDropdown
             label="Status"
             value={leadStatus}
-            options={LEAD_STATUSES}
+            options={isInventory ? INVENTORY_STATUSES : CLIENT_STATUSES}
             onSelect={setLeadStatus}
           />
         </View>
@@ -408,16 +405,6 @@ export default function EditLeadScreen() {
             onSelect={setPropertyType}
             placeholder="Select Type"
           />
-
-          {isInventory && (
-            <CustomDropdown
-              label="Property Status"
-              value={propertyStatus}
-              options={PROPERTY_STATUSES}
-              onSelect={setPropertyStatus}
-              placeholder="Select Status"
-            />
-          )}
 
           <View style={styles.row}>
             <View style={styles.halfField}>

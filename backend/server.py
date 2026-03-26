@@ -632,7 +632,7 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
         
         allowed_fields = [
             'name', 'phone', 'email', 'lead_type', 'location', 'address',
-            'bhk', 'budget_min', 'budget_max', 'property_type', 'property_status',
+            'bhk', 'budget_min', 'budget_max', 'property_type',
             'lead_temperature', 'lead_status', 'notes', 'floor', 'area_size',
             'car_parking_number', 'lift_available', 'unit', 'Property_locationUrl'
         ]
