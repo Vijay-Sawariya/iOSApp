@@ -10,12 +10,20 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
+  Image,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { api } from '../../services/api';
+
+// GoDaddy API Configuration
+const GODADDY_BASE_URL = 'http://sagarhomelms.com';
+const GODADDY_API_KEY = 'sagar_home_mobile_2024_secure_key';
 
 // Safe string helper - converts any value to string safely
 const safeStr = (val: any): string => {
@@ -49,10 +57,18 @@ export default function LeadDetailScreen() {
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [nextReminderDate, setNextReminderDate] = useState('');
   const [savingLog, setSavingLog] = useState(false);
+  
+  // File upload state
+  const [images, setImages] = useState<any[]>([]);
+  const [floorplans, setFloorplans] = useState<any[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
 
   useEffect(() => {
     loadLead();
     loadFollowups();
+    loadFiles();
   }, [id]);
 
   const loadLead = async () => {
@@ -77,6 +93,148 @@ export default function LeadDetailScreen() {
     } catch (err) {
       console.error('Failed to load followups:', err);
     }
+  };
+
+  // File management functions
+  const loadFiles = async () => {
+    setLoadingFiles(true);
+    try {
+      const response = await fetch(
+        `${GODADDY_BASE_URL}/mobile_get_files.php?lead_id=${id}&api_key=${GODADDY_API_KEY}`
+      );
+      const data = await response.json();
+      if (data.success) {
+        setImages(data.data.images || []);
+        setFloorplans(data.data.floorplans || []);
+      }
+    } catch (err) {
+      console.error('Failed to load files:', err);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const uploadFile = async (uri: string, filename: string, type: 'image' | 'floorplan') => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
+      type: type === 'floorplan' ? 'application/pdf' : 'image/jpeg',
+      name: filename,
+    } as any);
+    formData.append('lead_id', String(id));
+    formData.append('type', type);
+    formData.append('api_key', GODADDY_API_KEY);
+
+    const response = await fetch(`${GODADDY_BASE_URL}/mobile_upload.php`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.message || 'Upload failed');
+    }
+    return data;
+  };
+
+  const handlePickImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your photo library');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploadingImage(true);
+        try {
+          const asset = result.assets[0];
+          const filename = asset.fileName || `image_${Date.now()}.jpg`;
+          await uploadFile(asset.uri, filename, 'image');
+          Alert.alert('Success', 'Image uploaded successfully');
+          loadFiles();
+        } catch (err: any) {
+          Alert.alert('Upload Failed', err.message || 'Failed to upload image');
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    } catch (err) {
+      console.error('Image picker error:', err);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your camera');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploadingImage(true);
+        try {
+          const asset = result.assets[0];
+          const filename = `photo_${Date.now()}.jpg`;
+          await uploadFile(asset.uri, filename, 'image');
+          Alert.alert('Success', 'Photo uploaded successfully');
+          loadFiles();
+        } catch (err: any) {
+          Alert.alert('Upload Failed', err.message || 'Failed to upload photo');
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const handlePickPdf = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploadingPdf(true);
+        try {
+          const asset = result.assets[0];
+          await uploadFile(asset.uri, asset.name, 'floorplan');
+          Alert.alert('Success', 'PDF uploaded successfully');
+          loadFiles();
+        } catch (err: any) {
+          Alert.alert('Upload Failed', err.message || 'Failed to upload PDF');
+        } finally {
+          setUploadingPdf(false);
+        }
+      }
+    } catch (err) {
+      console.error('Document picker error:', err);
+      Alert.alert('Error', 'Failed to pick document');
+    }
+  };
+
+  const handleViewFile = (url: string) => {
+    Linking.openURL(url);
   };
 
   const handleSaveLog = async () => {
@@ -550,6 +708,111 @@ export default function LeadDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{'Notes'}</Text>
           <Text style={styles.notesText}>{safeStr(lead.notes)}</Text>
+        </View>
+      ) : null}
+
+      {/* Images & Documents Section - Only for Inventory leads */}
+      {isInventoryLead() ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{'Images & Documents'}</Text>
+          
+          {/* Images Grid */}
+          <View style={styles.fileSubsection}>
+            <View style={styles.fileSubsectionHeader}>
+              <Text style={styles.fileSubsectionTitle}>{'Property Images'}</Text>
+              <View style={styles.uploadButtonsRow}>
+                <TouchableOpacity 
+                  style={styles.uploadButton}
+                  onPress={handlePickImage}
+                  disabled={uploadingImage}
+                >
+                  {uploadingImage ? (
+                    <ActivityIndicator size="small" color="#3B82F6" />
+                  ) : (
+                    <>
+                      <Ionicons name="images" size={18} color="#3B82F6" />
+                      <Text style={styles.uploadButtonText}>{'Gallery'}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.uploadButton}
+                  onPress={handleTakePhoto}
+                  disabled={uploadingImage}
+                >
+                  <Ionicons name="camera" size={18} color="#3B82F6" />
+                  <Text style={styles.uploadButtonText}>{'Camera'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            {loadingFiles ? (
+              <ActivityIndicator size="small" color="#6B7280" style={styles.loadingFiles} />
+            ) : images.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScrollView}>
+                {images.map((img, index) => (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={styles.imageCard}
+                    onPress={() => handleViewFile(img.url)}
+                  >
+                    <Image 
+                      source={{ uri: img.url }} 
+                      style={styles.imageThumbnail}
+                      resizeMode="cover"
+                    />
+                    <Text style={styles.imageFilename} numberOfLines={1}>{safeStr(img.filename)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={styles.noFilesText}>{'No images uploaded yet'}</Text>
+            )}
+          </View>
+          
+          {/* Floorplans/PDFs */}
+          <View style={styles.fileSubsection}>
+            <View style={styles.fileSubsectionHeader}>
+              <Text style={styles.fileSubsectionTitle}>{'Floor Plans (PDF)'}</Text>
+              <TouchableOpacity 
+                style={styles.uploadButton}
+                onPress={handlePickPdf}
+                disabled={uploadingPdf}
+              >
+                {uploadingPdf ? (
+                  <ActivityIndicator size="small" color="#10B981" />
+                ) : (
+                  <>
+                    <Ionicons name="document" size={18} color="#10B981" />
+                    <Text style={[styles.uploadButtonText, { color: '#10B981' }]}>{'Upload PDF'}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+            
+            {loadingFiles ? (
+              <ActivityIndicator size="small" color="#6B7280" style={styles.loadingFiles} />
+            ) : floorplans.length > 0 ? (
+              <View style={styles.pdfList}>
+                {floorplans.map((pdf, index) => (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={styles.pdfCard}
+                    onPress={() => handleViewFile(pdf.url)}
+                  >
+                    <Ionicons name="document-text" size={24} color="#EF4444" />
+                    <View style={styles.pdfInfo}>
+                      <Text style={styles.pdfFilename} numberOfLines={1}>{safeStr(pdf.filename)}</Text>
+                      <Text style={styles.pdfSize}>{`${Math.round(pdf.size / 1024)} KB`}</Text>
+                    </View>
+                    <Ionicons name="open-outline" size={20} color="#6B7280" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.noFilesText}>{'No floor plans uploaded yet'}</Text>
+            )}
+          </View>
         </View>
       ) : null}
 
@@ -1271,5 +1534,93 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  // File upload styles
+  fileSubsection: {
+    marginBottom: 20,
+  },
+  fileSubsectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  fileSubsectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  uploadButtonsRow: {
+    flexDirection: 'row',
+  },
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  uploadButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#3B82F6',
+    marginLeft: 4,
+  },
+  loadingFiles: {
+    marginVertical: 20,
+  },
+  imageScrollView: {
+    marginTop: 8,
+  },
+  imageCard: {
+    marginRight: 12,
+    alignItems: 'center',
+  },
+  imageThumbnail: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: '#E5E7EB',
+  },
+  imageFilename: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+    maxWidth: 100,
+    textAlign: 'center',
+  },
+  noFilesText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  pdfList: {
+    marginTop: 8,
+  },
+  pdfCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  pdfInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  pdfFilename: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1F2937',
+  },
+  pdfSize: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
 });
