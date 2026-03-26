@@ -18,6 +18,7 @@ function RootLayoutContent() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="leads/add" options={{ headerShown: true, title: 'Add Lead' }} />
       <Stack.Screen name="leads/[id]" options={{ headerShown: true, title: 'Lead Details' }} />
+      <Stack.Screen name="leads/edit/[id]" options={{ headerShown: true, title: 'Edit Lead' }} />
       <Stack.Screen name="builders/add" options={{ headerShown: true, title: 'Add Builder' }} />
       <Stack.Screen name="builders/[id]" options={{ headerShown: true, title: 'Builder Details' }} />
       <Stack.Screen name="reminders/add" options={{ headerShown: true, title: 'Add Reminder' }} />

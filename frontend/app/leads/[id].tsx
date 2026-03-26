@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
+import * as Clipboard from 'expo-clipboard';
 import { api } from '../../services/api';
 
 // Safe string helper - converts any value to string safely
@@ -163,6 +164,72 @@ export default function LeadDetailScreen() {
     );
   };
 
+  const handleEdit = () => {
+    router.push(`/leads/edit/${id}` as any);
+  };
+
+  const handleCopyDetails = async () => {
+    if (!lead) return;
+    
+    const unit = formatUnit(lead.unit).toUpperCase();
+    let details = '';
+    
+    // Build copy text based on PHP format
+    details += `${safeStr(lead.name)}\n`;
+    if (lead.phone) details += `📞 ${safeStr(lead.phone)}\n`;
+    if (lead.location) details += `📍 ${safeStr(lead.location)}`;
+    if (lead.address) details += `, ${safeStr(lead.address)}`;
+    details += '\n';
+    
+    // Property details
+    const propDetails = [];
+    if (lead.property_type) propDetails.push(lead.property_type);
+    if (lead.bhk) propDetails.push(lead.bhk);
+    if (lead.floor) propDetails.push(lead.floor);
+    if (lead.area_size) propDetails.push(`${lead.area_size} sq yds`);
+    if (lead.property_status) propDetails.push(lead.property_status);
+    if (propDetails.length > 0) {
+      details += `🏠 ${propDetails.join(' | ')}\n`;
+    }
+    
+    // Floor pricing
+    if (lead.floor_pricing && lead.floor_pricing.length > 0) {
+      details += '\n💰 Floor-wise Pricing:\n';
+      lead.floor_pricing.forEach((fp: any) => {
+        details += `   • ${fp.floor_label}: ₹${fp.floor_amount} ${unit}\n`;
+      });
+      details += '   (All prices are negotiable)\n';
+    }
+    
+    // Budget for clients
+    if (lead.budget_min || lead.budget_max) {
+      const min = lead.budget_min || 0;
+      const max = lead.budget_max || 0;
+      if (min === max && min > 0) {
+        details += `💵 Budget: ₹${min} ${unit}\n`;
+      } else if (min > 0 && max > 0) {
+        details += `💵 Budget: ₹${min} - ₹${max} ${unit}\n`;
+      }
+    }
+    
+    // Notes
+    if (lead.notes) {
+      details += `\n📝 Notes: ${safeStr(lead.notes)}\n`;
+    }
+    
+    // Google Maps link
+    if (lead.Property_locationUrl) {
+      details += `\n🗺️ Location: ${lead.Property_locationUrl}\n`;
+    }
+    
+    try {
+      await Clipboard.setStringAsync(details);
+      Alert.alert('Copied!', 'Lead details copied to clipboard');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to copy details');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -252,19 +319,38 @@ export default function LeadDetailScreen() {
     <ScrollView style={styles.container}>
       {/* Header */}
       <View style={styles.headerCard}>
-        <Text style={styles.leadName}>{safeStr(lead.name) || 'Unknown'}</Text>
-        <View style={styles.badges}>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>{getTypeLabel(lead.lead_type)}</Text>
-          </View>
-          {lead.lead_temperature ? (
-            <View style={styles.temperatureBadge}>
-              <Text style={styles.temperatureText}>{safeStr(lead.lead_temperature)}</Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.leadName}>{safeStr(lead.name) || 'Unknown'}</Text>
+            <View style={styles.badges}>
+              <View style={styles.typeBadge}>
+                <Text style={styles.typeBadgeText}>{getTypeLabel(lead.lead_type)}</Text>
+              </View>
+              {lead.lead_temperature ? (
+                <View style={styles.temperatureBadge}>
+                  <Text style={styles.temperatureText}>{safeStr(lead.lead_temperature)}</Text>
+                </View>
+              ) : null}
             </View>
-          ) : null}
+          </View>
+          
+          {/* Header Action Icons */}
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerIconButton} onPress={handleEdit}>
+              <Ionicons name="create-outline" size={22} color="#3B82F6" />
+            </TouchableOpacity>
+            {isInventoryLead() ? (
+              <TouchableOpacity style={styles.headerIconButton} onPress={handleCopyDetails}>
+                <Ionicons name="copy-outline" size={22} color="#10B981" />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={styles.headerIconButton} onPress={handleDelete}>
+              <Ionicons name="trash-outline" size={22} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Action Buttons */}
+        {/* Quick Action Buttons */}
         <View style={styles.actionButtons}>
           {lead.phone ? (
             <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
@@ -525,13 +611,8 @@ export default function LeadDetailScreen() {
         )}
       </View>
 
-      {/* Delete Button */}
-      <View style={styles.bottomActions}>
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-          <Ionicons name="trash" size={20} color="#FFFFFF" />
-          <Text style={styles.deleteButtonText}>{'Delete Lead'}</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Spacing at bottom */}
+      <View style={styles.bottomSpacing} />
 
       {/* Log Conversation Modal */}
       <Modal
@@ -676,11 +757,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  headerIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
   leadName: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#1F2937',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   badges: {
     flexDirection: 'row',

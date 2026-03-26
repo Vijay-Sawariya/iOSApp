@@ -621,17 +621,34 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
     
     return LeadResponse(**created)
 
-@api_router.put("/leads/{lead_id}", response_model=LeadResponse)
-def update_lead(lead_id: int, lead: LeadCreate, current_user: dict = Depends(get_current_user)):
+@api_router.put("/leads/{lead_id}")
+def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            """UPDATE leads SET name=%s, phone=%s, email=%s, lead_type=%s, location=%s,
-               bhk=%s, budget_min=%s, budget_max=%s, property_type=%s, lead_temperature=%s, lead_status=%s, notes=%s
-               WHERE id=%s""",
-            (lead.name, lead.phone, lead.email, lead.lead_type, lead.location, lead.bhk,
-             lead.budget_min, lead.budget_max, lead.property_type, lead.lead_temperature, lead.lead_status, lead.notes, lead_id)
-        )
+        
+        # Build dynamic update query based on provided fields
+        update_fields = []
+        values = []
+        
+        allowed_fields = [
+            'name', 'phone', 'email', 'lead_type', 'location', 'address',
+            'bhk', 'budget_min', 'budget_max', 'property_type', 'property_status',
+            'lead_temperature', 'lead_status', 'notes', 'floor', 'area_size',
+            'car_parking_number', 'lift_available', 'unit', 'Property_locationUrl'
+        ]
+        
+        for field in allowed_fields:
+            if field in lead_data:
+                update_fields.append(f"{field} = %s")
+                values.append(lead_data[field])
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        values.append(lead_id)
+        query = f"UPDATE leads SET {', '.join(update_fields)} WHERE id = %s"
+        
+        cursor.execute(query, values)
         conn.commit()
         
         if cursor.rowcount == 0:
@@ -640,7 +657,7 @@ def update_lead(lead_id: int, lead: LeadCreate, current_user: dict = Depends(get
         cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         updated = cursor.fetchone()
     
-    return LeadResponse(**updated)
+    return updated
 
 @api_router.delete("/leads/{lead_id}")
 def delete_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
