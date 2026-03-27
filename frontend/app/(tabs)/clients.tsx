@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   TextInput,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -23,10 +24,12 @@ interface Lead {
   lead_status: string | null;
   location: string | null;
   floor: string | null;
+  area_size: string | null;
   budget_min: number | null;
   budget_max: number | null;
   unit: string | null;
   created_at?: string | null;
+  created_by_name?: string | null;
 }
 
 export default function ClientLeadsScreen() {
@@ -58,7 +61,6 @@ export default function ClientLeadsScreen() {
   const applyFilters = (data: Lead[], search: string, temp: string | null, sort: 'name' | 'date' | null) => {
     let filtered = [...data];
     
-    // Apply search
     if (search) {
       filtered = filtered.filter(
         (lead) =>
@@ -68,12 +70,10 @@ export default function ClientLeadsScreen() {
       );
     }
     
-    // Apply temperature filter
     if (temp) {
       filtered = filtered.filter((lead) => lead.lead_temperature === temp);
     }
     
-    // Apply sort
     if (sort === 'name') {
       filtered.sort((a, b) => a.name.localeCompare(b.name));
     } else if (sort === 'date') {
@@ -112,14 +112,10 @@ export default function ClientLeadsScreen() {
 
   const getTemperatureColor = (temp: string | null) => {
     switch (temp) {
-      case 'Hot':
-        return '#EF4444';
-      case 'Warm':
-        return '#F59E0B';
-      case 'Cold':
-        return '#6366F1';
-      default:
-        return '#9CA3AF';
+      case 'Hot': return '#EF4444';
+      case 'Warm': return '#F59E0B';
+      case 'Cold': return '#6366F1';
+      default: return '#9CA3AF';
     }
   };
 
@@ -130,15 +126,11 @@ export default function ClientLeadsScreen() {
   const formatUnit = (unit: string | null): string => {
     if (!unit) return '';
     switch (unit.toUpperCase()) {
-      case 'CR':
-        return 'Cr';
-      case 'L':
-        return 'L';
+      case 'CR': return ' Cr';
+      case 'L': return ' L';
       case 'K':
-      case 'TH':
-        return 'K';
-      default:
-        return unit;
+      case 'TH': return ' K';
+      default: return ` ${unit}`;
     }
   };
 
@@ -155,79 +147,144 @@ export default function ClientLeadsScreen() {
     return '';
   };
 
+  const handleDelete = (id: number, name: string) => {
+    if (!isOnline) {
+      Alert.alert('Offline', 'Cannot delete while offline.');
+      return;
+    }
+    Alert.alert('Delete Lead', `Are you sure you want to delete "${name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await offlineApi.deleteLead(String(id));
+            loadLeads();
+            Alert.alert('Success', 'Lead deleted successfully');
+          } catch (error) {
+            Alert.alert('Error', 'Failed to delete lead');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleAddReminder = (item: Lead) => {
+    router.push({
+      pathname: '/reminders/add',
+      params: { lead_id: item.id, lead_name: item.name }
+    } as any);
+  };
+
   const renderLead = ({ item }: { item: Lead }) => {
     const budgetText = formatBudget(item);
     
     return (
-      <TouchableOpacity
-        style={styles.leadCard}
-        onPress={() => router.push(`/leads/${item.id}` as any)}
-      >
-        <View style={styles.leadHeader}>
-          <View style={styles.leadInfo}>
-            <View style={styles.nameRow}>
-              <Ionicons 
-                name={getTypeIcon(item.lead_type) as any} 
-                size={16} 
-                color="#3B82F6" 
-                style={styles.typeIcon}
-              />
-              <Text style={styles.leadName}>{item.name}</Text>
+      <View style={styles.leadCard}>
+        {/* Main content - tappable to view details */}
+        <TouchableOpacity
+          style={styles.leadContent}
+          onPress={() => router.push(`/leads/${item.id}` as any)}
+        >
+          <View style={styles.leadHeader}>
+            <View style={styles.leadInfo}>
+              <View style={styles.nameRow}>
+                <Ionicons 
+                  name={getTypeIcon(item.lead_type) as any} 
+                  size={16} 
+                  color="#3B82F6" 
+                  style={styles.typeIcon}
+                />
+                <Text style={styles.leadName}>{item.name}</Text>
+              </View>
+              {item.created_by_name && (
+                <Text style={styles.createdByText}>by {item.created_by_name}</Text>
+              )}
+              <View style={styles.leadMeta}>
+                {item.phone && (
+                  <View style={styles.metaItem}>
+                    <Ionicons name="call" size={12} color="#6B7280" />
+                    <Text style={styles.metaText}>{item.phone}</Text>
+                  </View>
+                )}
+                {item.location && (
+                  <View style={styles.metaItem}>
+                    <Ionicons name="location" size={12} color="#6B7280" />
+                    <Text style={styles.metaText}>{item.location}</Text>
+                  </View>
+                )}
+              </View>
             </View>
-            <View style={styles.leadMeta}>
-              {item.phone && (
-                <View style={styles.metaItem}>
-                  <Ionicons name="call" size={12} color="#6B7280" />
-                  <Text style={styles.metaText}>{item.phone}</Text>
-                </View>
-              )}
-              {item.location && (
-                <View style={styles.metaItem}>
-                  <Ionicons name="location" size={12} color="#6B7280" />
-                  <Text style={styles.metaText}>{item.location}</Text>
-                </View>
-              )}
+            <View
+              style={[
+                styles.temperatureBadge,
+                { backgroundColor: getTemperatureColor(item.lead_temperature) },
+              ]}
+            >
+              <Text style={styles.temperatureText}>{item.lead_temperature || 'N/A'}</Text>
             </View>
           </View>
-          <View
-            style={[
-              styles.temperatureBadge,
-              { backgroundColor: getTemperatureColor(item.lead_temperature) },
-            ]}
-          >
-            <Text style={styles.temperatureText}>{item.lead_temperature || 'N/A'}</Text>
-          </View>
-        </View>
 
-        {/* Client Preferences Section */}
-        {(item.floor || budgetText) ? (
+          {/* Client Preferences Section */}
           <View style={styles.preferencesContainer}>
-            {item.floor ? (
+            {item.floor && (
               <View style={styles.preferenceItem}>
                 <Ionicons name="layers" size={14} color="#3B82F6" />
-                <Text style={styles.preferenceText}>{'Floors: '}{item.floor}</Text>
+                <Text style={styles.preferenceText}>Floor: {item.floor}</Text>
               </View>
-            ) : null}
-            {budgetText ? (
+            )}
+            {item.area_size && (
+              <View style={styles.preferenceItem}>
+                <Ionicons name="resize" size={14} color="#8B5CF6" />
+                <Text style={styles.preferenceText}>Area: {item.area_size} sq.yds</Text>
+              </View>
+            )}
+            {budgetText && (
               <View style={styles.preferenceItem}>
                 <Ionicons name="wallet" size={14} color="#10B981" />
-                <Text style={styles.preferenceText}>{'Budget: '}{budgetText}</Text>
+                <Text style={styles.preferenceText}>Budget: {budgetText}</Text>
               </View>
-            ) : null}
+            )}
           </View>
-        ) : null}
 
-        <View style={styles.leadFooter}>
-          <View style={[styles.typeBadge, { backgroundColor: '#DBEAFE' }]}>
-            <Text style={[styles.typeBadgeText, { color: '#1E40AF' }]}>
-              {item.lead_type === 'buyer' ? 'Buyer' : 'Tenant'}
-            </Text>
+          <View style={styles.leadFooter}>
+            <View style={[styles.typeBadge, { backgroundColor: '#DBEAFE' }]}>
+              <Text style={[styles.typeBadgeText, { color: '#1E40AF' }]}>
+                {item.lead_type === 'buyer' ? 'Buyer' : 'Tenant'}
+              </Text>
+            </View>
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusBadgeText}>{item.lead_status || 'New'}</Text>
+            </View>
           </View>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>{item.lead_status || 'New'}</Text>
-          </View>
+        </TouchableOpacity>
+
+        {/* Action Buttons Row */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleAddReminder(item)}
+          >
+            <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
+            <Text style={styles.actionText}>Reminder</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push(`/leads/edit/${item.id}` as any)}
+          >
+            <Ionicons name="create-outline" size={18} color="#3B82F6" />
+            <Text style={styles.actionText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleDelete(item.id, item.name)}
+          >
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+            <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -235,7 +292,7 @@ export default function ClientLeadsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Client Leads</Text>
-        <Text style={styles.headerSubtitle}>Buyers & Tenants</Text>
+        <Text style={styles.headerSubtitle}>Buyers & Tenants ({filteredLeads.length})</Text>
       </View>
 
       <View style={styles.searchContainer}>
@@ -251,11 +308,10 @@ export default function ClientLeadsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Filter Options */}
-      {showFilters ? (
+      {showFilters && (
         <View style={styles.filterContainer}>
           <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>{'Temperature:'}</Text>
+            <Text style={styles.filterLabel}>Temperature:</Text>
             <View style={styles.filterOptions}>
               {['Hot', 'Warm', 'Cold'].map((temp) => (
                 <TouchableOpacity
@@ -276,31 +332,31 @@ export default function ClientLeadsScreen() {
             </View>
           </View>
           <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>{'Sort by:'}</Text>
+            <Text style={styles.filterLabel}>Sort by:</Text>
             <View style={styles.filterOptions}>
               <TouchableOpacity
                 style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
                 onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
               >
                 <Ionicons name="text" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}>{' Name'}</Text>
+                <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.filterChip, sortBy === 'date' && styles.filterChipActive]}
                 onPress={() => handleSort(sortBy === 'date' ? null : 'date')}
               >
                 <Ionicons name="calendar" size={14} color={sortBy === 'date' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[styles.filterChipText, sortBy === 'date' && styles.filterChipTextActive]}>{' Date'}</Text>
+                <Text style={[styles.filterChipText, sortBy === 'date' && styles.filterChipTextActive]}> Date</Text>
               </TouchableOpacity>
             </View>
           </View>
-          {(temperatureFilter || sortBy) ? (
+          {(temperatureFilter || sortBy) && (
             <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
-              <Text style={styles.clearFiltersText}>{'Clear Filters'}</Text>
+              <Text style={styles.clearFiltersText}>Clear Filters</Text>
             </TouchableOpacity>
-          ) : null}
+          )}
         </View>
-      ) : null}
+      )}
 
       <FlatList
         data={filteredLeads}
@@ -370,23 +426,27 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 16,
     paddingTop: 0,
+    paddingBottom: 100,
   },
   leadCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
+    overflow: 'hidden',
+  },
+  leadContent: {
+    padding: 16,
   },
   leadHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   leadInfo: {
     flex: 1,
@@ -394,7 +454,7 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 2,
   },
   typeIcon: {
     marginRight: 8,
@@ -403,6 +463,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#1F2937',
+  },
+  createdByText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginLeft: 24,
+    marginBottom: 6,
+    fontStyle: 'italic',
   },
   leadMeta: {
     marginBottom: 4,
@@ -470,6 +537,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#16A34A',
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginLeft: 4,
   },
   emptyContainer: {
     alignItems: 'center',

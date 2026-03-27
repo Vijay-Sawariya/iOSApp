@@ -403,22 +403,27 @@ def get_me(current_user: dict = Depends(get_current_user)):
     return UserResponse(**current_user)
 
 # ============= Lead Routes =============
-@api_router.get("/leads/clients", response_model=List[LeadResponse])
+@api_router.get("/leads/clients")
 def get_client_leads(
     skip: int = 0,
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get CLIENT leads (buyer, tenant)"""
+    """Get CLIENT leads (buyer, tenant) - excludes deleted"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM leads WHERE lead_type IN ('buyer', 'tenant') ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            """SELECT l.*, u.full_name as created_by_name 
+               FROM leads l
+               LEFT JOIN users u ON l.created_by = u.id
+               WHERE l.lead_type IN ('buyer', 'tenant') 
+               AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+               ORDER BY l.created_at DESC LIMIT %s OFFSET %s""",
             (limit, skip)
         )
         leads = cursor.fetchall()
     
-    return [LeadResponse(**lead) for lead in leads]
+    return leads
 
 @api_router.get("/leads/inventory")
 def get_inventory_leads(
@@ -426,11 +431,16 @@ def get_inventory_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get INVENTORY leads (seller, landlord, builder) with floor pricing"""
+    """Get INVENTORY leads (seller, landlord, builder) with floor pricing - excludes deleted"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder') ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            """SELECT l.*, u.full_name as created_by_name 
+               FROM leads l
+               LEFT JOIN users u ON l.created_by = u.id
+               WHERE l.lead_type IN ('seller', 'landlord', 'builder') 
+               AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+               ORDER BY l.created_at DESC LIMIT %s OFFSET %s""",
             (limit, skip)
         )
         leads = cursor.fetchall()
@@ -468,11 +478,13 @@ def get_all_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get all leads"""
+    """Get all leads - excludes deleted"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM leads ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            """SELECT * FROM leads 
+               WHERE (is_deleted IS NULL OR is_deleted = 0)
+               ORDER BY created_at DESC LIMIT %s OFFSET %s""",
             (limit, skip)
         )
         leads = cursor.fetchall()
@@ -882,26 +894,26 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Total leads
-        cursor.execute("SELECT COUNT(*) as count FROM leads")
+        # Total leads (exclude deleted)
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE (is_deleted IS NULL OR is_deleted = 0)")
         total_leads = cursor.fetchone()['count']
         
-        # Client leads (buyer, tenant)
-        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant')")
+        # Client leads (buyer, tenant) - exclude deleted
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
         client_leads = cursor.fetchone()['count']
         
-        # Inventory leads (seller, landlord, builder)
-        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder')")
+        # Inventory leads (seller, landlord, builder) - exclude deleted
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder') AND (is_deleted IS NULL OR is_deleted = 0)")
         inventory_leads = cursor.fetchone()['count']
         
-        # Temperature counts
-        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Hot'")
+        # Temperature counts - exclude deleted
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Hot' AND (is_deleted IS NULL OR is_deleted = 0)")
         hot_leads = cursor.fetchone()['count']
         
-        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Warm'")
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Warm' AND (is_deleted IS NULL OR is_deleted = 0)")
         warm_leads = cursor.fetchone()['count']
         
-        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Cold'")
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_temperature = 'Cold' AND (is_deleted IS NULL OR is_deleted = 0)")
         cold_leads = cursor.fetchone()['count']
         
         # Builders

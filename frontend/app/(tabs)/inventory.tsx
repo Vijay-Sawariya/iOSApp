@@ -39,6 +39,7 @@ interface Lead {
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;
+  created_by_name?: string | null;
 }
 
 // Filter Options
@@ -239,9 +240,25 @@ export default function InventoryLeadsScreen() {
     }
   };
 
-  const formatFloorPricing = (pricing?: FloorPricing[]) => {
+  const formatUnit = (unit: string | null): string => {
+    if (!unit) return '';
+    switch (unit.toUpperCase()) {
+      case 'CR':
+        return ' Cr';
+      case 'L':
+        return ' L';
+      case 'K':
+      case 'TH':
+        return ' K';
+      default:
+        return ` ${unit}`;
+    }
+  };
+
+  const formatFloorPricing = (pricing?: FloorPricing[], unit?: string | null) => {
     if (!pricing || pricing.length === 0) return null;
-    return pricing.map(p => `${p.floor_label}: ₹${p.floor_amount}`).join(' | ');
+    const unitStr = formatUnit(unit);
+    return pricing.map(p => `${p.floor_label}: ₹${p.floor_amount}${unitStr}`).join(' | ');
   };
 
   const stats = {
@@ -254,7 +271,7 @@ export default function InventoryLeadsScreen() {
   const renderLeadCard = ({ item }: { item: Lead }) => {
     const typeColor = getTypeColor(item.lead_type);
     const tempColor = getTemperatureColor(item.lead_temperature);
-    const floorPricing = formatFloorPricing(item.floor_pricing);
+    const floorPricing = formatFloorPricing(item.floor_pricing, item.unit);
 
     return (
       <TouchableOpacity
