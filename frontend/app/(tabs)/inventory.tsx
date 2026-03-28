@@ -36,6 +36,7 @@ import {
   getTypeColor,
   getTemperatureColor,
   formatFloorPricing,
+  normalizeSearchText,
   LOCATIONS,
   FLOORS,
   INVENTORY_STATUSES,
@@ -129,11 +130,14 @@ export default function InventoryLeadsScreen() {
       );
     }
 
-    // Address filter
+    // Address filter - with normalization for flexible matching
+    // "F18", "F 18", "F-18", "F- 18", "F -18" all match
     if (addressFilter.trim()) {
-      filtered = filtered.filter(lead =>
-        lead.address?.toLowerCase().includes(addressFilter.toLowerCase())
-      );
+      const normalizedSearch = normalizeSearchText(addressFilter);
+      filtered = filtered.filter(lead => {
+        const normalizedAddress = normalizeSearchText(lead.address || '');
+        return normalizedAddress.includes(normalizedSearch);
+      });
     }
 
     // Location filter (multi-select)

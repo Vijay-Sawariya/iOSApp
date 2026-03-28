@@ -83,6 +83,16 @@ export const formatUnit = (unit: string | null): string => {
   }
 };
 
+// Normalize text for flexible search matching
+// "F18", "F 18", "F-18", "F- 18", "F -18" all become "f18"
+export const normalizeSearchText = (text: string | null | undefined): string => {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/[\s\-]+/g, '') // Remove spaces and hyphens
+    .trim();
+};
+
 export const formatBudget = (budgetMin: number | null, budgetMax: number | null, unit: string | null): string => {
   if (!budgetMin && !budgetMax) return '';
   const unitStr = formatUnit(unit);
