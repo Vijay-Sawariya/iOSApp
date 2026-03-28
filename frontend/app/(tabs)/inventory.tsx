@@ -9,6 +9,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -40,6 +41,7 @@ interface Lead {
   floor_pricing?: FloorPricing[];
   created_at?: string | null;
   created_by_name?: string | null;
+  Property_locationUrl?: string | null;
 }
 
 // Filter Options
@@ -135,11 +137,14 @@ export default function InventoryLeadsScreen() {
       filtered = filtered.filter(lead => lead.lead_type === typeFilter);
     }
 
-    // Floor filter
+    // Floor filter - normalize spaces for comparison
     if (floorFilter && floorFilter !== 'Any') {
-      filtered = filtered.filter(lead =>
-        lead.floor?.toLowerCase().includes(floorFilter.toLowerCase())
-      );
+      const normalizedFilter = floorFilter.replace(/\s+/g, '').toLowerCase();
+      filtered = filtered.filter(lead => {
+        if (!lead.floor) return false;
+        const normalizedFloor = lead.floor.replace(/\s+/g, '').toLowerCase();
+        return normalizedFloor.includes(normalizedFilter);
+      });
     }
 
     // Status filter
@@ -268,10 +273,18 @@ export default function InventoryLeadsScreen() {
     builders: filteredLeads.filter(l => l.lead_type === 'builder').length,
   };
 
+  const openMapUrl = (url: string) => {
+    Linking.openURL(url).catch(err => console.error('Failed to open map URL:', err));
+  };
+
   const renderLeadCard = ({ item }: { item: Lead }) => {
     const typeColor = getTypeColor(item.lead_type);
     const tempColor = getTemperatureColor(item.lead_temperature);
     const floorPricing = formatFloorPricing(item.floor_pricing, item.unit);
+    const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
+
+    // Format address and location display
+    const addressLocation = [item.address, item.location].filter(Boolean).join(', ');
 
     return (
       <TouchableOpacity
@@ -280,7 +293,12 @@ export default function InventoryLeadsScreen() {
       >
         <View style={styles.cardHeader}>
           <View style={styles.cardTitleRow}>
-            <Text style={styles.leadName}>{item.name}</Text>
+            <View style={styles.nameContainer}>
+              <Text style={styles.leadName}>{item.name}</Text>
+              {item.created_by_name && (
+                <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
+              )}
+            </View>
             <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
               <Text style={[styles.typeText, { color: typeColor.text }]}>
                 {item.lead_type === 'seller' ? 'Sell' : item.lead_type === 'landlord' ? 'Rent' : 'Builder'}
@@ -297,10 +315,24 @@ export default function InventoryLeadsScreen() {
           </View>
         )}
 
-        {item.location && (
+        {addressLocation && (
           <View style={styles.infoRow}>
             <Ionicons name="location-outline" size={14} color="#6B7280" />
-            <Text style={styles.infoText}>{item.location}</Text>
+            {hasMapUrl ? (
+              <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
+                <Text style={[styles.infoText, styles.mapLink]}>{addressLocation}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.infoText}>{addressLocation}</Text>
+            )}
+            {hasMapUrl && (
+              <TouchableOpacity 
+                style={styles.mapIconButton}
+                onPress={() => openMapUrl(item.Property_locationUrl!)}
+              >
+                <Ionicons name="map" size={16} color="#3B82F6" />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -780,6 +812,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     marginLeft: 6,
+    flex: 1,
+  },
+  mapLink: {
+    color: '#3B82F6',
+    textDecorationLine: 'underline',
+  },
+  mapIconButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  nameContainer: {
+    flex: 1,
+  },
+  createdByText: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   propertyInfo: {
     flexDirection: 'row',
