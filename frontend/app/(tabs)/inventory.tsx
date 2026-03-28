@@ -59,7 +59,7 @@ const TYPES = [
   { label: 'For Rent', value: 'landlord' },
   { label: 'Builder', value: 'builder' },
 ];
-const FLOORS = ['Any', 'BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
+const FLOORS = ['BMT', 'BMT+GF', 'FF', 'SF', 'TF', 'TF+Terr'];
 const STATUSES = ['Any', 'Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const FACINGS = ['Any', 'South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
 
@@ -77,7 +77,8 @@ export default function InventoryLeadsScreen() {
   const [addressFilter, setAddressFilter] = useState('');
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState('');
-  const [floorFilter, setFloorFilter] = useState('Any');
+  const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
+  const [showFloorPicker, setShowFloorPicker] = useState(false);
   const [statusFilter, setStatusFilter] = useState('Any');
   const [areaMinFilter, setAreaMinFilter] = useState('');
   const [areaMaxFilter, setAreaMaxFilter] = useState('');
@@ -137,13 +138,15 @@ export default function InventoryLeadsScreen() {
       filtered = filtered.filter(lead => lead.lead_type === typeFilter);
     }
 
-    // Floor filter - normalize spaces for comparison
-    if (floorFilter && floorFilter !== 'Any') {
-      const normalizedFilter = floorFilter.replace(/\s+/g, '').toLowerCase();
+    // Floor filter - multiselect with space normalization
+    if (selectedFloors.length > 0) {
       filtered = filtered.filter(lead => {
         if (!lead.floor) return false;
-        const normalizedFloor = lead.floor.replace(/\s+/g, '').toLowerCase();
-        return normalizedFloor.includes(normalizedFilter);
+        const normalizedLeadFloor = lead.floor.replace(/\s+/g, '').toLowerCase();
+        return selectedFloors.some(floor => {
+          const normalizedFilter = floor.replace(/\s+/g, '').toLowerCase();
+          return normalizedLeadFloor.includes(normalizedFilter);
+        });
       });
     }
 
@@ -202,7 +205,7 @@ export default function InventoryLeadsScreen() {
     setAddressFilter('');
     setSelectedLocations([]);
     setTypeFilter('');
-    setFloorFilter('Any');
+    setSelectedFloors([]);
     setStatusFilter('Any');
     setAreaMinFilter('');
     setAreaMaxFilter('');
@@ -220,9 +223,17 @@ export default function InventoryLeadsScreen() {
     }
   };
 
+  const toggleFloor = (floor: string) => {
+    if (selectedFloors.includes(floor)) {
+      setSelectedFloors(selectedFloors.filter(f => f !== floor));
+    } else {
+      setSelectedFloors([...selectedFloors, floor]);
+    }
+  };
+
   const hasActiveFilters = () => {
     return nameFilter || phoneFilter || addressFilter || selectedLocations.length > 0 ||
-           typeFilter || floorFilter !== 'Any' || statusFilter !== 'Any' ||
+           typeFilter || selectedFloors.length > 0 || statusFilter !== 'Any' ||
            areaMinFilter || areaMaxFilter || budgetMinFilter || budgetMaxFilter ||
            facingFilter !== 'Any';
   };
@@ -513,21 +524,35 @@ export default function InventoryLeadsScreen() {
                 </View>
                 <View style={styles.filterHalf}>
                   <Text style={styles.filterLabel}>Floor</Text>
-                  <View style={styles.pickerContainer}>
-                    {FLOORS.slice(0, 4).map(f => (
-                      <TouchableOpacity
-                        key={f}
-                        style={[styles.pickerOption, floorFilter === f && styles.pickerOptionActive]}
-                        onPress={() => setFloorFilter(f)}
-                      >
-                        <Text style={[styles.pickerOptionText, floorFilter === f && styles.pickerOptionTextActive]}>
-                          {f}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <TouchableOpacity
+                    style={styles.locationSelector}
+                    onPress={() => setShowFloorPicker(true)}
+                  >
+                    <Text style={[styles.locationText, selectedFloors.length === 0 && styles.placeholderText]}>
+                      {selectedFloors.length > 0 
+                        ? `${selectedFloors.length} selected` 
+                        : 'Select floors'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color="#6B7280" />
+                  </TouchableOpacity>
                 </View>
               </View>
+
+              {/* Selected Floors Tags */}
+              {selectedFloors.length > 0 && (
+                <View style={styles.selectedTags}>
+                  {selectedFloors.map(floor => (
+                    <TouchableOpacity
+                      key={floor}
+                      style={styles.selectedTag}
+                      onPress={() => toggleFloor(floor)}
+                    >
+                      <Text style={styles.selectedTagText}>{floor}</Text>
+                      <Ionicons name="close" size={14} color="#6B7280" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               {/* Status */}
               <Text style={styles.filterLabel}>Status</Text>
@@ -660,6 +685,42 @@ export default function InventoryLeadsScreen() {
               onPress={() => setShowLocationPicker(false)}
             >
               <Text style={styles.locationDoneText}>Done ({selectedLocations.length} selected)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Floor Picker Modal */}
+      <Modal visible={showFloorPicker} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.locationModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Floors</Text>
+              <TouchableOpacity onPress={() => setShowFloorPicker(false)}>
+                <Ionicons name="close" size={24} color="#374151" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={FLOORS}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.locationItem}
+                  onPress={() => toggleFloor(item)}
+                >
+                  <Text style={styles.locationItemText}>{item}</Text>
+                  {selectedFloors.includes(item) && (
+                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+                  )}
+                </TouchableOpacity>
+              )}
+              style={styles.locationList}
+            />
+            <TouchableOpacity
+              style={styles.locationDoneButton}
+              onPress={() => setShowFloorPicker(false)}
+            >
+              <Text style={styles.locationDoneText}>Done ({selectedFloors.length} selected)</Text>
             </TouchableOpacity>
           </View>
         </View>

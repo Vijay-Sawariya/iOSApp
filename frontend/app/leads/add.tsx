@@ -2,18 +2,29 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Alert,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api } from '../../services/api';
-import { Picker } from '@react-native-picker/picker';
+
+const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'];
+const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'];
+const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'];
+const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
+const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'];
+const UNITS = ['CR', 'L', 'K'];
+const FLOORS = ['BMT', 'BMT+GF', 'FF', 'SF', 'TF', 'TF+Terr'];
+const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
 
 const LOCATIONS = [
   "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
@@ -32,50 +43,140 @@ const LOCATIONS = [
   "Rajdoot Marg", "Hanuman Road"
 ];
 
-const PROPERTY_STATUS = ["Under construction", "Ready to move", "Near Completion", "Booking", "Old", "Sold"];
-const PROPERTY_TYPES = ["Apartment", "Builder", "Plot", "Vila"];
-const FLOORS = ["BMT", "BMT+GF", "GF", "FF", "SF", "TF", "TF+Terr"];
-const FACING = ["South", "North", "East", "West", "Southeast", "Southwest", "Northeast", "Northwest"];
-const AMENITIES = ["Park Facing", "Park at Rear", "Wide Road", "Main Road", "Peaceful Location", "Corner", "T-Point", "Adjacent Park"];
+interface FloorPrice {
+  floor: string;
+  price: string;
+}
+
+// Custom Dropdown Component for iOS compatibility
+const CustomDropdown = ({ 
+  label, 
+  value, 
+  options, 
+  onSelect, 
+  placeholder = "Select...",
+  displayValue 
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onSelect: (value: string) => void;
+  placeholder?: string;
+  displayValue?: string;
+}) => {
+  const [modalVisible, setModalVisible] = useState(false);
+  
+  const displayText = displayValue || value || placeholder;
+  const hasValue = !!value;
+
+  return (
+    <>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity 
+        style={styles.dropdownButton}
+        onPress={() => setModalVisible(true)}
+      >
+        <Text style={[styles.dropdownText, !hasValue && styles.dropdownPlaceholder]}>
+          {displayText}
+        </Text>
+        <Ionicons name="chevron-down" size={20} color="#6B7280" />
+      </TouchableOpacity>
+      
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{label}</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={options}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.optionItem, value === item && styles.optionItemSelected]}
+                  onPress={() => {
+                    onSelect(item);
+                    setModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.optionText, value === item && styles.optionTextSelected]}>
+                    {item}
+                  </Text>
+                  {value === item && (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  )}
+                </TouchableOpacity>
+              )}
+              style={styles.optionsList}
+            />
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
 
 export default function AddLeadScreen() {
+  const [saving, setSaving] = useState(false);
+  const [builders, setBuilders] = useState<any[]>([]);
+  
+  // Basic Info
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [leadType, setLeadType] = useState('buyer');
+  
+  // Lead Classification
+  const [leadType, setLeadType] = useState('seller');
+  const [leadTemperature, setLeadTemperature] = useState('Hot');
+  const [leadStatus, setLeadStatus] = useState('Under construction');
+  
+  // Property Details
   const [location, setLocation] = useState('');
   const [address, setAddress] = useState('');
-  const [leadTemperature, setLeadTemperature] = useState('Hot');
-  const [leadStatus, setLeadStatus] = useState('New');
-  const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
-  
-  // Client (Buyer/Tenant) fields
-  const [budgetMin, setBudgetMin] = useState('');
-  const [budgetMax, setBudgetMax] = useState('');
-  const [clientFacing, setClientFacing] = useState('');
-  const [clientAmenities, setClientAmenities] = useState<string[]>([]);
-  
-  // Inventory fields
-  const [builders, setBuilders] = useState<any[]>([]);
-  const [builderId, setBuilderId] = useState('');
-  const [propertyStatus, setPropertyStatus] = useState('');
-  const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [propertyType, setPropertyType] = useState('');
   const [bhk, setBhk] = useState('');
-  const [possessionMonth, setPossessionMonth] = useState('');
-  const [possessionYear, setPossessionYear] = useState('');
+  const [floor, setFloor] = useState('');
   const [areaSize, setAreaSize] = useState('');
-  const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
-  const [floorPricing, setFloorPricing] = useState<{[key: string]: string}>({});
+  const [facing, setFacing] = useState('');
+  
+  // Budget (for Clients)
+  const [budgetMin, setBudgetMin] = useState('');
+  const [budgetMax, setBudgetMax] = useState('');
+  const [unit, setUnit] = useState('CR');
+  
+  // Floor-wise Pricing (for Inventory)
+  const [floorPrices, setFloorPrices] = useState<FloorPrice[]>([]);
+  
+  // Other
   const [parking, setParking] = useState('');
   const [lift, setLift] = useState('');
-  const [facing, setFacing] = useState('');
-  const [inventoryAmenities, setInventoryAmenities] = useState<string[]>([]);
+  const [notes, setNotes] = useState('');
+  const [googleMapUrl, setGoogleMapUrl] = useState('');
+  const [builderId, setBuilderId] = useState('');
+
+  const isInventory = ['seller', 'landlord', 'builder'].includes(leadType);
+  const isClient = ['buyer', 'tenant'].includes(leadType);
 
   useEffect(() => {
     loadBuilders();
   }, []);
+
+  useEffect(() => {
+    // Set default status based on lead type
+    if (isInventory) {
+      setLeadStatus('Under construction');
+    } else {
+      setLeadStatus('New');
+    }
+  }, [leadType]);
 
   const loadBuilders = async () => {
     try {
@@ -86,564 +187,404 @@ export default function AddLeadScreen() {
     }
   };
 
-  const isInventoryLead = () => ['seller', 'landlord', 'builder'].includes(leadType);
-  const isClientLead = () => ['buyer', 'tenant'].includes(leadType);
+  const addFloorPrice = () => {
+    setFloorPrices([...floorPrices, { floor: '', price: '' }]);
+  };
 
-  const handleSubmit = async () => {
-    if (!name || !leadType) {
-      Alert.alert('Error', 'Please enter lead name and select type');
+  const updateFloorPrice = (index: number, field: 'floor' | 'price', value: string) => {
+    const updated = [...floorPrices];
+    updated[index][field] = value;
+    setFloorPrices(updated);
+  };
+
+  const removeFloorPrice = (index: number) => {
+    setFloorPrices(floorPrices.filter((_, i) => i !== index));
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('Error', 'Name is required');
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
     try {
       const leadData: any = {
-        name,
-        phone: phone || null,
-        email: email || null,
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
         lead_type: leadType,
-        location: location || null,
-        address: address || null,
         lead_temperature: leadTemperature,
         lead_status: leadStatus,
-        notes: notes || null,
+        location,
+        address: address.trim(),
+        property_type: propertyType,
+        bhk,
+        floor,
+        area_size: areaSize ? parseFloat(areaSize) : null,
+        unit,
+        car_parking_number: parking,
+        lift_available: lift,
+        notes: notes.trim(),
+        Property_locationUrl: googleMapUrl.trim(),
+        building_facing: facing,
       };
 
-      if (isClientLead()) {
+      if (isInventory) {
+        // For inventory, include floor pricing
+        leadData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
+        if (builderId) {
+          leadData.builder_id = parseInt(builderId);
+        }
+      } else {
+        // For clients, include budget
         leadData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
         leadData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
-        if (clientFacing) leadData.notes = `${notes || ''}\nFacing: ${clientFacing}\nAmenities: ${clientAmenities.join(', ')}`.trim();
-      }
-
-      if (isInventoryLead()) {
-        leadData.builder_id = builderId ? parseInt(builderId) : null;
-        leadData.property_type = propertyType || null;
-        leadData.bhk = bhk || null;
-        
-        const inventoryNotes = [
-          notes,
-          propertyStatus && `Status: ${propertyStatus}`,
-          googleMapUrl && `Map: ${googleMapUrl}`,
-          possessionMonth && possessionYear && `Possession: ${possessionMonth}/${possessionYear}`,
-          areaSize && `Area: ${areaSize} sq ft`,
-          selectedFloors.length > 0 && `Floors: ${selectedFloors.join(', ')}`,
-          parking && `Parking: ${parking}`,
-          lift && `Lift: ${lift}`,
-          facing && `Facing: ${facing}`,
-          Object.keys(floorPricing).length > 0 && `Floor Pricing: ${Object.entries(floorPricing).map(([f, p]) => `${f}: ₹${p}`).join(', ')}`,
-          inventoryAmenities.length > 0 && `Amenities: ${inventoryAmenities.join(', ')}`,
-        ].filter(Boolean).join('\n');
-        
-        leadData.notes = inventoryNotes;
       }
 
       await api.createLead(leadData);
-      Alert.alert('Success', 'Lead created successfully');
-      router.back();
-    } catch (error) {
-      console.error('Error creating lead:', error);
+      Alert.alert('Success', 'Lead created successfully', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+    } catch (err) {
+      console.error('Failed to create lead:', err);
       Alert.alert('Error', 'Failed to create lead');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  };
-
-  const toggleAmenity = (amenity: string, isClient: boolean) => {
-    if (isClient) {
-      if (clientAmenities.includes(amenity)) {
-        setClientAmenities(clientAmenities.filter(a => a !== amenity));
-      } else {
-        setClientAmenities([...clientAmenities, amenity]);
-      }
-    } else {
-      if (inventoryAmenities.includes(amenity)) {
-        setInventoryAmenities(inventoryAmenities.filter(a => a !== amenity));
-      } else {
-        setInventoryAmenities([...inventoryAmenities, amenity]);
-      }
-    }
-  };
-
-  const toggleFloor = (floor: string) => {
-    if (selectedFloors.includes(floor)) {
-      setSelectedFloors(selectedFloors.filter(f => f !== floor));
-      // Remove pricing for unselected floor
-      const newPricing = {...floorPricing};
-      delete newPricing[floor];
-      setFloorPricing(newPricing);
-    } else {
-      setSelectedFloors([...selectedFloors, floor]);
-    }
-  };
-
-  const updateFloorPrice = (floor: string, price: string) => {
-    setFloorPricing({...floorPricing, [floor]: price});
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingView 
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#1F2937" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Add New Lead</Text>
+        <TouchableOpacity 
+          style={[styles.saveButton, saving && styles.disabledButton]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Basic Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
+          
+          <Text style={styles.label}>Name *</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Enter name"
+            placeholderTextColor="#9CA3AF"
+          />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Name *</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Enter lead name"
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
+          <Text style={styles.label}>Phone</Text>
+          <TextInput
+            style={styles.input}
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="Enter phone number"
+            placeholderTextColor="#9CA3AF"
+            keyboardType="phone-pad"
+          />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone</Text>
-            <TextInput
-              style={styles.input}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Enter phone number"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email (Optional)</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Enter email"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Lead Type *</Text>
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={leadType}
-                onValueChange={setLeadType}
-                style={styles.picker}
-                itemStyle={styles.pickerItem}
-              >
-                <Picker.Item label="Buyer (Client)" value="buyer" color="#000000" />
-                <Picker.Item label="Tenant (Client)" value="tenant" color="#000000" />
-                <Picker.Item label="Seller (Inventory)" value="seller" color="#000000" />
-                <Picker.Item label="Landlord (Inventory)" value="landlord" color="#000000" />
-                <Picker.Item label="Builder (Inventory)" value="builder" color="#000000" />
-              </Picker>
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Lead Temperature</Text>
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={leadTemperature}
-                onValueChange={setLeadTemperature}
-                style={styles.picker}
-              >
-                <Picker.Item label="Hot" value="Hot" color="#000000" />
-                <Picker.Item label="Warm" value="Warm" color="#000000" />
-                <Picker.Item label="Cold" value="Cold" color="#000000" />
-              </Picker>
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Status</Text>
-            <TextInput
-              style={styles.input}
-              value={leadStatus}
-              onChangeText={setLeadStatus}
-              placeholder="Lead status"
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Enter email"
+            placeholderTextColor="#9CA3AF"
+            keyboardType="email-address"
+          />
         </View>
 
+        {/* Lead Classification */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location</Text>
+          <Text style={styles.sectionTitle}>Lead Classification</Text>
+          
+          <CustomDropdown
+            label="Lead Type"
+            value={leadType}
+            options={LEAD_TYPES}
+            onSelect={setLeadType}
+            displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
+          />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Location</Text>
-            <View style={styles.pickerWrapper}>
-              <Picker
-                selectedValue={location}
-                onValueChange={setLocation}
-                style={styles.picker}
-              >
-                <Picker.Item label="Select Location" value="" color="#9CA3AF" />
-                {LOCATIONS.map((loc) => (
-                  <Picker.Item key={loc} label={loc} value={loc} color="#000000" />
-                ))}
-              </Picker>
+          <CustomDropdown
+            label="Temperature"
+            value={leadTemperature}
+            options={LEAD_TEMPERATURES}
+            onSelect={setLeadTemperature}
+          />
+
+          <CustomDropdown
+            label="Status"
+            value={leadStatus}
+            options={isInventory ? INVENTORY_STATUSES : CLIENT_STATUSES}
+            onSelect={setLeadStatus}
+          />
+        </View>
+
+        {/* Property Details */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Property Details</Text>
+          
+          <CustomDropdown
+            label="Location"
+            value={location}
+            options={LOCATIONS}
+            onSelect={setLocation}
+            placeholder="Select Location"
+          />
+
+          {isInventory && (
+            <>
+              <Text style={styles.label}>Address</Text>
+              <TextInput
+                style={styles.input}
+                value={address}
+                onChangeText={setAddress}
+                placeholder="Enter property address"
+                placeholderTextColor="#9CA3AF"
+              />
+
+              <Text style={styles.label}>Google Map URL</Text>
+              <TextInput
+                style={styles.input}
+                value={googleMapUrl}
+                onChangeText={setGoogleMapUrl}
+                placeholder="https://maps.google.com/..."
+                placeholderTextColor="#9CA3AF"
+              />
+
+              {leadType === 'builder' && builders.length > 0 && (
+                <CustomDropdown
+                  label="Builder"
+                  value={builderId}
+                  options={builders.map(b => b.id.toString())}
+                  onSelect={setBuilderId}
+                  placeholder="Select Builder"
+                  displayValue={builders.find(b => b.id.toString() === builderId)?.builder_name || ''}
+                />
+              )}
+            </>
+          )}
+
+          <CustomDropdown
+            label="Property Type"
+            value={propertyType}
+            options={PROPERTY_TYPES}
+            onSelect={setPropertyType}
+            placeholder="Select Type"
+          />
+
+          <View style={styles.row}>
+            <View style={styles.halfField}>
+              <Text style={styles.label}>BHK</Text>
+              <TextInput
+                style={styles.input}
+                value={bhk}
+                onChangeText={setBhk}
+                placeholder="e.g., 3 BHK"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            <View style={styles.halfField}>
+              <CustomDropdown
+                label="Floor"
+                value={floor}
+                options={FLOORS}
+                onSelect={setFloor}
+                placeholder="Select Floor"
+              />
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Address</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={address}
-              onChangeText={setAddress}
-              placeholder="Enter full address"
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={3}
-            />
+          <View style={styles.row}>
+            <View style={styles.halfField}>
+              <Text style={styles.label}>Area (sq.yds)</Text>
+              <TextInput
+                style={styles.input}
+                value={areaSize}
+                onChangeText={setAreaSize}
+                placeholder="e.g., 200"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={styles.halfField}>
+              <CustomDropdown
+                label="Facing"
+                value={facing}
+                options={FACINGS}
+                onSelect={setFacing}
+                placeholder="Select"
+              />
+            </View>
           </View>
+
+          <View style={styles.row}>
+            <View style={styles.halfField}>
+              <Text style={styles.label}>Parking</Text>
+              <TextInput
+                style={styles.input}
+                value={parking}
+                onChangeText={setParking}
+                placeholder="e.g., 2"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={styles.halfField}>
+              <Text style={styles.label}>Lift</Text>
+              <TextInput
+                style={styles.input}
+                value={lift}
+                onChangeText={setLift}
+                placeholder="e.g., Yes / 1"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+          </View>
+
+          {isInventory && (
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <CustomDropdown
+                  label="Unit"
+                  value={unit}
+                  options={UNITS}
+                  onSelect={setUnit}
+                />
+              </View>
+            </View>
+          )}
         </View>
 
-        {/* Client-specific fields */}
-        {isClientLead() && (
+        {/* Budget (for Clients) */}
+        {isClient && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Client Requirements</Text>
-
+            <Text style={styles.sectionTitle}>Budget</Text>
+            
             <View style={styles.row}>
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Min Budget (₹)</Text>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Min Budget</Text>
                 <TextInput
                   style={styles.input}
                   value={budgetMin}
                   onChangeText={setBudgetMin}
-                  placeholder="Min"
+                  placeholder="e.g., 5"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
                 />
               </View>
-
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Max Budget (₹)</Text>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Max Budget</Text>
                 <TextInput
                   style={styles.input}
                   value={budgetMax}
                   onChangeText={setBudgetMax}
-                  placeholder="Max"
+                  placeholder="e.g., 10"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
                 />
               </View>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Facing</Text>
-              <View style={styles.pickerWrapper}>
-                <Picker
-                  selectedValue={clientFacing}
-                  onValueChange={setClientFacing}
-                  style={styles.picker}
-                >
-                  <Picker.Item label="Select Facing" value="" color="#9CA3AF" />
-                  {FACING.map((f) => (
-                    <Picker.Item key={f} label={f} value={f} color="#000000" />
-                  ))}
-                </Picker>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Additional Amenities</Text>
-              <View style={styles.amenitiesContainer}>
-                {AMENITIES.map((amenity) => (
-                  <TouchableOpacity
-                    key={amenity}
-                    style={[
-                      styles.amenityChip,
-                      clientAmenities.includes(amenity) && styles.amenityChipSelected,
-                    ]}
-                    onPress={() => toggleAmenity(amenity, true)}
-                  >
-                    <Text
-                      style={[
-                        styles.amenityChipText,
-                        clientAmenities.includes(amenity) && styles.amenityChipTextSelected,
-                      ]}
-                    >
-                      {amenity}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Inventory-specific fields */}
-        {isInventoryLead() && (
-          <>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Property Details</Text>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Builder</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={builderId}
-                    onValueChange={setBuilderId}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Select Builder" value="" color="#9CA3AF" />
-                    {builders.map((builder) => (
-                      <Picker.Item
-                        key={builder.id}
-                        label={builder.builder_name}
-                        value={builder.id.toString()}
-                        color="#000000"
-                      />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Property Status</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={propertyStatus}
-                    onValueChange={setPropertyStatus}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Select Status" value="" color="#9CA3AF" />
-                    {PROPERTY_STATUS.map((status) => (
-                      <Picker.Item key={status} label={status} value={status} color="#000000" />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Property Type</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={propertyType}
-                    onValueChange={setPropertyType}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Select Type" value="" color="#9CA3AF" />
-                    {PROPERTY_TYPES.map((type) => (
-                      <Picker.Item key={type} label={type} value={type} color="#000000" />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>BHK</Text>
-                <TextInput
-                  style={styles.input}
-                  value={bhk}
-                  onChangeText={setBhk}
-                  placeholder="e.g., 2 BHK, 3 BHK"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Google Map URL</Text>
-                <TextInput
-                  style={styles.input}
-                  value={googleMapUrl}
-                  onChangeText={setGoogleMapUrl}
-                  placeholder="Enter Google Maps link"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, styles.halfWidth]}>
-                  <Text style={styles.label}>Possession Month</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={possessionMonth}
-                    onChangeText={setPossessionMonth}
-                    placeholder="MM"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                    maxLength={2}
-                  />
-                </View>
-
-                <View style={[styles.inputGroup, styles.halfWidth]}>
-                  <Text style={styles.label}>Possession Year</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={possessionYear}
-                    onChangeText={setPossessionYear}
-                    placeholder="YYYY"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                    maxLength={4}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Area Size (sq ft)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={areaSize}
-                  onChangeText={setAreaSize}
-                  placeholder="Enter area in sq ft"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Floor (Select Multiple)</Text>
-                <View style={styles.amenitiesContainer}>
-                  {FLOORS.map((floorOption) => (
-                    <TouchableOpacity
-                      key={floorOption}
-                      style={[
-                        styles.amenityChip,
-                        selectedFloors.includes(floorOption) && styles.amenityChipSelected,
-                      ]}
-                      onPress={() => toggleFloor(floorOption)}
-                    >
-                      <Text
-                        style={[
-                          styles.amenityChipText,
-                          selectedFloors.includes(floorOption) && styles.amenityChipTextSelected,
-                        ]}
-                      >
-                        {floorOption}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Floor-wise Pricing */}
-              {selectedFloors.length > 0 && (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Floor-wise Pricing</Text>
-                  {selectedFloors.map((floor) => (
-                    <View key={floor} style={styles.floorPricingRow}>
-                      <View style={styles.floorLabel}>
-                        <Text style={styles.floorLabelText}>{floor}</Text>
-                      </View>
-                      <TextInput
-                        style={styles.floorPriceInput}
-                        value={floorPricing[floor] || ''}
-                        onChangeText={(text) => updateFloorPrice(floor, text)}
-                        placeholder="Amount (₹)"
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, styles.halfWidth]}>
-                  <Text style={styles.label}>Parking (Number)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={parking}
-                    onChangeText={setParking}
-                    placeholder="Number of spaces"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                  />
-                </View>
-
-                <View style={[styles.inputGroup, styles.halfWidth]}>
-                  <Text style={styles.label}>Lift</Text>
-                  <View style={styles.pickerWrapper}>
-                    <Picker
-                      selectedValue={lift}
-                      onValueChange={setLift}
-                      style={styles.picker}
-                    >
-                      <Picker.Item label="Select" value="" color="#9CA3AF" />
-                      <Picker.Item label="Yes" value="Yes" color="#000000" />
-                      <Picker.Item label="No" value="No" color="#000000" />
-                    </Picker>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Facing</Text>
-                <View style={styles.pickerWrapper}>
-                  <Picker
-                    selectedValue={facing}
-                    onValueChange={setFacing}
-                    style={styles.picker}
-                  >
-                    <Picker.Item label="Select Facing" value="" color="#9CA3AF" />
-                    {FACING.map((f) => (
-                      <Picker.Item key={f} label={f} value={f} color="#000000" />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Additional Amenities</Text>
-                <View style={styles.amenitiesContainer}>
-                  {AMENITIES.map((amenity) => (
-                    <TouchableOpacity
-                      key={amenity}
-                      style={[
-                        styles.amenityChip,
-                        inventoryAmenities.includes(amenity) && styles.amenityChipSelected,
-                      ]}
-                      onPress={() => toggleAmenity(amenity, false)}
-                    >
-                      <Text
-                        style={[
-                          styles.amenityChipText,
-                          inventoryAmenities.includes(amenity) && styles.amenityChipTextSelected,
-                        ]}
-                      >
-                        {amenity}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-          </>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Notes</Text>
-
-          <View style={styles.inputGroup}>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Add any notes or comments..."
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={4}
+            <CustomDropdown
+              label="Unit"
+              value={unit}
+              options={UNITS}
+              onSelect={setUnit}
             />
           </View>
+        )}
+
+        {/* Floor-wise Pricing (for Inventory) */}
+        {isInventory && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitleNoMargin}>Asking Price (Floor-wise)</Text>
+              <TouchableOpacity style={styles.addFloorButton} onPress={addFloorPrice}>
+                <Ionicons name="add-circle" size={28} color="#10B981" />
+              </TouchableOpacity>
+            </View>
+
+            {floorPrices.length === 0 && (
+              <Text style={styles.emptyText}>No floor prices added. Tap + to add.</Text>
+            )}
+
+            {floorPrices.map((fp, index) => (
+              <View key={index} style={styles.floorPriceRow}>
+                <View style={styles.floorDropdownContainer}>
+                  <TouchableOpacity
+                    style={styles.floorDropdownButton}
+                    onPress={() => {
+                      Alert.alert(
+                        'Select Floor',
+                        '',
+                        FLOORS.map(f => ({
+                          text: f,
+                          onPress: () => updateFloorPrice(index, 'floor', f),
+                        })).concat([{ text: 'Cancel', style: 'cancel', onPress: () => {} }])
+                      );
+                    }}
+                  >
+                    <Text style={[styles.floorDropdownText, !fp.floor && styles.dropdownPlaceholder]}>
+                      {fp.floor || 'Floor'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={styles.floorPriceInput}
+                  value={fp.price}
+                  onChangeText={(text) => updateFloorPrice(index, 'price', text)}
+                  placeholder="Price"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity 
+                  style={styles.removeFloorButton}
+                  onPress={() => removeFloorPrice(index)}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Notes */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Additional Notes</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Add any additional notes..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            numberOfLines={4}
+            textAlignVertical="top"
+          />
         </View>
 
-        <TouchableOpacity
-          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
-        >
-          <Text style={styles.submitButtonText}>
-            {loading ? 'Creating...' : 'Create Lead'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.bottomPadding} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -654,10 +595,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
-  scrollView: {
-    flex: 1,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  saveButton: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   content: {
+    flex: 1,
     padding: 16,
   },
   section: {
@@ -665,15 +637,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
     marginBottom: 16,
   },
-  inputGroup: {
-    marginBottom: 16,
+  sectionTitleNoMargin: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   label: {
     fontSize: 14,
@@ -682,109 +667,152 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#E5E7EB',
     borderRadius: 8,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     fontSize: 16,
     color: '#1F2937',
-    backgroundColor: '#FFFFFF',
+    marginBottom: 16,
   },
   textArea: {
-    height: 80,
+    height: 100,
     textAlignVertical: 'top',
-  },
-  pickerWrapper: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    overflow: 'hidden',
-  },
-  picker: {
-    height: 50,
-    color: '#1F2937',
-    backgroundColor: '#FFFFFF',
-  },
-  pickerItem: {
-    fontSize: 16,
-    color: '#1F2937',
-    backgroundColor: '#FFFFFF',
   },
   row: {
     flexDirection: 'row',
     gap: 12,
   },
-  halfWidth: {
+  halfField: {
     flex: 1,
   },
-  amenitiesContainer: {
+  dropdownButton: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  amenityChip: {
-    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 16,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 12,
+    marginBottom: 16,
   },
-  amenityChipSelected: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
+  dropdownText: {
+    fontSize: 16,
+    color: '#1F2937',
   },
-  amenityChipText: {
-    fontSize: 12,
-    color: '#4B5563',
+  dropdownPlaceholder: {
+    color: '#9CA3AF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  optionsList: {
+    maxHeight: 400,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  optionItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  optionTextSelected: {
+    color: '#3B82F6',
     fontWeight: '500',
   },
-  amenityChipTextSelected: {
-    color: '#FFFFFF',
+  addFloorButton: {
+    padding: 4,
   },
-  submitButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 32,
+  emptyText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 20,
   },
-  submitButtonDisabled: {
-    backgroundColor: '#93C5FD',
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  floorPricingRow: {
+  floorPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    gap: 12,
+    gap: 8,
   },
-  floorLabel: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  floorDropdownContainer: {
+    flex: 1,
+  },
+  floorDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
-    minWidth: 100,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  floorLabelText: {
+  floorDropdownText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1E40AF',
-    textAlign: 'center',
+    color: '#1F2937',
   },
   floorPriceInput: {
     flex: 1,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: '#E5E7EB',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
     color: '#1F2937',
-    backgroundColor: '#FFFFFF',
+  },
+  removeFloorButton: {
+    padding: 8,
+  },
+  bottomPadding: {
+    height: 40,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6B7280',
   },
 });
