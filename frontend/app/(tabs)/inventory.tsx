@@ -17,65 +17,44 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 
-interface FloorPricing {
-  floor_label: string;
-  floor_amount: number;
-}
+// Import shared components
+import {
+  FilterChip,
+  StatsBar,
+  SearchablePickerModal,
+  FilterSection,
+  TextFilterInput,
+  RangeFilterInput,
+  MultiSelectButton,
+  SelectedTags,
+} from '../../components/filters/FilterComponents';
 
-interface PlotSpecification {
-  total_builtup_sqft: number;
-  per_floor_builtup_sqft: number;
-}
+// Import shared constants and helpers
+import {
+  Lead,
+  FloorPricing,
+  getTypeColor,
+  getTemperatureColor,
+  formatFloorPricing,
+  LOCATIONS,
+  FLOORS,
+  INVENTORY_STATUSES,
+  FACINGS,
+} from '../../constants/leadOptions';
 
-interface CircleValue {
-  floor: string;
-  value: number;
-}
-
-interface Lead {
-  id: number;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  lead_type: string | null;
-  lead_temperature: string | null;
-  lead_status: string | null;
-  location: string | null;
-  address: string | null;
-  property_type: string | null;
-  unit: string | null;
-  area_size: string | null;
-  budget_min: number | null;
-  budget_max: number | null;
-  floor: string | null;
-  building_facing: string | null;
-  floor_pricing?: FloorPricing[];
-  created_at?: string | null;
-  created_by_name?: string | null;
-  Property_locationUrl?: string | null;
-  plot_specifications?: PlotSpecification;
-  circle_values?: CircleValue[];
-  total_circle_value?: number;
-}
-
-// Filter Options
-const LOCATIONS = [
-  "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
-  "Defence Colony", "New Friends Colony", "Golf Links", "Anand Niketan", "Saket", "Shivalik",
-  "Sarvapriya Vihar", "Chanakyapuri", "Lajpat Nagar", "Anand Lok", "CR Park", "East of Kailash",
-  "Friends Colony", "Gulmohar Park", "Green Park", "Safdarjung Enclave", "SDA", "Malviya Nagar",
-  "Vasant Kunj", "Jor Bagh", "Lodi Road", "Nizamuddin East", "Nizamuddin West", "Neeti Bagh",
-  "Sarvodaya Enclave", "Kailash Colony", "Sukhdev Vihar", "West End", "Maharani Bagh"
-];
+// Type filter options (specific to this screen)
 const TYPES = [
   { label: 'All Types', value: '' },
   { label: 'For Sell', value: 'seller' },
   { label: 'For Rent', value: 'landlord' },
   { label: 'Builder', value: 'builder' },
 ];
-const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
-const STATUSES = ['Any', 'Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
-const FACINGS = ['Any', 'South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
+const STATUSES = ['Any', ...INVENTORY_STATUSES];
+const FACING_OPTIONS = ['Any', ...FACINGS];
+
+// Use constants from shared file
+const LOCATION_OPTIONS = [...LOCATIONS];
+const FLOOR_OPTIONS = [...FLOORS];
 
 export default function InventoryLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -106,13 +85,13 @@ export default function InventoryLeadsScreen() {
 
   // Memoized filtered lists for modals - prevents re-computation on every render
   const filteredLocations = useMemo(() => 
-    LOCATIONS.filter(loc => 
+    LOCATION_OPTIONS.filter(loc => 
       loc.toLowerCase().includes(locationSearch.toLowerCase())
     ), [locationSearch]
   );
   
   const filteredFloors = useMemo(() => 
-    FLOORS.filter(floor => 
+    FLOOR_OPTIONS.filter(floor => 
       floor.toLowerCase().includes(floorSearch.toLowerCase())
     ), [floorSearch]
   );
@@ -705,7 +684,7 @@ export default function InventoryLeadsScreen() {
               {/* Facing */}
               <Text style={styles.filterLabel}>Facing</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalPicker}>
-                {FACINGS.map(f => (
+                {FACING_OPTIONS.map(f => (
                   <TouchableOpacity
                     key={f}
                     style={[styles.statusOption, facingFilter === f && styles.statusOptionActive]}

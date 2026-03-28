@@ -22,22 +22,20 @@ import * as DocumentPicker from 'expo-document-picker';
 import { offlineApi } from '../../services/offlineApi';
 import { useOffline } from '../../contexts/OfflineContext';
 
+// Import shared components and helpers
+import {
+  safeStr,
+  safeNum,
+  formatUnit,
+  DetailRow,
+  FloorPricingGrid,
+  PlotSpecifications,
+  CircleValues,
+} from '../../components/details/LeadDetailSections';
+
 // GoDaddy API Configuration
 const GODADDY_BASE_URL = 'https://sagarhomelms.com';
 const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
-
-// Safe string helper - converts any value to string safely
-const safeStr = (val: any): string => {
-  if (val === null || val === undefined) return '';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
-};
-
-// Safe number helper
-const safeNum = (val: any): number => {
-  const num = Number(val);
-  return isNaN(num) ? 0 : num;
-};
 
 // Channel and Outcome options
 const CHANNELS = ['Call', 'WhatsApp', 'SMS', 'Email', 'Visit'];
@@ -603,16 +601,7 @@ export default function LeadDetailScreen() {
       {isInventoryLead() && lead.floor_pricing && lead.floor_pricing.length > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{'Floor-wise Pricing'}</Text>
-          <View style={styles.floorPricingGrid}>
-            {lead.floor_pricing.map((fp: any, index: number) => (
-              <View key={index} style={styles.floorPricingCard}>
-                <Text style={styles.floorLabel}>{safeStr(fp.floor_label)}</Text>
-                <Text style={styles.floorPrice}>
-                  {`₹${safeNum(fp.floor_amount)} ${formatUnit(lead.unit)}`}
-                </Text>
-              </View>
-            ))}
-          </View>
+          <FloorPricingGrid floorPricing={lead.floor_pricing} unit={lead.unit} />
         </View>
       ) : null}
 
@@ -623,20 +612,7 @@ export default function LeadDetailScreen() {
             <Ionicons name="calculator-outline" size={20} color="#0369A1" />
             <Text style={styles.sectionTitleWithIcon}>{'Plot Size Specification'}</Text>
           </View>
-          <View style={styles.specGrid}>
-            <View style={styles.specCard}>
-              <Text style={styles.specLabel}>{'Total Built-up'}</Text>
-              <Text style={styles.specValue}>
-                {`${safeNum(lead.calculations.plot_specifications.total_builtup).toFixed(0)} sq.ft`}
-              </Text>
-            </View>
-            <View style={styles.specCard}>
-              <Text style={styles.specLabel}>{'Per Floor Built-up'}</Text>
-              <Text style={styles.specValue}>
-                {`${safeNum(lead.calculations.plot_specifications.per_floor_builtup).toFixed(2)} sq.ft`}
-              </Text>
-            </View>
-          </View>
+          <PlotSpecifications plotSpecs={lead.calculations.plot_specifications} />
         </View>
       ) : null}
 
@@ -647,24 +623,7 @@ export default function LeadDetailScreen() {
             <Ionicons name="stats-chart-outline" size={20} color="#7C3AED" />
             <Text style={styles.sectionTitleWithIcon}>{'Circle Value (approx)'}</Text>
           </View>
-          <View style={styles.circleValueGrid}>
-            {lead.calculations.circle_values.map((cv: any, index: number) => (
-              <View key={index} style={styles.circleValueCard}>
-                <Text style={styles.circleFloorLabel}>{safeStr(cv.label)}</Text>
-                <Text style={styles.circleFloorValue}>
-                  {`₹${safeNum(cv.value).toFixed(2)} Cr`}
-                </Text>
-              </View>
-            ))}
-          </View>
-          {lead.calculations.circle_values.length > 0 ? (
-            <View style={styles.totalCircleValueRow}>
-              <Text style={styles.totalCircleLabel}>{'Total Circle Value:'}</Text>
-              <Text style={styles.totalCircleValue}>
-                {`₹${lead.calculations.circle_values.reduce((sum: number, cv: any) => sum + safeNum(cv.value), 0).toFixed(2)} Cr`}
-              </Text>
-            </View>
-          ) : null}
+          <CircleValues circleValues={lead.calculations.circle_values} />
         </View>
       ) : null}
 
