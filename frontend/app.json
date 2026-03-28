@@ -14,7 +14,8 @@
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Take photos of properties",
-        "NSPhotoLibraryUsageDescription": "Upload property images"
+        "NSPhotoLibraryUsageDescription": "Upload property images",
+        "NSLocationWhenInUseUsageDescription": "Get property location for Google Maps"
       }
     },
     "android": {
@@ -28,7 +29,9 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -57,7 +60,13 @@
         }
       ],
       "expo-document-picker",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Get property location for Google Maps"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

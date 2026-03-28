@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { api } from '../../services/api';
+import * as Location from 'expo-location';
 
 const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'];
 const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'];
@@ -25,6 +26,7 @@ const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'];
 const UNITS = ['CR', 'L', 'K'];
 const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
 const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
+const LIFT_OPTIONS = ['Yes', 'No'];
 
 const LOCATIONS = [
   "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
@@ -127,6 +129,7 @@ const CustomDropdown = ({
 export default function AddLeadScreen() {
   const [saving, setSaving] = useState(false);
   const [builders, setBuilders] = useState<any[]>([]);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
   
   // Basic Info
   const [name, setName] = useState('');
@@ -184,6 +187,31 @@ export default function AddLeadScreen() {
       setBuilders(data);
     } catch (error) {
       console.error('Failed to load builders:', error);
+    }
+  };
+
+  const fetchCurrentLocation = async () => {
+    setFetchingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required to get current location.');
+        return;
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const { latitude, longitude } = currentLocation.coords;
+      const mapUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+      setGoogleMapUrl(mapUrl);
+      Alert.alert('Success', 'Current location captured successfully!');
+    } catch (error) {
+      console.error('Error getting location:', error);
+      Alert.alert('Error', 'Failed to get current location. Please try again.');
+    } finally {
+      setFetchingLocation(false);
     }
   };
 
@@ -363,13 +391,26 @@ export default function AddLeadScreen() {
               />
 
               <Text style={styles.label}>Google Map URL</Text>
-              <TextInput
-                style={styles.input}
-                value={googleMapUrl}
-                onChangeText={setGoogleMapUrl}
-                placeholder="https://maps.google.com/..."
-                placeholderTextColor="#9CA3AF"
-              />
+              <View style={styles.mapUrlRow}>
+                <TextInput
+                  style={styles.mapUrlInput}
+                  value={googleMapUrl}
+                  onChangeText={setGoogleMapUrl}
+                  placeholder="https://maps.google.com/..."
+                  placeholderTextColor="#9CA3AF"
+                />
+                <TouchableOpacity 
+                  style={styles.locationButton}
+                  onPress={fetchCurrentLocation}
+                  disabled={fetchingLocation}
+                >
+                  {fetchingLocation ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons name="location" size={22} color="#FFFFFF" />
+                  )}
+                </TouchableOpacity>
+              </View>
 
               {leadType === 'builder' && builders.length > 0 && (
                 <CustomDropdown
@@ -451,13 +492,22 @@ export default function AddLeadScreen() {
             </View>
             <View style={styles.halfField}>
               <Text style={styles.label}>Lift</Text>
-              <TextInput
-                style={styles.input}
-                value={lift}
-                onChangeText={setLift}
-                placeholder="e.g., Yes / 1"
-                placeholderTextColor="#9CA3AF"
-              />
+              <View style={styles.radioGroup}>
+                {LIFT_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={styles.radioOption}
+                    onPress={() => setLift(option)}
+                  >
+                    <View style={[styles.radioCircle, lift === option && styles.radioCircleSelected]}>
+                      {lift === option && <View style={styles.radioInner} />}
+                    </View>
+                    <Text style={[styles.radioLabel, lift === option && styles.radioLabelSelected]}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </View>
 
@@ -814,5 +864,68 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: '#6B7280',
+  },
+  // Map URL and Location Button
+  mapUrlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  mapUrlInput: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  locationButton: {
+    backgroundColor: '#10B981',
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Radio Button Styles
+  radioGroup: {
+    flexDirection: 'row',
+    gap: 20,
+    paddingVertical: 12,
+  },
+  radioOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  radioCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  radioCircleSelected: {
+    borderColor: '#3B82F6',
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#3B82F6',
+  },
+  radioLabel: {
+    fontSize: 15,
+    color: '#6B7280',
+  },
+  radioLabelSelected: {
+    color: '#1F2937',
+    fontWeight: '500',
   },
 });
