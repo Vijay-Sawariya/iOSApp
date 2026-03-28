@@ -644,7 +644,8 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
             'name', 'phone', 'email', 'lead_type', 'location', 'address',
             'bhk', 'budget_min', 'budget_max', 'property_type',
             'lead_temperature', 'lead_status', 'notes', 'floor', 'area_size',
-            'car_parking_number', 'lift_available', 'unit', 'Property_locationUrl'
+            'car_parking_number', 'lift_available', 'unit', 'Property_locationUrl',
+            'building_facing', 'possession_on', 'builder_id'
         ]
         
         for field in allowed_fields:
@@ -660,6 +661,21 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
         
         cursor.execute(query, values)
         conn.commit()
+        
+        # Handle floor pricing if provided
+        if 'floor_pricing' in lead_data and lead_data['floor_pricing']:
+            # Delete existing floor pricing
+            cursor.execute("DELETE FROM inventory_floor_pricing WHERE lead_id = %s", (lead_id,))
+            
+            # Insert new floor pricing
+            for fp in lead_data['floor_pricing']:
+                if fp.get('floor') and fp.get('price'):
+                    cursor.execute(
+                        """INSERT INTO inventory_floor_pricing (lead_id, floor_label, floor_amount)
+                           VALUES (%s, %s, %s)""",
+                        (lead_id, fp['floor'], float(fp['price']))
+                    )
+            conn.commit()
         
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Lead not found")

@@ -162,6 +162,7 @@ export default function EditLeadScreen() {
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
+  const [facing, setFacing] = useState('');
 
   const isInventory = ['seller', 'landlord', 'builder'].includes(leadType);
 
@@ -218,6 +219,7 @@ export default function EditLeadScreen() {
       setLift(data.lift_available ? String(data.lift_available) : '');
       setNotes(data.notes || '');
       setGoogleMapUrl(data.Property_locationUrl || data.google_map_url || '');
+      setFacing(data.building_facing || '');
       
       // Load floor pricing if available
       if (data.floor_pricing && Array.isArray(data.floor_pricing)) {
@@ -275,6 +277,7 @@ export default function EditLeadScreen() {
         lift_available: lift,
         notes: notes.trim(),
         Property_locationUrl: googleMapUrl.trim(),
+        building_facing: facing,
       };
 
       if (isInventory) {
