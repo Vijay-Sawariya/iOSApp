@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -103,12 +103,17 @@ export default function InventoryLeadsScreen() {
   const [locationSearch, setLocationSearch] = useState('');
   const [floorSearch, setFloorSearch] = useState('');
 
-  // Filtered lists for modals
-  const filteredLocations = LOCATIONS.filter(loc => 
-    loc.toLowerCase().includes(locationSearch.toLowerCase())
+  // Memoized filtered lists for modals - prevents re-computation on every render
+  const filteredLocations = useMemo(() => 
+    LOCATIONS.filter(loc => 
+      loc.toLowerCase().includes(locationSearch.toLowerCase())
+    ), [locationSearch]
   );
-  const filteredFloors = FLOORS.filter(floor => 
-    floor.toLowerCase().includes(floorSearch.toLowerCase())
+  
+  const filteredFloors = useMemo(() => 
+    FLOORS.filter(floor => 
+      floor.toLowerCase().includes(floorSearch.toLowerCase())
+    ), [floorSearch]
   );
 
   const loadLeads = async () => {
