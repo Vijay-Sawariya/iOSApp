@@ -21,6 +21,16 @@ interface FloorPricing {
   floor_amount: number;
 }
 
+interface PlotSpecification {
+  total_builtup_sqft: number;
+  per_floor_builtup_sqft: number;
+}
+
+interface CircleValue {
+  floor: string;
+  value: number;
+}
+
 interface Lead {
   id: number;
   name: string;
@@ -42,6 +52,9 @@ interface Lead {
   created_at?: string | null;
   created_by_name?: string | null;
   Property_locationUrl?: string | null;
+  plot_specifications?: PlotSpecification;
+  circle_values?: CircleValue[];
+  total_circle_value?: number;
 }
 
 // Filter Options
@@ -59,7 +72,7 @@ const TYPES = [
   { label: 'For Rent', value: 'landlord' },
   { label: 'Builder', value: 'builder' },
 ];
-const FLOORS = ['BMT', 'BMT+GF', 'FF', 'SF', 'TF', 'TF+Terr'];
+const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
 const STATUSES = ['Any', 'Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const FACINGS = ['Any', 'South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
 
@@ -363,6 +376,36 @@ export default function InventoryLeadsScreen() {
           <View style={styles.pricingRow}>
             <Ionicons name="cash-outline" size={14} color="#10B981" />
             <Text style={styles.pricingText} numberOfLines={1}>{floorPricing}</Text>
+          </View>
+        )}
+
+        {/* Plot Size Specification */}
+        {item.plot_specifications && (
+          <View style={styles.specSection}>
+            <Text style={styles.specTitle}>Plot Size Specification</Text>
+            <View style={styles.specRow}>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>Total Built-up:</Text>
+                <Text style={styles.specValue}>{item.plot_specifications.total_builtup_sqft.toFixed(0)} sq.ft</Text>
+              </View>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>Per Floor Built-up:</Text>
+                <Text style={styles.specValue}>{item.plot_specifications.per_floor_builtup_sqft.toFixed(2)} sq.ft</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Circle Value */}
+        {item.total_circle_value !== undefined && item.total_circle_value > 0 && (
+          <View style={styles.circleValueSection}>
+            <View style={styles.circleValueHeader}>
+              <Ionicons name="calculator-outline" size={14} color="#8B5CF6" />
+              <Text style={styles.circleValueTitle}>Circle Value (approx):</Text>
+              <Text style={styles.circleValueTotal}>
+                ₹{(item.total_circle_value / 10000000).toFixed(2)} Cr
+              </Text>
+            </View>
           </View>
         )}
       </TouchableOpacity>
@@ -928,6 +971,57 @@ const styles = StyleSheet.create({
     color: '#10B981',
     marginLeft: 6,
     flex: 1,
+  },
+  specSection: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  specTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0369A1',
+    marginBottom: 6,
+  },
+  specRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  specItem: {
+    flex: 1,
+  },
+  specLabel: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginBottom: 2,
+  },
+  specValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0369A1',
+  },
+  circleValueSection: {
+    backgroundColor: '#F5F3FF',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  circleValueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  circleValueTitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6D28D9',
+    marginLeft: 6,
+  },
+  circleValueTotal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#7C3AED',
+    marginLeft: 'auto',
   },
   emptyContainer: {
     alignItems: 'center',

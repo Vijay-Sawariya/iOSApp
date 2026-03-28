@@ -23,7 +23,7 @@ const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 
 const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
 const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'];
 const UNITS = ['CR', 'L', 'K'];
-const FLOORS = ['BMT', 'BMT+GF', 'FF', 'SF', 'TF', 'TF+Terr'];
+const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
 const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'];
 
 const LOCATIONS = [
