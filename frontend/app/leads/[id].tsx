@@ -617,7 +617,7 @@ export default function LeadDetailScreen() {
       ) : null}
 
       {/* Plot Size Specification - For Inventory Leads */}
-      {isInventoryLead() && lead.plot_specifications ? (
+      {isInventoryLead() && lead.calculations?.plot_specifications ? (
         <View style={styles.section}>
           <View style={styles.calcHeader}>
             <Ionicons name="calculator-outline" size={20} color="#0369A1" />
@@ -627,13 +627,13 @@ export default function LeadDetailScreen() {
             <View style={styles.specCard}>
               <Text style={styles.specLabel}>{'Total Built-up'}</Text>
               <Text style={styles.specValue}>
-                {`${safeNum(lead.plot_specifications.total_builtup_sqft).toFixed(0)} sq.ft`}
+                {`${safeNum(lead.calculations.plot_specifications.total_builtup_sqft).toFixed(0)} sq.ft`}
               </Text>
             </View>
             <View style={styles.specCard}>
               <Text style={styles.specLabel}>{'Per Floor Built-up'}</Text>
               <Text style={styles.specValue}>
-                {`${safeNum(lead.plot_specifications.per_floor_builtup_sqft).toFixed(2)} sq.ft`}
+                {`${safeNum(lead.calculations.plot_specifications.per_floor_builtup_sqft).toFixed(2)} sq.ft`}
               </Text>
             </View>
           </View>
@@ -641,14 +641,14 @@ export default function LeadDetailScreen() {
       ) : null}
 
       {/* Circle Value - For Inventory Leads */}
-      {isInventoryLead() && lead.circle_values && lead.circle_values.length > 0 ? (
+      {isInventoryLead() && lead.calculations?.circle_values && lead.calculations.circle_values.length > 0 ? (
         <View style={styles.section}>
           <View style={styles.calcHeader}>
             <Ionicons name="stats-chart-outline" size={20} color="#7C3AED" />
             <Text style={styles.sectionTitleWithIcon}>{'Circle Value (approx)'}</Text>
           </View>
           <View style={styles.circleValueGrid}>
-            {lead.circle_values.map((cv: any, index: number) => (
+            {lead.calculations.circle_values.map((cv: any, index: number) => (
               <View key={index} style={styles.circleValueCard}>
                 <Text style={styles.circleFloorLabel}>{safeStr(cv.floor)}</Text>
                 <Text style={styles.circleFloorValue}>
@@ -657,11 +657,11 @@ export default function LeadDetailScreen() {
               </View>
             ))}
           </View>
-          {lead.total_circle_value ? (
+          {lead.calculations.circle_values.length > 0 ? (
             <View style={styles.totalCircleValueRow}>
               <Text style={styles.totalCircleLabel}>{'Total Circle Value:'}</Text>
               <Text style={styles.totalCircleValue}>
-                {`₹${(safeNum(lead.total_circle_value) / 10000000).toFixed(2)} Cr`}
+                {`₹${(lead.calculations.circle_values.reduce((sum: number, cv: any) => sum + safeNum(cv.value), 0) / 10000000).toFixed(2)} Cr`}
               </Text>
             </View>
           ) : null}
