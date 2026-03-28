@@ -10,6 +10,7 @@ import {
   Modal,
   ScrollView,
   Linking,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -318,6 +319,36 @@ export default function InventoryLeadsScreen() {
     Linking.openURL(url).catch(err => console.error('Failed to open map URL:', err));
   };
 
+  const handleDelete = (id: number, name: string) => {
+    if (!isOnline) {
+      Alert.alert('Offline', 'Cannot delete while offline.');
+      return;
+    }
+    Alert.alert('Delete Lead', `Are you sure you want to delete "${name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await offlineApi.deleteLead(String(id));
+            loadLeads();
+            Alert.alert('Success', 'Lead deleted successfully');
+          } catch (error) {
+            Alert.alert('Error', 'Failed to delete lead');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleAddReminder = (item: Lead) => {
+    router.push({
+      pathname: '/reminders/add',
+      params: { lead_id: item.id, lead_name: item.name }
+    } as any);
+  };
+
   const renderLeadCard = ({ item }: { item: Lead }) => {
     const typeColor = getTypeColor(item.lead_type);
     const tempColor = getTemperatureColor(item.lead_temperature);
@@ -328,74 +359,102 @@ export default function InventoryLeadsScreen() {
     const addressLocation = [item.address, item.location].filter(Boolean).join(', ');
 
     return (
-      <TouchableOpacity
-        style={styles.leadCard}
-        onPress={() => router.push(`/leads/${item.id}`)}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardTitleRow}>
-            <View style={styles.nameContainer}>
-              <Text style={styles.leadName}>{item.name}</Text>
-              {item.created_by_name && (
-                <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
+      <View style={styles.leadCard}>
+        {/* Main content - tappable to view details */}
+        <TouchableOpacity
+          style={styles.leadContent}
+          onPress={() => router.push(`/leads/${item.id}`)}
+        >
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleRow}>
+              <View style={styles.nameContainer}>
+                <Text style={styles.leadName}>{item.name}</Text>
+                {item.created_by_name && (
+                  <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
+                )}
+              </View>
+              <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
+                <Text style={[styles.typeText, { color: typeColor.text }]}>
+                  {item.lead_type === 'seller' ? 'Sell' : item.lead_type === 'landlord' ? 'Rent' : 'Builder'}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.tempIndicator, { backgroundColor: tempColor }]} />
+          </View>
+
+          {item.phone && (
+            <View style={styles.infoRow}>
+              <Ionicons name="call-outline" size={14} color="#6B7280" />
+              <Text style={styles.infoText}>{item.phone}</Text>
+            </View>
+          )}
+
+          {addressLocation && (
+            <View style={styles.infoRow}>
+              <Ionicons name="location-outline" size={14} color="#6B7280" />
+              {hasMapUrl ? (
+                <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
+                  <Text style={[styles.infoText, styles.mapLink]}>{addressLocation}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.infoText}>{addressLocation}</Text>
+              )}
+              {hasMapUrl && (
+                <TouchableOpacity 
+                  style={styles.mapIconButton}
+                  onPress={() => openMapUrl(item.Property_locationUrl!)}
+                >
+                  <Ionicons name="map" size={16} color="#3B82F6" />
+                </TouchableOpacity>
               )}
             </View>
-            <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
-              <Text style={[styles.typeText, { color: typeColor.text }]}>
-                {item.lead_type === 'seller' ? 'Sell' : item.lead_type === 'landlord' ? 'Rent' : 'Builder'}
-              </Text>
+          )}
+
+          <View style={styles.propertyInfo}>
+            {item.property_type && (
+              <Text style={styles.propertyText}>{item.property_type}</Text>
+            )}
+            {item.area_size && (
+              <Text style={styles.propertyText}>{item.area_size} sq.yds</Text>
+            )}
+            {item.lead_status && (
+              <Text style={styles.statusText}>{item.lead_status}</Text>
+            )}
+          </View>
+
+          {floorPricing && (
+            <View style={styles.pricingRow}>
+              <Ionicons name="cash-outline" size={14} color="#10B981" />
+              <Text style={styles.pricingText} numberOfLines={1}>{floorPricing}</Text>
             </View>
-          </View>
-          <View style={[styles.tempIndicator, { backgroundColor: tempColor }]} />
+          )}
+        </TouchableOpacity>
+
+        {/* Action Buttons Row */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleAddReminder(item)}
+          >
+            <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
+            <Text style={styles.actionText}>Reminder</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => router.push(`/leads/edit/${item.id}` as any)}
+          >
+            <Ionicons name="create-outline" size={18} color="#3B82F6" />
+            <Text style={styles.actionText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleDelete(item.id, item.name)}
+          >
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+            <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
+          </TouchableOpacity>
         </View>
-
-        {item.phone && (
-          <View style={styles.infoRow}>
-            <Ionicons name="call-outline" size={14} color="#6B7280" />
-            <Text style={styles.infoText}>{item.phone}</Text>
-          </View>
-        )}
-
-        {addressLocation && (
-          <View style={styles.infoRow}>
-            <Ionicons name="location-outline" size={14} color="#6B7280" />
-            {hasMapUrl ? (
-              <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
-                <Text style={[styles.infoText, styles.mapLink]}>{addressLocation}</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.infoText}>{addressLocation}</Text>
-            )}
-            {hasMapUrl && (
-              <TouchableOpacity 
-                style={styles.mapIconButton}
-                onPress={() => openMapUrl(item.Property_locationUrl!)}
-              >
-                <Ionicons name="map" size={16} color="#3B82F6" />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        <View style={styles.propertyInfo}>
-          {item.property_type && (
-            <Text style={styles.propertyText}>{item.property_type}</Text>
-          )}
-          {item.area_size && (
-            <Text style={styles.propertyText}>{item.area_size} sq.yds</Text>
-          )}
-          {item.lead_status && (
-            <Text style={styles.statusText}>{item.lead_status}</Text>
-          )}
-        </View>
-
-        {floorPricing && (
-          <View style={styles.pricingRow}>
-            <Ionicons name="cash-outline" size={14} color="#10B981" />
-            <Text style={styles.pricingText} numberOfLines={1}>{floorPricing}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -404,24 +463,15 @@ export default function InventoryLeadsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Seller/Landlord Inventories ({stats.total})</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={[styles.filterToggle, hasActiveFilters() && styles.filterToggleActive]}
-            onPress={() => setShowFilters(true)}
-          >
-            <Ionicons name="filter" size={20} color={hasActiveFilters() ? '#FFFFFF' : '#374151'} />
-            <Text style={[styles.filterToggleText, hasActiveFilters() && styles.filterToggleTextActive]}>
-              Filters
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => router.push('/leads/add')}
-          >
-            <Ionicons name="add" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[styles.filterToggle, hasActiveFilters() && styles.filterToggleActive]}
+          onPress={() => setShowFilters(true)}
+        >
+          <Ionicons name="filter" size={20} color={hasActiveFilters() ? '#FFFFFF' : '#374151'} />
+          <Text style={[styles.filterToggleText, hasActiveFilters() && styles.filterToggleTextActive]}>
+            Filters
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Stats Bar */}
@@ -819,6 +869,14 @@ export default function InventoryLeadsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* FAB - Add Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/leads/add')}
+      >
+        <Ionicons name="add" size={28} color="#FFFFFF" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -919,13 +977,16 @@ const styles = StyleSheet.create({
   leadCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
+    overflow: 'hidden',
+  },
+  leadContent: {
+    padding: 16,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -1319,5 +1380,42 @@ const styles = StyleSheet.create({
   emptySearchText: {
     fontSize: 14,
     color: '#9CA3AF',
+  },
+  // Action buttons and FAB styles
+  actionsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

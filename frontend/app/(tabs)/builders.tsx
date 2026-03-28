@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  TextInput,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,17 +20,23 @@ interface Builder {
   company_name: string;
   phone: string;
   address: string | null;
+  created_by_name?: string | null;
 }
 
 export default function BuildersScreen() {
   const [builders, setBuilders] = useState<Builder[]>([]);
+  const [filteredBuilders, setFilteredBuilders] = useState<Builder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [sortBy, setSortBy] = useState<'name' | 'company' | null>(null);
   const { isOnline } = useOffline();
 
   const loadBuilders = async () => {
     try {
       const data = await offlineApi.getBuilders();
       setBuilders(data);
+      applyFilters(data, searchQuery, sortBy);
     } catch (error) {
       console.error('Failed to load builders:', error);
     }
@@ -41,10 +48,48 @@ export default function BuildersScreen() {
     }, [])
   );
 
+  const applyFilters = (data: Builder[], search: string, sort: 'name' | 'company' | null) => {
+    let filtered = [...data];
+    
+    if (search) {
+      filtered = filtered.filter(
+        (builder) =>
+          builder.builder_name.toLowerCase().includes(search.toLowerCase()) ||
+          builder.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+          builder.phone?.includes(search) ||
+          builder.address?.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    
+    if (sort === 'name') {
+      filtered.sort((a, b) => a.builder_name.localeCompare(b.builder_name));
+    } else if (sort === 'company') {
+      filtered.sort((a, b) => (a.company_name || '').localeCompare(b.company_name || ''));
+    }
+    
+    setFilteredBuilders(filtered);
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadBuilders();
     setRefreshing(false);
+  };
+
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    applyFilters(builders, text, sortBy);
+  };
+
+  const handleSort = (sort: 'name' | 'company' | null) => {
+    setSortBy(sort);
+    applyFilters(builders, searchQuery, sort);
+  };
+
+  const clearFilters = () => {
+    setSortBy(null);
+    setSearchQuery('');
+    applyFilters(builders, '', null);
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -61,6 +106,7 @@ export default function BuildersScreen() {
           try {
             await offlineApi.deleteBuilder(id);
             loadBuilders();
+            Alert.alert('Success', 'Builder deleted successfully');
           } catch (error) {
             Alert.alert('Error', 'Failed to delete builder');
           }
@@ -81,6 +127,9 @@ export default function BuildersScreen() {
         <View style={styles.builderInfo}>
           <Text style={styles.builderName}>{item.builder_name}</Text>
           <Text style={styles.companyName}>{item.company_name}</Text>
+          {item.created_by_name && (
+            <Text style={styles.createdByText}>by {item.created_by_name}</Text>
+          )}
           <View style={styles.contactInfo}>
             <Ionicons name="call" size={12} color="#6B7280" />
             <Text style={styles.phone}>{item.phone}</Text>
@@ -95,19 +144,79 @@ export default function BuildersScreen() {
           )}
         </View>
       </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.deleteButton}
-        onPress={() => handleDelete(item.id, item.builder_name)}
-      >
-        <Ionicons name="trash-outline" size={20} color="#EF4444" />
-      </TouchableOpacity>
+      
+      {/* Action Buttons */}
+      <View style={styles.actionsRow}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => router.push(`/builders/edit/${item.id}` as any)}
+        >
+          <Ionicons name="create-outline" size={18} color="#3B82F6" />
+          <Text style={styles.actionText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => handleDelete(item.id, item.builder_name)}
+        >
+          <Ionicons name="trash-outline" size={18} color="#EF4444" />
+          <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Builders</Text>
+        <Text style={styles.headerSubtitle}>Companies & Contractors ({filteredBuilders.length})</Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color="#6B7280" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search builders..."
+          placeholderTextColor="#9CA3AF"
+          value={searchQuery}
+          onChangeText={handleSearch}
+        />
+        <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={styles.filterButton}>
+          <Ionicons name="filter" size={20} color={sortBy ? '#3B82F6' : '#6B7280'} />
+        </TouchableOpacity>
+      </View>
+
+      {showFilters && (
+        <View style={styles.filterContainer}>
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>Sort by:</Text>
+            <View style={styles.filterOptions}>
+              <TouchableOpacity
+                style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
+                onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
+              >
+                <Ionicons name="person" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
+                <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterChip, sortBy === 'company' && styles.filterChipActive]}
+                onPress={() => handleSort(sortBy === 'company' ? null : 'company')}
+              >
+                <Ionicons name="business" size={14} color={sortBy === 'company' ? '#FFFFFF' : '#6B7280'} />
+                <Text style={[styles.filterChipText, sortBy === 'company' && styles.filterChipTextActive]}> Company</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {(sortBy || searchQuery) && (
+            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+              <Text style={styles.clearFiltersText}>Clear Filters</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       <FlatList
-        data={builders}
+        data={filteredBuilders}
         renderItem={renderBuilder}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
@@ -133,26 +242,120 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  header: {
+    backgroundColor: '#3B82F6',
+    padding: 20,
+    paddingTop: 16,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#DBEAFE',
+    marginTop: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  filterButton: {
+    padding: 8,
+  },
+  filterContainer: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  filterSection: {
+    marginBottom: 8,
+  },
+  filterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 4,
+    backgroundColor: '#F3F4F6',
+  },
+  filterChipActive: {
+    backgroundColor: '#3B82F6',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  clearFiltersButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  clearFiltersText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#EF4444',
+  },
   listContent: {
     padding: 16,
+    paddingTop: 0,
+    paddingBottom: 100,
   },
   builderCard: {
-    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
-    alignItems: 'center',
+    overflow: 'hidden',
   },
   builderContent: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
   },
   builderIcon: {
     width: 48,
@@ -170,12 +373,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   companyName: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 8,
+    marginBottom: 4,
+  },
+  createdByText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    marginBottom: 6,
   },
   contactInfo: {
     flexDirection: 'row',
@@ -192,9 +401,25 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     flex: 1,
   },
-  deleteButton: {
-    padding: 8,
-    marginLeft: 8,
+  actionsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginLeft: 4,
   },
   emptyContainer: {
     alignItems: 'center',
