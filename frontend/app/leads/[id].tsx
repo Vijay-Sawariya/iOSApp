@@ -627,13 +627,13 @@ export default function LeadDetailScreen() {
             <View style={styles.specCard}>
               <Text style={styles.specLabel}>{'Total Built-up'}</Text>
               <Text style={styles.specValue}>
-                {`${safeNum(lead.calculations.plot_specifications.total_builtup_sqft).toFixed(0)} sq.ft`}
+                {`${safeNum(lead.calculations.plot_specifications.total_builtup).toFixed(0)} sq.ft`}
               </Text>
             </View>
             <View style={styles.specCard}>
               <Text style={styles.specLabel}>{'Per Floor Built-up'}</Text>
               <Text style={styles.specValue}>
-                {`${safeNum(lead.calculations.plot_specifications.per_floor_builtup_sqft).toFixed(2)} sq.ft`}
+                {`${safeNum(lead.calculations.plot_specifications.per_floor_builtup).toFixed(2)} sq.ft`}
               </Text>
             </View>
           </View>
@@ -650,9 +650,9 @@ export default function LeadDetailScreen() {
           <View style={styles.circleValueGrid}>
             {lead.calculations.circle_values.map((cv: any, index: number) => (
               <View key={index} style={styles.circleValueCard}>
-                <Text style={styles.circleFloorLabel}>{safeStr(cv.floor)}</Text>
+                <Text style={styles.circleFloorLabel}>{safeStr(cv.label)}</Text>
                 <Text style={styles.circleFloorValue}>
-                  {`₹${(safeNum(cv.value) / 10000000).toFixed(2)} Cr`}
+                  {`₹${safeNum(cv.value).toFixed(2)} Cr`}
                 </Text>
               </View>
             ))}
@@ -661,7 +661,7 @@ export default function LeadDetailScreen() {
             <View style={styles.totalCircleValueRow}>
               <Text style={styles.totalCircleLabel}>{'Total Circle Value:'}</Text>
               <Text style={styles.totalCircleValue}>
-                {`₹${(lead.calculations.circle_values.reduce((sum: number, cv: any) => sum + safeNum(cv.value), 0) / 10000000).toFixed(2)} Cr`}
+                {`₹${lead.calculations.circle_values.reduce((sum: number, cv: any) => sum + safeNum(cv.value), 0).toFixed(2)} Cr`}
               </Text>
             </View>
           ) : null}

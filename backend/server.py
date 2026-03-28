@@ -76,6 +76,9 @@ def normalize_floor_label(label: str) -> str:
 def floor_share_percent(label: str) -> Optional[float]:
     """Get floor share percentage for circle value calculation"""
     n = normalize_floor_label(label)
+    # Remove any spaces around + sign for consistent matching
+    n = n.replace(' + ', '+').replace('+ ', '+').replace(' +', '+')
+    
     if n == 'BMT+GF':
         return 32.5
     twenty_two = ['FF', 'SF', 'T', 'TF', 'F+TT', 'TF+TT', 'TF+TERR']
@@ -120,9 +123,9 @@ def calculate_circle_values(location: str, area_size: float, floors_str: str, co
     """Calculate circle value for each floor"""
     circle_values = []
     
-    # Get circle rate from location table
+    # Get circle rate from location table (column name has space: "Circle Rate")
     cursor = conn.cursor()
-    cursor.execute("SELECT circle_rate FROM locations WHERE LOWER(name) = LOWER(%s)", (location,))
+    cursor.execute("SELECT `Circle Rate` as circle_rate FROM locations WHERE LOWER(name) = LOWER(%s)", (location,))
     result = cursor.fetchone()
     
     if not result or not result['circle_rate']:
@@ -522,13 +525,8 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     # Only calculate for inventory leads with required data
     if lead.get('lead_type') in ['seller', 'landlord', 'builder'] and lead.get('area_size') and lead.get('location'):
         try:
-            # Parse floors from notes
-            floors_str = None
-            notes = lead.get('notes', '')
-            if notes:
-                match = re.search(r'Floors:\s*([^\\n]+)', notes)
-                if match:
-                    floors_str = match.group(1).strip()
+            # Get floors from the floor column directly
+            floors_str = lead.get('floor', '')
             
             # Calculate circle values
             if floors_str:
