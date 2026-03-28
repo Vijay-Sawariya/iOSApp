@@ -40,6 +40,25 @@ security = HTTPBearer()
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# Root health check endpoint for Kubernetes
+@app.get("/")
+def root_health():
+    return {"status": "healthy", "service": "Sagar Home LMS API"}
+
+# API health check endpoint
+@api_router.get("/health")
+def api_health():
+    """Health check endpoint for monitoring"""
+    try:
+        # Test database connection
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+
 # ============= Database Helper =============
 @contextmanager
 def get_db():
