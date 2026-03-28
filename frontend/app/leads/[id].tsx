@@ -616,6 +616,58 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
+      {/* Plot Size Specification - For Inventory Leads */}
+      {isInventoryLead() && lead.plot_specifications ? (
+        <View style={styles.section}>
+          <View style={styles.calcHeader}>
+            <Ionicons name="calculator-outline" size={20} color="#0369A1" />
+            <Text style={styles.sectionTitleWithIcon}>{'Plot Size Specification'}</Text>
+          </View>
+          <View style={styles.specGrid}>
+            <View style={styles.specCard}>
+              <Text style={styles.specLabel}>{'Total Built-up'}</Text>
+              <Text style={styles.specValue}>
+                {`${safeNum(lead.plot_specifications.total_builtup_sqft).toFixed(0)} sq.ft`}
+              </Text>
+            </View>
+            <View style={styles.specCard}>
+              <Text style={styles.specLabel}>{'Per Floor Built-up'}</Text>
+              <Text style={styles.specValue}>
+                {`${safeNum(lead.plot_specifications.per_floor_builtup_sqft).toFixed(2)} sq.ft`}
+              </Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Circle Value - For Inventory Leads */}
+      {isInventoryLead() && lead.circle_values && lead.circle_values.length > 0 ? (
+        <View style={styles.section}>
+          <View style={styles.calcHeader}>
+            <Ionicons name="stats-chart-outline" size={20} color="#7C3AED" />
+            <Text style={styles.sectionTitleWithIcon}>{'Circle Value (approx)'}</Text>
+          </View>
+          <View style={styles.circleValueGrid}>
+            {lead.circle_values.map((cv: any, index: number) => (
+              <View key={index} style={styles.circleValueCard}>
+                <Text style={styles.circleFloorLabel}>{safeStr(cv.floor)}</Text>
+                <Text style={styles.circleFloorValue}>
+                  {`₹${(safeNum(cv.value) / 10000000).toFixed(2)} Cr`}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {lead.total_circle_value ? (
+            <View style={styles.totalCircleValueRow}>
+              <Text style={styles.totalCircleLabel}>{'Total Circle Value:'}</Text>
+              <Text style={styles.totalCircleValue}>
+                {`₹${(safeNum(lead.total_circle_value) / 10000000).toFixed(2)} Cr`}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {/* Client Notes - Show before Matched Property List */}
       {isClientLead() && lead.notes ? (
         <View style={styles.section}>
@@ -1661,5 +1713,82 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
+  },
+  // Plot Specs and Circle Value styles
+  calcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitleWithIcon: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginLeft: 8,
+  },
+  specGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  specCard: {
+    flex: 1,
+    backgroundColor: '#F0F9FF',
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  specLabel: {
+    fontSize: 12,
+    color: '#0369A1',
+    marginBottom: 4,
+  },
+  specValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0C4A6E',
+  },
+  circleValueGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  circleValueCard: {
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+    minWidth: 80,
+  },
+  circleFloorLabel: {
+    fontSize: 11,
+    color: '#7C3AED',
+    marginBottom: 2,
+  },
+  circleFloorValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5B21B6',
+  },
+  totalCircleValueRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    padding: 14,
+    borderRadius: 10,
+  },
+  totalCircleLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  totalCircleValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

@@ -431,7 +431,7 @@ def get_inventory_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get INVENTORY leads (seller, landlord, builder) with floor pricing and calculations - excludes deleted"""
+    """Get INVENTORY leads (seller, landlord, builder) with floor pricing - excludes deleted"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -466,37 +466,9 @@ def get_inventory_leads(
                     'floor_amount': float(fp['floor_amount']) if fp['floor_amount'] else 0
                 })
             
-            # Add floor pricing and calculations to each lead
+            # Add floor pricing to each lead (calculations done only in detail view for performance)
             for lead in leads:
                 lead['floor_pricing'] = floor_pricing_map.get(lead['id'], [])
-                
-                # Calculate plot specifications and circle value for leads with area_size
-                if lead.get('area_size') and lead.get('floor'):
-                    try:
-                        area_size = float(lead['area_size'])
-                        floors_str = lead.get('floor', '')
-                        floors_count = len([f.strip() for f in floors_str.split(',') if f.strip()])
-                        
-                        if floors_count > 0:
-                            # Calculate plot specifications
-                            plot_specs = calculate_plot_specifications(area_size, floors_count, 'sq_yd')
-                            lead['plot_specifications'] = plot_specs
-                            
-                            # Calculate circle values if location is available
-                            if lead.get('location'):
-                                circle_values = calculate_circle_values(
-                                    lead['location'],
-                                    area_size,
-                                    floors_str,
-                                    conn
-                                )
-                                lead['circle_values'] = circle_values
-                                
-                                # Calculate total circle value
-                                total_circle_value = sum(cv.get('value', 0) for cv in circle_values)
-                                lead['total_circle_value'] = total_circle_value
-                    except Exception as e:
-                        logging.error(f"Calculation error for lead {lead['id']}: {e}")
     
     return leads
 

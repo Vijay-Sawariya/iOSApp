@@ -378,36 +378,6 @@ export default function InventoryLeadsScreen() {
             <Text style={styles.pricingText} numberOfLines={1}>{floorPricing}</Text>
           </View>
         )}
-
-        {/* Plot Size Specification */}
-        {item.plot_specifications && (
-          <View style={styles.specSection}>
-            <Text style={styles.specTitle}>Plot Size Specification</Text>
-            <View style={styles.specRow}>
-              <View style={styles.specItem}>
-                <Text style={styles.specLabel}>Total Built-up:</Text>
-                <Text style={styles.specValue}>{item.plot_specifications.total_builtup_sqft.toFixed(0)} sq.ft</Text>
-              </View>
-              <View style={styles.specItem}>
-                <Text style={styles.specLabel}>Per Floor Built-up:</Text>
-                <Text style={styles.specValue}>{item.plot_specifications.per_floor_builtup_sqft.toFixed(2)} sq.ft</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Circle Value */}
-        {item.total_circle_value !== undefined && item.total_circle_value > 0 && (
-          <View style={styles.circleValueSection}>
-            <View style={styles.circleValueHeader}>
-              <Ionicons name="calculator-outline" size={14} color="#8B5CF6" />
-              <Text style={styles.circleValueTitle}>Circle Value (approx):</Text>
-              <Text style={styles.circleValueTotal}>
-                ₹{(item.total_circle_value / 10000000).toFixed(2)} Cr
-              </Text>
-            </View>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -1214,10 +1184,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '70%',
+    maxHeight: '80%',
+    minHeight: 300,
   },
   locationList: {
-    maxHeight: 400,
+    flexGrow: 1,
   },
   locationItem: {
     flexDirection: 'row',
