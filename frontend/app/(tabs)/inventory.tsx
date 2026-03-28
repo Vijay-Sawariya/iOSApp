@@ -98,6 +98,18 @@ export default function InventoryLeadsScreen() {
   const [budgetMinFilter, setBudgetMinFilter] = useState('');
   const [budgetMaxFilter, setBudgetMaxFilter] = useState('');
   const [facingFilter, setFacingFilter] = useState('Any');
+  
+  // Search states for modals
+  const [locationSearch, setLocationSearch] = useState('');
+  const [floorSearch, setFloorSearch] = useState('');
+
+  // Filtered lists for modals
+  const filteredLocations = LOCATIONS.filter(loc => 
+    loc.toLowerCase().includes(locationSearch.toLowerCase())
+  );
+  const filteredFloors = FLOORS.filter(floor => 
+    floor.toLowerCase().includes(floorSearch.toLowerCase())
+  );
 
   const loadLeads = async () => {
     try {
@@ -673,12 +685,31 @@ export default function InventoryLeadsScreen() {
           <View style={styles.locationModal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Locations</Text>
-              <TouchableOpacity onPress={() => setShowLocationPicker(false)}>
+              <TouchableOpacity onPress={() => {
+                setShowLocationPicker(false);
+                setLocationSearch('');
+              }}>
                 <Ionicons name="close" size={24} color="#374151" />
               </TouchableOpacity>
             </View>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#9CA3AF" />
+              <TextInput
+                style={styles.modalSearchInput}
+                value={locationSearch}
+                onChangeText={setLocationSearch}
+                placeholder="Type to search locations..."
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+              />
+              {locationSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setLocationSearch('')}>
+                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
             <FlatList
-              data={LOCATIONS}
+              data={filteredLocations}
               keyExtractor={(item) => item}
               initialNumToRender={15}
               maxToRenderPerBatch={10}
@@ -701,10 +732,18 @@ export default function InventoryLeadsScreen() {
                 </TouchableOpacity>
               )}
               style={styles.locationList}
+              ListEmptyComponent={
+                <View style={styles.emptySearchResult}>
+                  <Text style={styles.emptySearchText}>No locations found</Text>
+                </View>
+              }
             />
             <TouchableOpacity
               style={styles.locationDoneButton}
-              onPress={() => setShowLocationPicker(false)}
+              onPress={() => {
+                setShowLocationPicker(false);
+                setLocationSearch('');
+              }}
             >
               <Text style={styles.locationDoneText}>Done ({selectedLocations.length} selected)</Text>
             </TouchableOpacity>
@@ -718,12 +757,31 @@ export default function InventoryLeadsScreen() {
           <View style={styles.locationModal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Floors</Text>
-              <TouchableOpacity onPress={() => setShowFloorPicker(false)}>
+              <TouchableOpacity onPress={() => {
+                setShowFloorPicker(false);
+                setFloorSearch('');
+              }}>
                 <Ionicons name="close" size={24} color="#374151" />
               </TouchableOpacity>
             </View>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#9CA3AF" />
+              <TextInput
+                style={styles.modalSearchInput}
+                value={floorSearch}
+                onChangeText={setFloorSearch}
+                placeholder="Type to search floors..."
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+              />
+              {floorSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setFloorSearch('')}>
+                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
             <FlatList
-              data={FLOORS}
+              data={filteredFloors}
               keyExtractor={(item) => item}
               initialNumToRender={10}
               renderItem={({ item }) => (
@@ -738,10 +796,18 @@ export default function InventoryLeadsScreen() {
                 </TouchableOpacity>
               )}
               style={styles.locationList}
+              ListEmptyComponent={
+                <View style={styles.emptySearchResult}>
+                  <Text style={styles.emptySearchText}>No floors found</Text>
+                </View>
+              }
             />
             <TouchableOpacity
               style={styles.locationDoneButton}
-              onPress={() => setShowFloorPicker(false)}
+              onPress={() => {
+                setShowFloorPicker(false);
+                setFloorSearch('');
+              }}
             >
               <Text style={styles.locationDoneText}>Done ({selectedFloors.length} selected)</Text>
             </TouchableOpacity>
@@ -1223,5 +1289,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  // Search styles for modals
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  modalSearchInput: {
+    flex: 1,
+    height: 44,
+    marginLeft: 10,
+    fontSize: 15,
+    color: '#1F2937',
+  },
+  emptySearchResult: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptySearchText: {
+    fontSize: 14,
+    color: '#9CA3AF',
   },
 });
