@@ -1,12 +1,13 @@
 // Lead Management Constants
 // Centralized constants used across lead forms and filters
 
-export const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'] as const;
+export const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder', 'agent'] as const;
 export type LeadType = typeof LEAD_TYPES[number];
 
-// Client-specific lead types
+// Client-specific lead types (for Client Add/Edit forms)
 export const CLIENT_LEAD_TYPES = ['buyer', 'tenant', 'agent'] as const;
-export const INVENTORY_LEAD_TYPES = ['seller', 'landlord', 'builder'] as const;
+// Inventory-specific lead types (for Inventory Add/Edit forms)
+export const INVENTORY_LEAD_TYPES = ['builder', 'seller', 'landlord', 'agent'] as const;
 
 export const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'] as const;
 export type LeadTemperature = typeof LEAD_TEMPERATURES[number];

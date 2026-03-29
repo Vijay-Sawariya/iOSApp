@@ -13,7 +13,7 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '../../services/api';
 import * as Location from 'expo-location';
 
@@ -55,6 +55,10 @@ interface Builder {
 }
 
 export default function AddLeadScreen() {
+  const params = useLocalSearchParams<{ type?: string }>();
+  const isClientForm = params.type === 'client';
+  const isInventoryForm = params.type === 'inventory' || !params.type; // Default to inventory
+  
   const [saving, setSaving] = useState(false);
   const [builders, setBuilders] = useState<Builder[]>([]);
   const [fetchingLocation, setFetchingLocation] = useState(false);
@@ -63,8 +67,8 @@ export default function AddLeadScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   
-  // Lead Classification
-  const [leadType, setLeadType] = useState('seller');
+  // Lead Classification - default based on form type
+  const [leadType, setLeadType] = useState(isClientForm ? 'buyer' : 'seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('Under construction');
   const [builderId, setBuilderId] = useState('');
@@ -304,7 +308,7 @@ export default function AddLeadScreen() {
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={[...LEAD_TYPES]}
+            options={isClientForm ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
             required

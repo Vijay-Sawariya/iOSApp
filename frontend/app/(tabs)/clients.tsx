@@ -16,6 +16,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { LOCATIONS, FLOORS, normalizeSearchText } from '../../constants/leadOptions';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Lead {
   id: number;
@@ -32,6 +33,9 @@ interface Lead {
   budget_max: number | null;
   unit: string | null;
   address: string | null;
+  property_type: string | null;
+  bhk: string | null;
+  building_facing: string | null;
   created_at?: string | null;
   created_by_name?: string | null;
 }
@@ -71,6 +75,15 @@ export default function ClientLeadsScreen() {
     ), [floorSearch]
   );
 
+  // Stats calculations
+  const stats = useMemo(() => {
+    const total = leads.length;
+    const buyers = leads.filter(l => l.lead_type === 'buyer').length;
+    const tenants = leads.filter(l => l.lead_type === 'tenant').length;
+    const agents = leads.filter(l => l.lead_type === 'agent').length;
+    return { total, buyers, tenants, agents };
+  }, [leads]);
+
   const loadLeads = async () => {
     try {
       const data = await offlineApi.getClientLeads();
@@ -99,59 +112,53 @@ export default function ClientLeadsScreen() {
     
     if (search) {
       const normalizedSearch = normalizeSearchText(search);
-      filtered = filtered.filter((lead) => {
-        const nameMatch = lead.name.toLowerCase().includes(search.toLowerCase());
-        const phoneMatch = lead.phone?.includes(search);
-        const emailMatch = lead.email?.toLowerCase().includes(search.toLowerCase());
-        const addressMatch = normalizeSearchText(lead.address || '').includes(normalizedSearch);
-        return nameMatch || phoneMatch || emailMatch || addressMatch;
-      });
+      filtered = filtered.filter(
+        (lead) =>
+          normalizeSearchText(lead.name || '').includes(normalizedSearch) ||
+          normalizeSearchText(lead.phone || '').includes(normalizedSearch) ||
+          normalizeSearchText(lead.location || '').includes(normalizedSearch)
+      );
     }
-    
+
     if (temp) {
       filtered = filtered.filter((lead) => lead.lead_temperature === temp);
     }
 
-    // Location filter (multi-select)
+    // Filter by selected locations
     if (locations.length > 0) {
-      filtered = filtered.filter(lead =>
-        locations.some(loc => lead.location?.toLowerCase().includes(loc.toLowerCase()))
-      );
-    }
-
-    // Floor filter (multi-select)
-    if (floors.length > 0) {
-      filtered = filtered.filter(lead => {
-        if (!lead.floor) return false;
-        const normalizedLeadFloor = lead.floor.replace(/\s+/g, '').toLowerCase();
-        return floors.some(floor => {
-          const normalizedFilter = floor.replace(/\s+/g, '').toLowerCase();
-          return normalizedLeadFloor.includes(normalizedFilter);
-        });
+      filtered = filtered.filter((lead) => {
+        if (!lead.location) return false;
+        const leadLocations = lead.location.split(',').map(l => l.trim().toLowerCase());
+        return locations.some(selectedLoc => 
+          leadLocations.some(leadLoc => 
+            leadLoc.includes(selectedLoc.toLowerCase()) || 
+            selectedLoc.toLowerCase().includes(leadLoc)
+          )
+        );
       });
     }
-    
+
+    // Filter by selected floors
+    if (floors.length > 0) {
+      filtered = filtered.filter((lead) => {
+        if (!lead.floor) return false;
+        const leadFloors = lead.floor.split(',').map(f => f.trim().toLowerCase());
+        return floors.some(selectedFloor => 
+          leadFloors.some(leadFloor => 
+            leadFloor.includes(selectedFloor.toLowerCase()) || 
+            selectedFloor.toLowerCase().includes(leadFloor)
+          )
+        );
+      });
+    }
+
     if (sort === 'name') {
-      filtered.sort((a, b) => a.name.localeCompare(b.name));
+      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     } else if (sort === 'date') {
       filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
-    
+
     setFilteredLeads(filtered);
-  };
-
-  const toggleLocation = (loc: string) => {
-    const newLocations = selectedLocations.includes(loc)
-      ? selectedLocations.filter(l => l !== loc)
-      : [...selectedLocations, loc];
-    setSelectedLocations(newLocations);
-  };
-
-  const toggleFloor = (floor: string) => {
-    const newFloors = selectedFloors.includes(floor)
-      ? selectedFloors.filter(f => f !== floor)
-      : [...selectedFloors, floor];
-    setSelectedFloors(newFloors);
   };
 
   const onRefresh = async () => {
@@ -162,52 +169,79 @@ export default function ClientLeadsScreen() {
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    applyFilters(leads, text, temperatureFilter, sortBy, selectedLocations, selectedFloors);
+    applyFilters(leads, text, temperatureFilter, sortBy);
   };
 
   const handleTemperatureFilter = (temp: string | null) => {
     setTemperatureFilter(temp);
-    applyFilters(leads, searchQuery, temp, sortBy, selectedLocations, selectedFloors);
+    applyFilters(leads, searchQuery, temp, sortBy);
   };
 
   const handleSort = (sort: 'name' | 'date' | null) => {
     setSortBy(sort);
-    applyFilters(leads, searchQuery, temperatureFilter, sort, selectedLocations, selectedFloors);
+    applyFilters(leads, searchQuery, temperatureFilter, sort);
+  };
+
+  const toggleLocation = (loc: string) => {
+    setSelectedLocations(prev => 
+      prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]
+    );
+  };
+
+  const toggleFloor = (floor: string) => {
+    setSelectedFloors(prev => 
+      prev.includes(floor) ? prev.filter(f => f !== floor) : [...prev, floor]
+    );
   };
 
   const handleApplyLocationFloorFilters = () => {
     applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors);
   };
 
-  const clearFilters = () => {
+  const hasActiveFilters = () => {
+    return temperatureFilter !== null || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0;
+  };
+
+  const clearAllFilters = () => {
     setTemperatureFilter(null);
     setSortBy(null);
     setSelectedLocations([]);
     setSelectedFloors([]);
-    applyFilters(leads, searchQuery, null, null, [], []);
-  };
-
-  const hasActiveFilters = () => {
-    return temperatureFilter || sortBy || selectedLocations.length > 0 || selectedFloors.length > 0;
+    setSearchQuery('');
+    applyFilters(leads, '', null, null, [], []);
   };
 
   const getTemperatureColor = (temp: string | null) => {
     switch (temp) {
       case 'Hot': return '#EF4444';
       case 'Warm': return '#F59E0B';
-      case 'Cold': return '#6366F1';
-      default: return '#9CA3AF';
+      case 'Cold': return '#3B82F6';
+      default: return '#6B7280';
     }
   };
 
-  const getTypeIcon = (type: string | null) => {
-    return type === 'buyer' ? 'cart' : 'key';
+  const getLeadTypeDisplay = (type: string | null) => {
+    switch (type) {
+      case 'buyer': return 'Buy';
+      case 'tenant': return 'Rent';
+      case 'agent': return 'Agent';
+      default: return type || 'N/A';
+    }
+  };
+
+  const getLeadTypeColor = (type: string | null) => {
+    switch (type) {
+      case 'buyer': return { bg: '#DCFCE7', text: '#16A34A' };
+      case 'tenant': return { bg: '#FEF3C7', text: '#D97706' };
+      case 'agent': return { bg: '#FCE7F3', text: '#DB2777' };
+      default: return { bg: '#F3F4F6', text: '#6B7280' };
+    }
   };
 
   const formatUnit = (unit: string | null): string => {
     if (!unit) return '';
     switch (unit.toUpperCase()) {
-      case 'CR': return ' Cr';
+      case 'CR': return ' CR';
       case 'L': return ' L';
       case 'K':
       case 'TH': return ' K';
@@ -219,7 +253,7 @@ export default function ClientLeadsScreen() {
     if (!item.budget_min && !item.budget_max) return '';
     const unit = formatUnit(item.unit);
     if (item.budget_min && item.budget_max) {
-      return `₹${item.budget_min}-${item.budget_max}${unit}`;
+      return `₹${item.budget_min} - ₹${item.budget_max}${unit}`;
     } else if (item.budget_min) {
       return `₹${item.budget_min}${unit}+`;
     } else if (item.budget_max) {
@@ -260,6 +294,8 @@ export default function ClientLeadsScreen() {
 
   const renderLead = ({ item }: { item: Lead }) => {
     const budgetText = formatBudget(item);
+    const typeColor = getLeadTypeColor(item.lead_type);
+    const isHot = item.lead_temperature === 'Hot';
     
     return (
       <View style={styles.leadCard}>
@@ -267,78 +303,68 @@ export default function ClientLeadsScreen() {
         <TouchableOpacity
           style={styles.leadContent}
           onPress={() => router.push(`/leads/${item.id}` as any)}
+          activeOpacity={0.7}
         >
-          <View style={styles.leadHeader}>
-            <View style={styles.leadInfo}>
-              <View style={styles.nameRow}>
-                <Ionicons 
-                  name={getTypeIcon(item.lead_type) as any} 
-                  size={16} 
-                  color="#3B82F6" 
-                  style={styles.typeIcon}
-                />
-                <Text style={styles.leadName}>{item.name}</Text>
-              </View>
+          {/* Name and Type Badge Row */}
+          <View style={styles.cardHeader}>
+            <View style={styles.nameSection}>
+              <Text style={styles.leadName}>{item.name}</Text>
               {item.created_by_name && (
-                <Text style={styles.createdByText}>by {item.created_by_name}</Text>
+                <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
               )}
-              <View style={styles.leadMeta}>
-                {item.phone && (
-                  <View style={styles.metaItem}>
-                    <Ionicons name="call" size={12} color="#6B7280" />
-                    <Text style={styles.metaText}>{item.phone}</Text>
-                  </View>
-                )}
-                {item.location && (
-                  <View style={styles.metaItem}>
-                    <Ionicons name="location" size={12} color="#6B7280" />
-                    <Text style={styles.metaText}>{item.location}</Text>
-                  </View>
-                )}
-              </View>
             </View>
-            <View
-              style={[
-                styles.temperatureBadge,
-                { backgroundColor: getTemperatureColor(item.lead_temperature) },
-              ]}
-            >
-              <Text style={styles.temperatureText}>{item.lead_temperature || 'N/A'}</Text>
+            <View style={styles.typeBadgeContainer}>
+              <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
+                <Text style={[styles.typeBadgeText, { color: typeColor.text }]}>
+                  {getLeadTypeDisplay(item.lead_type)}
+                </Text>
+              </View>
+              {isHot && <View style={styles.hotDot} />}
             </View>
           </View>
 
-          {/* Client Preferences Section */}
-          <View style={styles.preferencesContainer}>
-            {item.floor && (
-              <View style={styles.preferenceItem}>
-                <Ionicons name="layers" size={14} color="#3B82F6" />
-                <Text style={styles.preferenceText}>Floor: {item.floor}</Text>
+          {/* Phone Row */}
+          {item.phone && (
+            <View style={styles.infoRow}>
+              <Ionicons name="call" size={14} color="#6B7280" />
+              <Text style={styles.infoText}>{item.phone}</Text>
+            </View>
+          )}
+
+          {/* Location Row */}
+          {item.location && (
+            <View style={styles.infoRow}>
+              <Ionicons name="location" size={14} color="#6B7280" />
+              <Text style={styles.infoText} numberOfLines={2}>{item.location}</Text>
+            </View>
+          )}
+
+          {/* Tags Row */}
+          <View style={styles.tagsRow}>
+            {item.property_type && (
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{item.property_type}</Text>
               </View>
             )}
-            {item.area_size && (
-              <View style={styles.preferenceItem}>
-                <Ionicons name="resize" size={14} color="#8B5CF6" />
-                <Text style={styles.preferenceText}>Area: {item.area_size} sq.yds</Text>
+            {item.bhk && (
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{item.bhk}</Text>
               </View>
             )}
-            {budgetText && (
-              <View style={styles.preferenceItem}>
-                <Ionicons name="wallet" size={14} color="#10B981" />
-                <Text style={styles.preferenceText}>Budget: {budgetText}</Text>
+            {item.lead_status && (
+              <View style={[styles.tag, styles.statusTag]}>
+                <Text style={[styles.tagText, styles.statusTagText]}>{item.lead_status}</Text>
               </View>
             )}
           </View>
 
-          <View style={styles.leadFooter}>
-            <View style={[styles.typeBadge, { backgroundColor: '#DBEAFE' }]}>
-              <Text style={[styles.typeBadgeText, { color: '#1E40AF' }]}>
-                {item.lead_type === 'buyer' ? 'Buyer' : 'Tenant'}
-              </Text>
+          {/* Budget Row */}
+          {budgetText && (
+            <View style={styles.budgetRow}>
+              <Ionicons name="eye" size={16} color="#10B981" />
+              <Text style={styles.budgetText}>{budgetText}</Text>
             </View>
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>{item.lead_status || 'New'}</Text>
-            </View>
-          </View>
+          )}
         </TouchableOpacity>
 
         {/* Action Buttons Row */}
@@ -348,15 +374,17 @@ export default function ClientLeadsScreen() {
             onPress={() => handleAddReminder(item)}
           >
             <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
-            <Text style={styles.actionText}>Reminder</Text>
+            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
           </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => router.push(`/leads/edit/${item.id}` as any)}
           >
             <Ionicons name="create-outline" size={18} color="#3B82F6" />
-            <Text style={styles.actionText}>Edit</Text>
+            <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
           </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleDelete(item.id, item.name)}
@@ -371,305 +399,309 @@ export default function ClientLeadsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Client Leads</Text>
-        <Text style={styles.headerSubtitle}>Buyers & Tenants ({filteredLeads.length})</Text>
-      </View>
+      {/* Blue Header */}
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <View style={styles.blueHeader}>
+          <Text style={styles.headerTitle}>Clients</Text>
+        </View>
+      </SafeAreaView>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#6B7280" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search clients..."
-          value={searchQuery}
-          onChangeText={handleSearch}
-        />
-        <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={styles.filterButton}>
-          <Ionicons name="filter" size={20} color={hasActiveFilters() ? '#3B82F6' : '#6B7280'} />
-        </TouchableOpacity>
-      </View>
-
-      {showFilters && (
-        <View style={styles.filterContainer}>
-          {/* Location Selector */}
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Location:</Text>
-            <TouchableOpacity
-              style={styles.selectorButton}
-              onPress={() => setShowLocationPicker(true)}
+      {/* White Content Area */}
+      <View style={styles.contentArea}>
+        {/* Title Row with Filter and Add */}
+        <View style={styles.titleRow}>
+          <Text style={styles.sectionTitle}>Clients</Text>
+          <View style={styles.titleActions}>
+            <TouchableOpacity 
+              style={styles.filterIconBtn}
+              onPress={() => setShowFilters(!showFilters)}
             >
-              <Text style={[styles.selectorText, selectedLocations.length === 0 && styles.placeholderText]}>
-                {selectedLocations.length > 0 
-                  ? `${selectedLocations.length} selected` 
-                  : 'Select locations'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color="#6B7280" />
+              <Ionicons 
+                name="options-outline" 
+                size={24} 
+                color={hasActiveFilters() ? '#3B82F6' : '#374151'} 
+              />
             </TouchableOpacity>
-            {selectedLocations.length > 0 && (
-              <View style={styles.selectedTags}>
-                {selectedLocations.map(loc => (
-                  <TouchableOpacity
-                    key={loc}
-                    style={styles.selectedTag}
-                    onPress={() => {
-                      toggleLocation(loc);
-                      handleApplyLocationFloorFilters();
-                    }}
-                  >
-                    <Text style={styles.selectedTagText}>{loc}</Text>
-                    <Ionicons name="close" size={14} color="#6B7280" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* Floor Selector */}
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Floor Preference:</Text>
-            <TouchableOpacity
-              style={styles.selectorButton}
-              onPress={() => setShowFloorPicker(true)}
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => router.push('/leads/add?type=client' as any)}
             >
-              <Text style={[styles.selectorText, selectedFloors.length === 0 && styles.placeholderText]}>
-                {selectedFloors.length > 0 
-                  ? `${selectedFloors.length} selected` 
-                  : 'Select floors'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color="#6B7280" />
+              <Ionicons name="add" size={24} color="#FFFFFF" />
             </TouchableOpacity>
-            {selectedFloors.length > 0 && (
-              <View style={styles.selectedTags}>
-                {selectedFloors.map(floor => (
-                  <TouchableOpacity
-                    key={floor}
-                    style={styles.selectedTag}
-                    onPress={() => {
-                      toggleFloor(floor);
-                      handleApplyLocationFloorFilters();
-                    }}
-                  >
-                    <Text style={styles.selectedTagText}>{floor}</Text>
-                    <Ionicons name="close" size={14} color="#6B7280" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
+        </View>
 
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Temperature:</Text>
-            <View style={styles.filterOptions}>
-              {['Hot', 'Warm', 'Cold'].map((temp) => (
-                <TouchableOpacity
-                  key={temp}
-                  style={[
-                    styles.filterChip,
-                    temperatureFilter === temp && styles.filterChipActive,
-                    { backgroundColor: temperatureFilter === temp ? getTemperatureColor(temp) : '#F3F4F6' }
-                  ]}
-                  onPress={() => handleTemperatureFilter(temperatureFilter === temp ? null : temp)}
-                >
-                  <Text style={[
-                    styles.filterChipText,
-                    temperatureFilter === temp && styles.filterChipTextActive
-                  ]}>{temp}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+        {/* Stats Bar */}
+        <View style={styles.statsBar}>
+          <View style={[styles.statItem, styles.statItemActive]}>
+            <Text style={[styles.statNumber, styles.statNumberActive]}>{stats.total}</Text>
+            <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
           </View>
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Sort by:</Text>
-            <View style={styles.filterOptions}>
-              <TouchableOpacity
-                style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
-                onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
-              >
-                <Ionicons name="text" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterChip, sortBy === 'date' && styles.filterChipActive]}
-                onPress={() => handleSort(sortBy === 'date' ? null : 'date')}
-              >
-                <Ionicons name="calendar" size={14} color={sortBy === 'date' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[styles.filterChipText, sortBy === 'date' && styles.filterChipTextActive]}> Date</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.buyers}</Text>
+            <Text style={styles.statLabel}>Buyers</Text>
           </View>
-          {hasActiveFilters() && (
-            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
-              <Text style={styles.clearFiltersText}>Clear All Filters</Text>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.tenants}</Text>
+            <Text style={styles.statLabel}>Tenants</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.agents}</Text>
+            <Text style={styles.statLabel}>Agents</Text>
+          </View>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#9CA3AF" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search clients..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={handleSearch}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => handleSearch('')}>
+              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
             </TouchableOpacity>
           )}
         </View>
-      )}
 
-      <FlatList
-        data={filteredLeads}
-        renderItem={renderLead}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No client leads found</Text>
-            <Text style={styles.emptySubtext}>Tap + to add your first client</Text>
+        {/* Filter Panel */}
+        {showFilters && (
+          <View style={styles.filterContainer}>
+            {/* Location Selector */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Location:</Text>
+              <TouchableOpacity
+                style={styles.selectorButton}
+                onPress={() => setShowLocationPicker(true)}
+              >
+                <Text style={[styles.selectorText, selectedLocations.length === 0 && styles.placeholderText]}>
+                  {selectedLocations.length > 0 
+                    ? `${selectedLocations.length} selected` 
+                    : 'Select locations'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#6B7280" />
+              </TouchableOpacity>
+              {selectedLocations.length > 0 && (
+                <View style={styles.selectedTags}>
+                  {selectedLocations.map(loc => (
+                    <TouchableOpacity
+                      key={loc}
+                      style={styles.selectedTag}
+                      onPress={() => {
+                        toggleLocation(loc);
+                        handleApplyLocationFloorFilters();
+                      }}
+                    >
+                      <Text style={styles.selectedTagText}>{loc}</Text>
+                      <Ionicons name="close" size={14} color="#6B7280" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Floor Selector */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Floor Preference:</Text>
+              <TouchableOpacity
+                style={styles.selectorButton}
+                onPress={() => setShowFloorPicker(true)}
+              >
+                <Text style={[styles.selectorText, selectedFloors.length === 0 && styles.placeholderText]}>
+                  {selectedFloors.length > 0 
+                    ? `${selectedFloors.length} selected` 
+                    : 'Select floors'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#6B7280" />
+              </TouchableOpacity>
+              {selectedFloors.length > 0 && (
+                <View style={styles.selectedTags}>
+                  {selectedFloors.map(floor => (
+                    <TouchableOpacity
+                      key={floor}
+                      style={styles.selectedTag}
+                      onPress={() => {
+                        toggleFloor(floor);
+                        handleApplyLocationFloorFilters();
+                      }}
+                    >
+                      <Text style={styles.selectedTagText}>{floor}</Text>
+                      <Ionicons name="close" size={14} color="#6B7280" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Temperature:</Text>
+              <View style={styles.filterOptions}>
+                {['Hot', 'Warm', 'Cold'].map((temp) => (
+                  <TouchableOpacity
+                    key={temp}
+                    style={[
+                      styles.filterChip,
+                      temperatureFilter === temp && styles.filterChipActive,
+                      { backgroundColor: temperatureFilter === temp ? getTemperatureColor(temp) : '#F3F4F6' }
+                    ]}
+                    onPress={() => handleTemperatureFilter(temperatureFilter === temp ? null : temp)}
+                  >
+                    <Text style={[
+                      styles.filterChipText,
+                      temperatureFilter === temp && styles.filterChipTextActive
+                    ]}>{temp}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            
+            {hasActiveFilters() && (
+              <TouchableOpacity style={styles.clearFiltersBtn} onPress={clearAllFilters}>
+                <Ionicons name="refresh" size={16} color="#EF4444" />
+                <Text style={styles.clearFiltersText}>Clear All Filters</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        }
-      />
+        )}
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/leads/add')}
-      >
-        <Ionicons name="add" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
+        {/* Leads List */}
+        <FlatList
+          data={filteredLeads}
+          renderItem={renderLead}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="people-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyText}>No clients found</Text>
+              <Text style={styles.emptySubtext}>
+                {hasActiveFilters() ? 'Try adjusting your filters' : 'Add your first client to get started'}
+              </Text>
+            </View>
+          }
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+        />
+      </View>
 
       {/* Location Picker Modal */}
-      <Modal visible={showLocationPicker} animationType="slide" transparent>
+      <Modal
+        visible={showLocationPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLocationPicker(false)}
+      >
         <View style={styles.modalOverlay}>
-          <View style={styles.pickerModal}>
+          <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Locations</Text>
-              <TouchableOpacity onPress={() => {
-                setShowLocationPicker(false);
-                setLocationSearch('');
-                handleApplyLocationFloorFilters();
-              }}>
-                <Ionicons name="close" size={24} color="#374151" />
+              <TouchableOpacity onPress={() => setShowLocationPicker(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
               </TouchableOpacity>
             </View>
             <View style={styles.modalSearchContainer}>
               <Ionicons name="search" size={20} color="#9CA3AF" />
               <TextInput
                 style={styles.modalSearchInput}
+                placeholder="Search locations..."
+                placeholderTextColor="#9CA3AF"
                 value={locationSearch}
                 onChangeText={setLocationSearch}
-                placeholder="Type to search locations..."
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
               />
-              {locationSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setLocationSearch('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
             </View>
             <FlatList
               data={filteredLocations}
               keyExtractor={(item) => item}
-              initialNumToRender={15}
-              maxToRenderPerBatch={10}
-              windowSize={5}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 52,
-                offset: 52 * index,
-                index,
-              })}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.pickerItem}
+                  style={[styles.modalItem, selectedLocations.includes(item) && styles.modalItemSelected]}
                   onPress={() => toggleLocation(item)}
                 >
-                  <Text style={styles.pickerItemText}>{item}</Text>
+                  <Text style={styles.modalItemText}>{item}</Text>
                   {selectedLocations.includes(item) && (
-                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+                    <Ionicons name="checkmark-circle" size={22} color="#3B82F6" />
                   )}
                 </TouchableOpacity>
               )}
-              style={styles.pickerList}
-              ListEmptyComponent={
-                <View style={styles.emptySearchResult}>
-                  <Text style={styles.emptySearchText}>No locations found</Text>
-                </View>
-              }
+              style={styles.modalList}
+              initialNumToRender={20}
+              maxToRenderPerBatch={20}
+              windowSize={10}
             />
             <TouchableOpacity
-              style={styles.pickerDoneButton}
+              style={styles.modalDoneBtn}
               onPress={() => {
                 setShowLocationPicker(false);
-                setLocationSearch('');
                 handleApplyLocationFloorFilters();
               }}
             >
-              <Text style={styles.pickerDoneText}>Done ({selectedLocations.length} selected)</Text>
+              <Text style={styles.modalDoneBtnText}>Done ({selectedLocations.length} selected)</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
       {/* Floor Picker Modal */}
-      <Modal visible={showFloorPicker} animationType="slide" transparent>
+      <Modal
+        visible={showFloorPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowFloorPicker(false)}
+      >
         <View style={styles.modalOverlay}>
-          <View style={styles.pickerModal}>
+          <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Floors</Text>
-              <TouchableOpacity onPress={() => {
-                setShowFloorPicker(false);
-                setFloorSearch('');
-                handleApplyLocationFloorFilters();
-              }}>
-                <Ionicons name="close" size={24} color="#374151" />
+              <TouchableOpacity onPress={() => setShowFloorPicker(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
               </TouchableOpacity>
             </View>
             <View style={styles.modalSearchContainer}>
               <Ionicons name="search" size={20} color="#9CA3AF" />
               <TextInput
                 style={styles.modalSearchInput}
+                placeholder="Search floors..."
+                placeholderTextColor="#9CA3AF"
                 value={floorSearch}
                 onChangeText={setFloorSearch}
-                placeholder="Type to search floors..."
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
               />
-              {floorSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setFloorSearch('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
             </View>
             <FlatList
               data={filteredFloors}
               keyExtractor={(item) => item}
-              initialNumToRender={10}
-              maxToRenderPerBatch={10}
-              windowSize={5}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 52,
-                offset: 52 * index,
-                index,
-              })}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.pickerItem}
+                  style={[styles.modalItem, selectedFloors.includes(item) && styles.modalItemSelected]}
                   onPress={() => toggleFloor(item)}
                 >
-                  <Text style={styles.pickerItemText}>{item}</Text>
+                  <Text style={styles.modalItemText}>{item}</Text>
                   {selectedFloors.includes(item) && (
-                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+                    <Ionicons name="checkmark-circle" size={22} color="#3B82F6" />
                   )}
                 </TouchableOpacity>
               )}
-              style={styles.pickerList}
-              ListEmptyComponent={
-                <View style={styles.emptySearchResult}>
-                  <Text style={styles.emptySearchText}>No floors found</Text>
-                </View>
-              }
+              style={styles.modalList}
+              initialNumToRender={20}
+              maxToRenderPerBatch={20}
+              windowSize={10}
             />
             <TouchableOpacity
-              style={styles.pickerDoneButton}
+              style={styles.modalDoneBtn}
               onPress={() => {
                 setShowFloorPicker(false);
-                setFloorSearch('');
                 handleApplyLocationFloorFilters();
               }}
             >
-              <Text style={styles.pickerDoneText}>Done ({selectedFloors.length} selected)</Text>
+              <Text style={styles.modalDoneBtnText}>Done ({selectedFloors.length} selected)</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -681,177 +713,244 @@ export default function ClientLeadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  header: {
     backgroundColor: '#3B82F6',
-    padding: 20,
-    paddingTop: 16,
+  },
+  headerSafeArea: {
+    backgroundColor: '#3B82F6',
+  },
+  blueHeader: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#DBEAFE',
-    marginTop: 4,
+  contentArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  filterIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingBottom: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 4,
+  },
+  statItemActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  statNumber: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  statNumberActive: {
+    color: '#3B82F6',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  statLabelActive: {
+    color: '#3B82F6',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    margin: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
     paddingHorizontal: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    height: 48,
   },
   searchInput: {
     flex: 1,
-    height: 44,
+    height: 48,
     marginLeft: 12,
     fontSize: 16,
     color: '#1F2937',
   },
   listContent: {
     padding: 16,
-    paddingTop: 0,
     paddingBottom: 100,
   },
   leadCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
   },
   leadContent: {
     padding: 16,
   },
-  leadHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  leadInfo: {
+  nameSection: {
     flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  typeIcon: {
-    marginRight: 8,
+    marginRight: 12,
   },
   leadName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1F2937',
+    marginBottom: 2,
   },
   createdByText: {
     fontSize: 12,
     color: '#9CA3AF',
-    marginLeft: 24,
-    marginBottom: 6,
-    fontStyle: 'italic',
   },
-  leadMeta: {
-    marginBottom: 4,
-  },
-  metaItem: {
+  typeBadgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 8,
-    marginBottom: 4,
-  },
-  metaText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 4,
-  },
-  temperatureBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  temperatureText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  leadFooter: {
-    flexDirection: 'row',
-    marginRight: 8,
-  },
-  preferencesContainer: {
-    backgroundColor: '#F0F9FF',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  preferenceItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  preferenceText: {
-    fontSize: 13,
-    color: '#1E3A5F',
-    marginLeft: 6,
-    fontWeight: '500',
   },
   typeBadge: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 6,
-    marginRight: 8,
+    borderRadius: 8,
   },
   typeBadgeText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  statusBadge: {
-    backgroundColor: '#F0FDF4',
+  hotDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    marginLeft: 6,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#4B5563',
+    marginLeft: 8,
+    flex: 1,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  tag: {
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  statusBadgeText: {
+  tagText: {
     fontSize: 12,
+    color: '#374151',
     fontWeight: '500',
+  },
+  statusTag: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  statusTagText: {
     color: '#16A34A',
+  },
+  budgetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  budgetText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#10B981',
+    marginLeft: 8,
   },
   actionsRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
+  },
+  actionDivider: {
+    width: 1,
+    backgroundColor: '#F3F4F6',
   },
   actionText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
-    color: '#6B7280',
-    marginLeft: 4,
+    marginLeft: 6,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -868,25 +967,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
     marginTop: 8,
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  filterButton: {
-    padding: 8,
+    textAlign: 'center',
   },
   filterContainer: {
     backgroundColor: '#FFFFFF',
@@ -894,67 +975,53 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   filterSection: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   filterLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#374151',
     marginBottom: 8,
   },
   filterOptions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
   },
   filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 4,
     backgroundColor: '#F3F4F6',
   },
   filterChipActive: {
     backgroundColor: '#3B82F6',
   },
   filterChipText: {
-    fontSize: 13,
+    fontSize: 14,
+    color: '#374151',
     fontWeight: '500',
-    color: '#6B7280',
   },
   filterChipTextActive: {
     color: '#FFFFFF',
   },
-  clearFiltersButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    marginTop: 4,
-  },
-  clearFiltersText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#EF4444',
-  },
-  // Location/Floor Selector Styles
   selectorButton: {
-    backgroundColor: '#F3F4F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
     padding: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    minHeight: 48,
   },
   selectorText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#1F2937',
   },
   placeholderText: {
@@ -964,34 +1031,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginTop: 8,
+    gap: 8,
   },
   selectedTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E0E7FF',
+    backgroundColor: '#EFF6FF',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 16,
-    marginRight: 6,
-    marginBottom: 6,
   },
   selectedTagText: {
-    fontSize: 12,
-    color: '#3730A3',
+    fontSize: 13,
+    color: '#3B82F6',
     marginRight: 4,
   },
-  // Modal Styles
+  clearFiltersBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    marginTop: 8,
+  },
+  clearFiltersText: {
+    fontSize: 14,
+    color: '#EF4444',
+    fontWeight: '500',
+    marginLeft: 6,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
-  pickerModal: {
+  modalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '80%',
-    minHeight: 300,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1009,52 +1088,47 @@ const styles = StyleSheet.create({
   modalSearchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F9FAFB',
     marginHorizontal: 16,
     marginVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 8,
+    height: 44,
   },
   modalSearchInput: {
     flex: 1,
-    height: 44,
-    marginLeft: 10,
+    marginLeft: 8,
     fontSize: 15,
     color: '#1F2937',
   },
-  pickerList: {
-    flexGrow: 1,
+  modalList: {
+    maxHeight: 400,
   },
-  pickerItem: {
+  modalItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  pickerItemText: {
-    fontSize: 15,
+  modalItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  modalItemText: {
+    fontSize: 16,
     color: '#1F2937',
   },
-  pickerDoneButton: {
+  modalDoneBtn: {
     backgroundColor: '#3B82F6',
     margin: 16,
-    paddingVertical: 14,
-    borderRadius: 8,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  pickerDoneText: {
-    fontSize: 14,
+  modalDoneBtnText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-  },
-  emptySearchResult: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptySearchText: {
-    fontSize: 14,
-    color: '#9CA3AF',
   },
 });

@@ -881,7 +881,7 @@ export default function InventoryLeadsScreen() {
       {/* FAB - Add Button */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/leads/add')}
+        onPress={() => router.push('/leads/add?type=inventory' as any)}
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
