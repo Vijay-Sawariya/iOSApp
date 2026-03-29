@@ -37,6 +37,7 @@ export default function TabLayout() {
         name="clients"
         options={{
           title: 'Clients',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people" size={size} color={color} />
           ),

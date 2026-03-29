@@ -399,38 +399,33 @@ export default function ClientLeadsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Blue Header */}
+      {/* Blue Header with Title, Filter and Add */}
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Clients</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={22} 
+                color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerAddBtn}
+              onPress={() => router.push('/leads/add?type=client' as any)}
+            >
+              <Ionicons name="add" size={24} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
       {/* White Content Area */}
       <View style={styles.contentArea}>
-        {/* Title Row with Filter and Add */}
-        <View style={styles.titleRow}>
-          <Text style={styles.sectionTitle}>Clients</Text>
-          <View style={styles.titleActions}>
-            <TouchableOpacity 
-              style={styles.filterIconBtn}
-              onPress={() => setShowFilters(!showFilters)}
-            >
-              <Ionicons 
-                name="options-outline" 
-                size={24} 
-                color={hasActiveFilters() ? '#3B82F6' : '#374151'} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.addButton}
-              onPress={() => router.push('/leads/add?type=client' as any)}
-            >
-              <Ionicons name="add" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* Stats Bar */}
         <View style={styles.statsBar}>
           <View style={[styles.statItem, styles.statItemActive]}>
@@ -721,60 +716,46 @@ const styles = StyleSheet.create({
   blueHeader: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  contentArea: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  titleActions: {
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  filterIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F3F4F6',
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#3B82F6',
+  headerAddBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  contentArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
   },
   statsBar: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
-    paddingBottom: 16,
+    paddingVertical: 12,
   },
   statItem: {
     flex: 1,
