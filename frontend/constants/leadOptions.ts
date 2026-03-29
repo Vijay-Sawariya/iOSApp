@@ -4,6 +4,10 @@
 export const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'] as const;
 export type LeadType = typeof LEAD_TYPES[number];
 
+// Client-specific lead types
+export const CLIENT_LEAD_TYPES = ['buyer', 'tenant', 'agent'] as const;
+export const INVENTORY_LEAD_TYPES = ['seller', 'landlord', 'builder'] as const;
+
 export const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'] as const;
 export type LeadTemperature = typeof LEAD_TEMPERATURES[number];
 
@@ -16,7 +20,8 @@ export const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '5+ BHK
 
 export const UNITS = ['CR', 'L', 'K'] as const;
 
-export const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'] as const;
+// Added Plot and Kothi to floor options
+export const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr', 'Plot', 'Kothi'] as const;
 
 export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'] as const;
 
