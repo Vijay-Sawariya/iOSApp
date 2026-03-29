@@ -8,6 +8,8 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  FlatList,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -20,28 +22,64 @@ const safeStr = (val: any): string => {
   return String(val);
 };
 
+interface Lead {
+  id: number;
+  name: string;
+  phone: string | null;
+  lead_type: string | null;
+  lead_status: string | null;
+  location: string | null;
+  address: string | null;
+  area_size: string | null;
+  property_type: string | null;
+  floor: string | null;
+  floor_pricing?: { floor_label: string; floor_amount: number }[];
+  unit: string | null;
+}
+
+interface Builder {
+  id: number;
+  builder_name: string;
+  company_name: string | null;
+  phone: string | null;
+  address: string | null;
+  created_at: string | null;
+}
+
 export default function BuilderDetailScreen() {
   const { id } = useLocalSearchParams();
-  const [builder, setBuilder] = useState<any>(null);
+  const [builder, setBuilder] = useState<Builder | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadBuilder();
+    loadData();
   }, [id]);
 
-  const loadBuilder = async () => {
+  const loadData = async () => {
     try {
       setError(null);
-      const data = await api.getBuilder(String(id));
-      setBuilder(data);
+      const [builderData, leadsData] = await Promise.all([
+        api.getBuilder(String(id)),
+        api.getBuilderLeads(String(id)).catch(() => []),
+      ]);
+      setBuilder(builderData);
+      setLeads(leadsData || []);
     } catch (err) {
       console.error('Failed to load builder:', err);
       setError('Failed to load builder details');
       Alert.alert('Error', 'Failed to load builder details');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
   };
 
   const handleCall = () => {
@@ -60,7 +98,7 @@ export default function BuilderDetailScreen() {
   const handleDelete = () => {
     Alert.alert(
       'Delete Builder',
-      'Are you sure you want to delete this builder?',
+      'Are you sure you want to delete this builder? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -94,11 +132,100 @@ export default function BuilderDetailScreen() {
     });
   };
 
+  const formatUnit = (unit: string | null): string => {
+    if (!unit) return '';
+    switch (unit.toUpperCase()) {
+      case 'CR': return ' Cr';
+      case 'L': return ' L';
+      case 'K':
+      case 'TH': return ' K';
+      default: return ` ${unit}`;
+    }
+  };
+
+  const formatFloorPricing = (pricing?: { floor_label: string; floor_amount: number }[], unit?: string | null): string => {
+    if (!pricing || pricing.length === 0) return '';
+    const unitStr = formatUnit(unit);
+    return pricing.map(p => `${p.floor_label}: ${p.floor_amount}${unitStr}`).join(' | ');
+  };
+
+  const getTypeColor = (type: string | null): { bg: string; text: string } => {
+    switch (type) {
+      case 'seller': return { bg: '#DCFCE7', text: '#166534' };
+      case 'landlord': return { bg: '#FEF3C7', text: '#92400E' };
+      case 'builder': return { bg: '#E0E7FF', text: '#3730A3' };
+      default: return { bg: '#F3F4F6', text: '#374151' };
+    }
+  };
+
+  const renderLeadCard = ({ item }: { item: Lead }) => {
+    const typeColor = getTypeColor(item.lead_type);
+    const floorPricingText = formatFloorPricing(item.floor_pricing, item.unit);
+    
+    return (
+      <TouchableOpacity 
+        style={styles.leadCard}
+        onPress={() => router.push(`/leads/${item.id}`)}
+      >
+        <View style={styles.leadHeader}>
+          <View style={styles.leadInfo}>
+            <Text style={styles.leadName}>{safeStr(item.name)}</Text>
+            <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
+              <Text style={[styles.typeText, { color: typeColor.text }]}>
+                {item.lead_type === 'seller' ? 'Sell' : item.lead_type === 'landlord' ? 'Rent' : 'Builder'}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+        </View>
+        
+        {(item.address || item.location) && (
+          <View style={styles.leadDetailRow}>
+            <Ionicons name="location-outline" size={14} color="#6B7280" />
+            <Text style={styles.leadDetailText} numberOfLines={1}>
+              {[item.address, item.location].filter(Boolean).join(', ')}
+            </Text>
+          </View>
+        )}
+        
+        <View style={styles.leadTags}>
+          {item.property_type && (
+            <View style={styles.leadTag}>
+              <Text style={styles.leadTagText}>{item.property_type}</Text>
+            </View>
+          )}
+          {item.area_size && (
+            <View style={styles.leadTag}>
+              <Text style={styles.leadTagText}>{item.area_size} sq.yds</Text>
+            </View>
+          )}
+          {item.floor && (
+            <View style={styles.leadTag}>
+              <Text style={styles.leadTagText}>{item.floor}</Text>
+            </View>
+          )}
+          {item.lead_status && (
+            <View style={[styles.leadTag, { backgroundColor: '#D1FAE5' }]}>
+              <Text style={[styles.leadTagText, { color: '#059669' }]}>{item.lead_status}</Text>
+            </View>
+          )}
+        </View>
+        
+        {floorPricingText && (
+          <View style={styles.pricingRow}>
+            <Ionicons name="cash-outline" size={14} color="#10B981" />
+            <Text style={styles.pricingText} numberOfLines={1}>{floorPricingText}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={styles.loadingText}>{'Loading...'}</Text>
+        <Text style={styles.loadingText}>Loading builder details...</Text>
       </View>
     );
   }
@@ -106,25 +233,28 @@ export default function BuilderDetailScreen() {
   if (error || !builder) {
     return (
       <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
         <Text style={styles.errorText}>{error || 'Builder not found'}</Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>{'Go Back'}</Text>
+          <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
       {/* Header Card */}
       <View style={styles.headerCard}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.builderName}>{safeStr(builder.builder_name) || 'Unknown'}</Text>
-            <Text style={styles.companyName}>{safeStr(builder.company_name)}</Text>
-          </View>
-          
-          {/* Header Action Icons */}
+        <View style={styles.headerTop}>
+          <TouchableOpacity style={styles.backIconButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#1F2937" />
+          </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.headerIconButton} onPress={handleEdit}>
               <Ionicons name="create-outline" size={22} color="#3B82F6" />
@@ -135,52 +265,146 @@ export default function BuilderDetailScreen() {
           </View>
         </View>
 
+        <View style={styles.builderIconContainer}>
+          <Ionicons name="business" size={48} color="#3B82F6" />
+        </View>
+        
+        <Text style={styles.builderName}>{safeStr(builder.builder_name) || 'Unknown Builder'}</Text>
+        {builder.company_name && (
+          <Text style={styles.companyName}>{safeStr(builder.company_name)}</Text>
+        )}
+
         {/* Quick Action Buttons */}
         <View style={styles.actionButtons}>
-          {builder.phone ? (
+          {builder.phone && (
             <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-              <Ionicons name="call" size={24} color="#3B82F6" />
-              <Text style={styles.actionButtonText}>{'Call'}</Text>
+              <View style={styles.actionIconCircle}>
+                <Ionicons name="call" size={24} color="#FFFFFF" />
+              </View>
+              <Text style={styles.actionButtonText}>Call</Text>
             </TouchableOpacity>
-          ) : null}
-          {builder.phone ? (
+          )}
+          {builder.phone && (
             <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
-              <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
-              <Text style={styles.actionButtonText}>{'WhatsApp'}</Text>
+              <View style={[styles.actionIconCircle, { backgroundColor: '#25D366' }]}>
+                <Ionicons name="logo-whatsapp" size={24} color="#FFFFFF" />
+              </View>
+              <Text style={styles.actionButtonText}>WhatsApp</Text>
             </TouchableOpacity>
-          ) : null}
+          )}
+          <TouchableOpacity style={styles.actionButton} onPress={handleEdit}>
+            <View style={[styles.actionIconCircle, { backgroundColor: '#8B5CF6' }]}>
+              <Ionicons name="create" size={24} color="#FFFFFF" />
+            </View>
+            <Text style={styles.actionButtonText}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Stats Section */}
+      <View style={styles.statsSection}>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{leads.length}</Text>
+          <Text style={styles.statLabel}>Properties</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>
+            {leads.filter(l => l.lead_type === 'seller').length}
+          </Text>
+          <Text style={styles.statLabel}>For Sale</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>
+            {leads.filter(l => l.lead_type === 'landlord').length}
+          </Text>
+          <Text style={styles.statLabel}>For Rent</Text>
         </View>
       </View>
 
       {/* Contact Info */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{'Contact Information'}</Text>
+        <Text style={styles.sectionTitle}>Contact Information</Text>
         
-        <View style={styles.detailRow}>
-          <Ionicons name="call" size={20} color="#6B7280" />
-          <Text style={styles.detailLabel}>{'Phone'}</Text>
-          <Text style={styles.detailValue}>{safeStr(builder.phone) || 'N/A'}</Text>
+        <View style={styles.infoCard}>
+          {builder.phone && (
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconContainer}>
+                <Ionicons name="call" size={18} color="#3B82F6" />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Phone</Text>
+                <Text style={styles.infoValue}>{safeStr(builder.phone)}</Text>
+              </View>
+              <TouchableOpacity onPress={handleCall}>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          {builder.address && (
+            <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+              <View style={styles.infoIconContainer}>
+                <Ionicons name="location" size={18} color="#10B981" />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Address</Text>
+                <Text style={styles.infoValue}>{safeStr(builder.address)}</Text>
+              </View>
+            </View>
+          )}
+          
+          {!builder.phone && !builder.address && (
+            <View style={styles.emptyInfo}>
+              <Text style={styles.emptyInfoText}>No contact information available</Text>
+            </View>
+          )}
         </View>
-
-        {builder.address ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="location" size={20} color="#6B7280" />
-            <Text style={styles.detailLabel}>{'Address'}</Text>
-            <Text style={styles.detailValue}>{safeStr(builder.address)}</Text>
-          </View>
-        ) : null}
       </View>
 
       {/* Additional Info */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{'Additional Information'}</Text>
+        <Text style={styles.sectionTitle}>Additional Details</Text>
         
-        <View style={styles.detailRow}>
-          <Ionicons name="calendar" size={20} color="#6B7280" />
-          <Text style={styles.detailLabel}>{'Added On'}</Text>
-          <Text style={styles.detailValue}>{formatDate(builder.created_at)}</Text>
+        <View style={styles.infoCard}>
+          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.infoIconContainer}>
+              <Ionicons name="calendar" size={18} color="#F59E0B" />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>Added On</Text>
+              <Text style={styles.infoValue}>{formatDate(builder.created_at)}</Text>
+            </View>
+          </View>
         </View>
       </View>
+
+      {/* Related Properties */}
+      {leads.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Properties ({leads.length})</Text>
+          </View>
+          
+          {leads.map((lead) => (
+            <View key={lead.id}>
+              {renderLeadCard({ item: lead })}
+            </View>
+          ))}
+        </View>
+      )}
+
+      {leads.length === 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Properties</Text>
+          <View style={styles.emptyProperties}>
+            <Ionicons name="home-outline" size={48} color="#D1D5DB" />
+            <Text style={styles.emptyPropertiesText}>No properties linked to this builder</Text>
+            <Text style={styles.emptyPropertiesSubtext}>
+              Properties will appear here when leads are associated with this builder
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Spacing at bottom */}
       <View style={styles.bottomSpacing} />
@@ -191,13 +415,13 @@ export default function BuilderDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F3F4F6',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F3F4F6',
   },
   loadingText: {
     marginTop: 16,
@@ -208,7 +432,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F3F4F6',
     padding: 20,
   },
   errorText: {
@@ -216,6 +440,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#EF4444',
     marginTop: 16,
+    textAlign: 'center',
   },
   backButton: {
     marginTop: 24,
@@ -231,91 +456,286 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingTop: 60,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  headerRow: {
+  headerTop: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
-  headerLeft: {
-    flex: 1,
-    paddingRight: 12,
+  backIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexShrink: 0,
   },
   headerIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 6,
+    marginLeft: 8,
+  },
+  builderIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 16,
   },
   builderName: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1F2937',
-    marginBottom: 4,
+    textAlign: 'center',
   },
   companyName: {
     fontSize: 16,
     color: '#6B7280',
-    marginBottom: 16,
+    marginTop: 4,
+    textAlign: 'center',
   },
   actionButtons: {
     flexDirection: 'row',
+    marginTop: 24,
+    justifyContent: 'center',
   },
   actionButton: {
-    flex: 1,
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    padding: 12,
-    borderRadius: 12,
-    marginRight: 8,
+    marginHorizontal: 16,
+  },
+  actionIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   actionButtonText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#4B5563',
+  },
+  statsSection: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: -12,
+    marginBottom: 8,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
     marginTop: 4,
   },
   section: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    marginTop: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  detailRow: {
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  detailLabel: {
+  infoIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoContent: {
     flex: 1,
-    fontSize: 14,
-    color: '#6B7280',
     marginLeft: 12,
   },
-  detailValue: {
-    fontSize: 14,
+  infoLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 15,
     fontWeight: '500',
     color: '#1F2937',
-    textAlign: 'right',
+  },
+  emptyInfo: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyInfoText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+  leadCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  leadHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  leadInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+  },
+  leadName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginRight: 8,
+  },
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  typeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  leadDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  leadDetailText: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginLeft: 6,
+    flex: 1,
+  },
+  leadTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  leadTag: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  leadTagText: {
+    fontSize: 12,
+    color: '#374151',
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  pricingText: {
+    fontSize: 12,
+    color: '#10B981',
+    marginLeft: 6,
+    flex: 1,
+  },
+  emptyProperties: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  emptyPropertiesText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 16,
+  },
+  emptyPropertiesSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+    textAlign: 'center',
   },
   bottomSpacing: {
     height: 40,

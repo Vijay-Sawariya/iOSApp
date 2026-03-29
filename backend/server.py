@@ -822,6 +822,47 @@ def get_builder(builder_id: int, current_user: dict = Depends(get_current_user))
     
     return BuilderResponse(**builder)
 
+@api_router.get("/builders/{builder_id}/leads")
+def get_builder_leads(builder_id: int, current_user: dict = Depends(get_current_user)):
+    """Get all leads associated with a builder"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Get leads where builder_id matches or lead_type is 'builder' and name matches builder
+        cursor.execute("""
+            SELECT l.*, u.full_name as created_by_name 
+            FROM leads l
+            LEFT JOIN users u ON l.created_by = u.id
+            WHERE l.builder_id = %s 
+            AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY l.created_at DESC
+        """, (builder_id,))
+        leads = cursor.fetchall()
+        
+        # Fetch floor pricing for leads
+        if leads:
+            lead_ids = [lead['id'] for lead in leads]
+            placeholders = ','.join(['%s'] * len(lead_ids))
+            cursor.execute(
+                f"SELECT * FROM inventory_floor_pricing WHERE lead_id IN ({placeholders}) ORDER BY lead_id, id",
+                lead_ids
+            )
+            all_floor_pricing = cursor.fetchall()
+            
+            floor_pricing_map = {}
+            for fp in all_floor_pricing:
+                lead_id = fp['lead_id']
+                if lead_id not in floor_pricing_map:
+                    floor_pricing_map[lead_id] = []
+                floor_pricing_map[lead_id].append({
+                    'floor_label': fp['floor_label'],
+                    'floor_amount': float(fp['floor_amount']) if fp['floor_amount'] else 0
+                })
+            
+            for lead in leads:
+                lead['floor_pricing'] = floor_pricing_map.get(lead['id'], [])
+    
+    return leads
+
 @api_router.post("/builders", response_model=BuilderResponse)
 def create_builder(builder: BuilderCreate, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:

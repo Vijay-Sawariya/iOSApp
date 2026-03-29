@@ -192,6 +192,14 @@ export const api = {
     );
   },
 
+  getBuilderLeads: async (id: string) => {
+    const response = await fetch(`${API_URL}/api/builders/${id}/leads`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch builder leads');
+    return response.json();
+  },
+
   createBuilder: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
