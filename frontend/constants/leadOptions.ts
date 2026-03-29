@@ -32,21 +32,25 @@ export const AMENITIES = [
   { key: 'corner', label: 'Corner Plot' },
 ] as const;
 
+// Locations sorted alphabetically
 export const LOCATIONS = [
-  "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
-  "Defence Colony", "New Friends Colony", "Golf Links", "Anand Niketan", "Saket", "Shivalik",
-  "Sarvapriya Vihar", "Chanakyapuri", "Lajpat Nagar", "Lajpat Nagar- III", "Anand Lok",
-  "CR Park", "East of Kailash", "Friends Colony", "Friends Colony East", "Friends Colony West",
-  "Gulmohar Park", "Green Park", "Green Park Extension", "Safdarjung Enclave", "SDA",
-  "Malviya Nagar", "Vasant Kunj", "Hauz Khas Enclave", "Jor Bagh", "Lodi Road", "Lodi Colony",
-  "Nizamuddin East", "Nizamuddin West", "Geetanjali Enclave", "Jor Bagh Enclave", "Kalkaji",
-  "Kalkaji Enclave", "Kashmere Gate", "Kashmere Gate Enclave", "Sarvodaya Enclave", "Neeti Bagh",
-  "Pamposh Enclave", "Nehru Enclave", "Munirka Vihar", "Andrews Ganj", "Hamdard Nagar",
-  "Maurice Nagar", "Bhikaji Cama Place", "Basant Lok DDA Complex", "Malcha Marg", "South Ex 1",
-  "South Ex 2", "Uday Park", "National Park", "Chattapur Farm", "Sultanpur Farms", "Maharani Bagh",
-  "Kailash Colony", "Soami Nagar", "Sukhdev Vihar", "Masjid Moth", "Navjeevan Vihar",
-  "Jangpura Extension", "Hemkunt colony", "Chirag Enclave", "West End", "Pashmi Marg",
-  "Rajdoot Marg", "Hanuman Road"
+  "Anand Lok", "Anand Niketan", "Andrews Ganj", "Basant Lok DDA Complex",
+  "Bhikaji Cama Place", "Chanakyapuri", "Chattapur Farm", "Chirag Enclave",
+  "CR Park", "Defence Colony", "East of Kailash", "Friends Colony",
+  "Friends Colony East", "Friends Colony West", "Geetanjali Enclave",
+  "Golf Links", "Green Park", "Green Park Extension", "Gulmohar Park",
+  "Hamdard Nagar", "Hanuman Road", "Hauz Khas", "Hauz Khas Enclave",
+  "Hemkunt colony", "Jangpura Extension", "Jor Bagh", "Jor Bagh Enclave",
+  "Kailash Colony", "Kalkaji", "Kalkaji Enclave", "Kashmere Gate",
+  "Kashmere Gate Enclave", "Lajpat Nagar", "Lajpat Nagar- III", "Lodi Colony",
+  "Lodi Road", "Maharani Bagh", "Malcha Marg", "Malviya Nagar",
+  "Masjid Moth", "Maurice Nagar", "Munirka Vihar", "National Park",
+  "Navjeevan Vihar", "Neeti Bagh", "Nehru Enclave", "New Friends Colony",
+  "Nizamuddin East", "Nizamuddin West", "Pamposh Enclave", "Panchsheel Enclave",
+  "Panchsheel Park", "Pashmi Marg", "Rajdoot Marg", "Safdarjung Enclave",
+  "Saket", "Sarvapriya Vihar", "Sarvodaya Enclave", "SDA", "Shanti Niketan",
+  "Shivalik", "Soami Nagar", "South Ex 1", "South Ex 2", "Sukhdev Vihar",
+  "Sultanpur Farms", "Sunder Nagar", "Uday Park", "Vasant Kunj", "West End"
 ] as const;
 
 // Filter Status Options (includes 'Any')
