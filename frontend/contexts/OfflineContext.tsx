@@ -114,12 +114,17 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
         setIsInitialized(true);
         console.log('Offline database initialized, last sync:', syncTime);
 
-        // Auto-sync on startup if online
+        // Only auto-sync on startup if data is stale (more than 30 minutes old)
+        // or if never synced before
         const online = await syncService.isOnline();
         if (online) {
-          console.log('Online - triggering auto-sync...');
-          // Small delay to let app settle
-          setTimeout(() => triggerSync(), 1000);
+          const shouldSync = !syncTime || (Date.now() - syncTime.getTime() > 30 * 60 * 1000);
+          if (shouldSync) {
+            console.log('Data is stale - triggering auto-sync...');
+            setTimeout(() => triggerSync(), 1000);
+          } else {
+            console.log('Data is fresh - skipping auto-sync');
+          }
         }
       } catch (error) {
         console.error('Failed to initialize offline database:', error);

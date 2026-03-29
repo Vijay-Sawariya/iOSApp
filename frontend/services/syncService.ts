@@ -51,8 +51,8 @@ class SyncService {
     return response.json();
   }
 
-  // Full sync from server
-  async fullSync(onProgress?: ProgressCallback): Promise<{ success: boolean; error?: string }> {
+  // Full sync from server (quick mode skips followups)
+  async fullSync(onProgress?: ProgressCallback, quickMode: boolean = true): Promise<{ success: boolean; error?: string }> {
     if (this.isSyncing) {
       return { success: false, error: 'Sync already in progress' };
     }
@@ -65,13 +65,15 @@ class SyncService {
     this.isSyncing = true;
 
     try {
+      const totalSteps = quickMode ? 4 : 5;
+      
       // Step 1: Fetch client leads
-      onProgress?.({ stage: 'Downloading client leads...', progress: 0, total: 5 });
+      onProgress?.({ stage: 'Syncing client leads...', progress: 0, total: totalSteps });
       const clientLeads = await this.fetchFromApi('/api/leads/clients');
       await db.saveLeads(clientLeads);
 
       // Step 2: Fetch inventory leads
-      onProgress?.({ stage: 'Downloading inventory leads...', progress: 1, total: 5 });
+      onProgress?.({ stage: 'Syncing inventory...', progress: 1, total: totalSteps });
       const inventoryLeads = await this.fetchFromApi('/api/leads/inventory');
       await db.saveLeads(inventoryLeads);
 
@@ -83,28 +85,33 @@ class SyncService {
       }
 
       // Step 3: Fetch builders
-      onProgress?.({ stage: 'Downloading builders...', progress: 2, total: 5 });
+      onProgress?.({ stage: 'Syncing builders...', progress: 2, total: totalSteps });
       const builders = await this.fetchFromApi('/api/builders');
       await db.saveBuilders(builders);
 
-      // Step 4: Fetch followups for all leads
-      onProgress?.({ stage: 'Downloading conversations...', progress: 3, total: 5 });
-      const allLeads = [...clientLeads, ...inventoryLeads];
-      for (const lead of allLeads) {
-        try {
-          const followups = await this.fetchFromApi(`/api/leads/${lead.id}/followups`);
-          await db.saveFollowups(lead.id, followups);
-        } catch (error) {
-          // Ignore errors for individual followups
-          console.log(`Failed to fetch followups for lead ${lead.id}`);
+      // Step 4: Fetch followups ONLY in full sync mode (not quick mode)
+      // Followups are fetched on-demand when viewing a specific lead
+      if (!quickMode) {
+        onProgress?.({ stage: 'Syncing conversations...', progress: 3, total: totalSteps });
+        const allLeads = [...clientLeads, ...inventoryLeads];
+        // Limit to first 50 leads to avoid long sync times
+        const leadsToSync = allLeads.slice(0, 50);
+        for (const lead of leadsToSync) {
+          try {
+            const followups = await this.fetchFromApi(`/api/leads/${lead.id}/followups`);
+            await db.saveFollowups(lead.id, followups);
+          } catch (error) {
+            // Ignore errors for individual followups
+            console.log(`Failed to fetch followups for lead ${lead.id}`);
+          }
         }
       }
 
-      // Step 5: Update sync time
-      onProgress?.({ stage: 'Finishing sync...', progress: 4, total: 5 });
+      // Final step: Update sync time
+      onProgress?.({ stage: 'Finishing...', progress: totalSteps - 1, total: totalSteps });
       await db.updateLastSyncTime();
 
-      onProgress?.({ stage: 'Sync complete!', progress: 5, total: 5 });
+      onProgress?.({ stage: 'Sync complete!', progress: totalSteps, total: totalSteps });
 
       this.isSyncing = false;
       return { success: true };

@@ -5,6 +5,33 @@ import { useOffline } from '../contexts/OfflineContext';
 
 export const OfflineBanner: React.FC = () => {
   const { isOnline, isSyncing, syncProgress, formatLastSync, triggerSync } = useOffline();
+  const [showSyncComplete, setShowSyncComplete] = React.useState(false);
+  const [wasJustSyncing, setWasJustSyncing] = React.useState(false);
+
+  // Track when syncing ends to show brief "complete" message
+  React.useEffect(() => {
+    if (isSyncing) {
+      setWasJustSyncing(true);
+    } else if (wasJustSyncing) {
+      // Syncing just finished - show complete briefly
+      setShowSyncComplete(true);
+      const timer = setTimeout(() => {
+        setShowSyncComplete(false);
+        setWasJustSyncing(false);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isSyncing, wasJustSyncing]);
+
+  // Show brief sync complete message
+  if (showSyncComplete && !isSyncing) {
+    return (
+      <View style={styles.syncCompleteContainer}>
+        <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+        <Text style={styles.syncingText}>Sync complete</Text>
+      </View>
+    );
+  }
 
   // Show syncing progress banner
   if (isSyncing && syncProgress) {
@@ -31,7 +58,7 @@ export const OfflineBanner: React.FC = () => {
     );
   }
 
-  // Show sync button when online (optional - can be removed if not wanted)
+  // When online and not syncing, show nothing
   return null;
 };
 
@@ -88,6 +115,14 @@ const styles = StyleSheet.create({
   },
   syncingContainer: {
     backgroundColor: '#3B82F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  syncCompleteContainer: {
+    backgroundColor: '#10B981',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
