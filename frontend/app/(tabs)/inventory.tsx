@@ -822,6 +822,14 @@ export default function InventoryLeadsScreen() {
               data={filteredFloors}
               keyExtractor={(item) => item}
               initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
+              getItemLayout={(data, index) => ({
+                length: 52,
+                offset: 52 * index,
+                index,
+              })}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.locationItem}
