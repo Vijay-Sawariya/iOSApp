@@ -10,126 +10,43 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Modal,
-  FlatList,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { api } from '../../../services/api';
 import * as Location from 'expo-location';
 
-const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder'];
-const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'];
-const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'];
-const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'];
-const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'];
-const UNITS = ['CR', 'L', 'K'];
-const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'];
-const LIFT_OPTIONS = ['Yes', 'No'];
+// Import shared components
+import { CustomDropdown } from '../../../components/forms/CustomDropdown';
+import { FormInput } from '../../../components/forms/FormInput';
+import { RadioButtonGroup } from '../../../components/forms/RadioButtonGroup';
 
-const LOCATIONS = [
-  "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
-  "Defence Colony", "New Friends Colony", "Golf Links", "Anand Niketan", "Saket", "Shivalik",
-  "Sarvapriya Vihar", "Chanakyapuri", "Lajpat Nagar", "Lajpat Nagar- III", "Anand Lok",
-  "CR Park", "East of Kailash", "Friends Colony", "Friends Colony East", "Friends Colony West",
-  "Gulmohar Park", "Green Park", "Green Park Extension", "Safdarjung Enclave", "SDA",
-  "Malviya Nagar", "Vasant Kunj", "Hauz Khas Enclave", "Jor Bagh", "Lodi Road", "Lodi Colony",
-  "Nizamuddin East", "Nizamuddin West", "Geetanjali Enclave", "Jor Bagh Enclave", "Kalkaji",
-  "Kalkaji Enclave", "Kashmere Gate", "Kashmere Gate Enclave", "Sarvodaya Enclave", "Neeti Bagh",
-  "Pamposh Enclave", "Nehru Enclave", "Munirka Vihar", "Andrews Ganj", "Hamdard Nagar",
-  "Maurice Nagar", "Bhikaji Cama Place", "Basant Lok DDA Complex", "Malcha Marg", "South Ex 1",
-  "South Ex 2", "Uday Park", "National Park", "Chattapur Farm", "Sultanpur Farms", "Maharani Bagh",
-  "Kailash Colony", "Soami Nagar", "Sukhdev Vihar", "Masjid Moth", "Navjeevan Vihar",
-  "Jangpura Extension", "Hemkunt colony", "Chirag Enclave", "West End", "Pashmi Marg",
-  "Rajdoot Marg", "Hanuman Road"
-];
-
-interface FloorPrice {
-  floor: string;
-  price: string;
-}
-
-// Custom Dropdown Component for iOS compatibility
-const CustomDropdown = ({ 
-  label, 
-  value, 
-  options, 
-  onSelect, 
-  placeholder = "Select...",
-  displayValue 
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onSelect: (value: string) => void;
-  placeholder?: string;
-  displayValue?: string;
-}) => {
-  const [modalVisible, setModalVisible] = useState(false);
-  
-  const displayText = displayValue || value || placeholder;
-  const hasValue = !!value;
-
-  return (
-    <>
-      <Text style={styles.label}>{label}</Text>
-      <TouchableOpacity 
-        style={styles.dropdownButton}
-        onPress={() => setModalVisible(true)}
-      >
-        <Text style={[styles.dropdownText, !hasValue && styles.dropdownPlaceholder]}>
-          {displayText}
-        </Text>
-        <Ionicons name="chevron-down" size={20} color="#6B7280" />
-      </TouchableOpacity>
-      
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{label}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#1F2937" />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={options}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.optionItem, value === item && styles.optionItemSelected]}
-                  onPress={() => {
-                    onSelect(item);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.optionText, value === item && styles.optionTextSelected]}>
-                    {item}
-                  </Text>
-                  {value === item && (
-                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
-                  )}
-                </TouchableOpacity>
-              )}
-              style={styles.optionsList}
-            />
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-};
+// Import constants
+import {
+  LEAD_TYPES,
+  LEAD_TEMPERATURES,
+  CLIENT_STATUSES,
+  INVENTORY_STATUSES,
+  PROPERTY_TYPES,
+  BHK_OPTIONS,
+  UNITS,
+  FLOORS,
+  FACINGS,
+  LIFT_OPTIONS,
+  LOCATIONS,
+  AMENITIES,
+  FloorPrice,
+  isInventoryType,
+  isClientType,
+} from '../../../constants/leadOptions';
 
 export default function EditLeadScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fetchingLocation, setFetchingLocation] = useState(false);
+  const [builders, setBuilders] = useState<any[]>([]);
   
   // Basic Info
   const [name, setName] = useState('');
@@ -137,9 +54,9 @@ export default function EditLeadScreen() {
   const [email, setEmail] = useState('');
   
   // Lead Classification
-  const [leadType, setLeadType] = useState('buyer');
-  const [leadTemperature, setLeadTemperature] = useState('Warm');
-  const [leadStatus, setLeadStatus] = useState('New');
+  const [leadType, setLeadType] = useState('seller');
+  const [leadTemperature, setLeadTemperature] = useState('Hot');
+  const [leadStatus, setLeadStatus] = useState('');
   
   // Property Details
   const [location, setLocation] = useState('');
@@ -148,6 +65,7 @@ export default function EditLeadScreen() {
   const [bhk, setBhk] = useState('');
   const [floor, setFloor] = useState('');
   const [areaSize, setAreaSize] = useState('');
+  const [facing, setFacing] = useState('');
   
   // Budget (for Clients)
   const [budgetMin, setBudgetMin] = useState('');
@@ -162,20 +80,104 @@ export default function EditLeadScreen() {
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
-  const [facing, setFacing] = useState('');
+  const [builderId, setBuilderId] = useState('');
+  
+  // Additional Amenities (boolean toggles)
+  const [amenities, setAmenities] = useState({
+    park_facing: false,
+    park_at_rear: false,
+    wide_road: false,
+    peaceful_location: false,
+    main_road: false,
+    corner: false,
+  });
 
-  const isInventory = ['seller', 'landlord', 'builder'].includes(leadType);
+  const isInventory = isInventoryType(leadType);
+  const isClient = isClientType(leadType);
 
   useEffect(() => {
     loadLead();
+    loadBuilders();
   }, [id]);
+
+  const loadBuilders = async () => {
+    try {
+      const data = await api.getBuilders();
+      setBuilders(data);
+    } catch (error) {
+      console.error('Failed to load builders:', error);
+    }
+  };
+
+  const loadLead = async () => {
+    if (!id) return;
+    try {
+      const data = await api.getLead(id);
+      
+      // Basic Info
+      setName(data.name || '');
+      setPhone(data.phone || '');
+      setEmail(data.email || '');
+      
+      // Lead Classification
+      setLeadType(data.lead_type || 'seller');
+      setLeadTemperature(data.lead_temperature || 'Hot');
+      setLeadStatus(data.lead_status || '');
+      
+      // Property Details
+      setLocation(data.location || '');
+      setAddress(data.address || '');
+      setPropertyType(data.property_type || '');
+      setBhk(data.bhk || '');
+      setFloor(data.floor || '');
+      setAreaSize(data.area_size?.toString() || '');
+      setFacing(data.building_facing || '');
+      
+      // Budget
+      setBudgetMin(data.budget_min?.toString() || '');
+      setBudgetMax(data.budget_max?.toString() || '');
+      setUnit(data.unit || 'CR');
+      
+      // Other
+      setParking(data.car_parking_number?.toString() || '');
+      setLift(data.lift_available || '');
+      setNotes(data.notes || '');
+      setGoogleMapUrl(data.Property_locationUrl || '');
+      setBuilderId(data.builder_id?.toString() || '');
+      
+      // Amenities
+      setAmenities({
+        park_facing: data.park_facing === 1 || data.park_facing === true,
+        park_at_rear: data.park_at_rear === 1 || data.park_at_rear === true,
+        wide_road: data.wide_road === 1 || data.wide_road === true,
+        peaceful_location: data.peaceful_location === 1 || data.peaceful_location === true,
+        main_road: data.main_road === 1 || data.main_road === true,
+        corner: data.corner === 1 || data.corner === true,
+      });
+      
+      // Load floor pricing if available
+      if (data.floor_pricing && Array.isArray(data.floor_pricing)) {
+        setFloorPrices(
+          data.floor_pricing.map((fp: any) => ({
+            floor: fp.floor_label || fp.floor || '',
+            price: (fp.floor_amount || fp.price || '').toString()
+          }))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to load lead:', error);
+      Alert.alert('Error', 'Failed to load lead details');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchCurrentLocation = async () => {
     setFetchingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required to get current location.');
+        Alert.alert('Permission Denied', 'Location permission is required.');
         return;
       }
 
@@ -186,54 +188,11 @@ export default function EditLeadScreen() {
       const { latitude, longitude } = currentLocation.coords;
       const mapUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
       setGoogleMapUrl(mapUrl);
-      Alert.alert('Success', 'Current location captured successfully!');
+      Alert.alert('Success', 'Current location captured!');
     } catch (error) {
-      console.error('Error getting location:', error);
-      Alert.alert('Error', 'Failed to get current location. Please try again.');
+      Alert.alert('Error', 'Failed to get current location.');
     } finally {
       setFetchingLocation(false);
-    }
-  };
-
-  const loadLead = async () => {
-    try {
-      const data = await api.getLead(String(id));
-      console.log('Loaded lead data:', data);
-      
-      setName(data.name || '');
-      setPhone(data.phone || '');
-      setEmail(data.email || '');
-      setLeadType(data.lead_type || 'buyer');
-      setLeadTemperature(data.lead_temperature || 'Warm');
-      setLeadStatus(data.lead_status || 'New');
-      setLocation(data.location || '');
-      setAddress(data.address || '');
-      setPropertyType(data.property_type || '');
-      setBhk(data.bhk || '');
-      setFloor(data.floor || '');
-      setAreaSize(data.area_size ? String(data.area_size) : '');
-      setBudgetMin(data.budget_min ? String(data.budget_min) : '');
-      setBudgetMax(data.budget_max ? String(data.budget_max) : '');
-      setUnit(data.unit || 'CR');
-      setParking(data.car_parking_number ? String(data.car_parking_number) : '');
-      setLift(data.lift_available ? String(data.lift_available) : '');
-      setNotes(data.notes || '');
-      setGoogleMapUrl(data.Property_locationUrl || data.google_map_url || '');
-      setFacing(data.building_facing || '');
-      
-      // Load floor pricing if available
-      if (data.floor_pricing && Array.isArray(data.floor_pricing)) {
-        const prices = data.floor_pricing.map((fp: any) => ({
-          floor: fp.floor_label || '',
-          price: fp.floor_amount ? String(fp.floor_amount) : ''
-        }));
-        setFloorPrices(prices);
-      }
-    } catch (err) {
-      console.error('Failed to load lead:', err);
-      Alert.alert('Error', 'Failed to load lead details');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -249,6 +208,13 @@ export default function EditLeadScreen() {
 
   const removeFloorPrice = (index: number) => {
     setFloorPrices(floorPrices.filter((_, i) => i !== index));
+  };
+
+  const toggleAmenity = (key: string) => {
+    setAmenities(prev => ({
+      ...prev,
+      [key]: !prev[key as keyof typeof prev]
+    }));
   };
 
   const handleSave = async () => {
@@ -271,30 +237,38 @@ export default function EditLeadScreen() {
         property_type: propertyType,
         bhk,
         floor,
-        area_size: areaSize ? parseFloat(areaSize) : null,
+        area_size: areaSize || null,
         unit,
-        car_parking_number: parking,
+        car_parking_number: parking ? parseInt(parking) : null,
         lift_available: lift,
         notes: notes.trim(),
         Property_locationUrl: googleMapUrl.trim(),
         building_facing: facing,
+        // Amenities
+        park_facing: amenities.park_facing ? 1 : 0,
+        park_at_rear: amenities.park_at_rear ? 1 : 0,
+        wide_road: amenities.wide_road ? 1 : 0,
+        peaceful_location: amenities.peaceful_location ? 1 : 0,
+        main_road: amenities.main_road ? 1 : 0,
+        corner: amenities.corner ? 1 : 0,
       };
 
       if (isInventory) {
-        // For inventory, include floor pricing
         updateData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
+        if (builderId) {
+          updateData.builder_id = parseInt(builderId);
+        }
       } else {
-        // For clients, include budget
         updateData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
         updateData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
       }
 
-      await api.updateLead(String(id), updateData);
+      await api.updateLead(id!, updateData);
       Alert.alert('Success', 'Lead updated successfully', [
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (err) {
-      console.error('Failed to update lead:', err);
+      console.error('Update lead error:', err);
       Alert.alert('Error', 'Failed to update lead');
     } finally {
       setSaving(false);
@@ -305,7 +279,7 @@ export default function EditLeadScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>Loading lead details...</Text>
       </View>
     );
   }
@@ -315,6 +289,7 @@ export default function EditLeadScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#1F2937" />
@@ -337,33 +312,25 @@ export default function EditLeadScreen() {
         {/* Basic Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
-          
-          <Text style={styles.label}>Name *</Text>
-          <TextInput
-            style={styles.input}
+          <FormInput
+            label="Name"
             value={name}
             onChangeText={setName}
             placeholder="Enter name"
-            placeholderTextColor="#9CA3AF"
+            required
           />
-
-          <Text style={styles.label}>Phone</Text>
-          <TextInput
-            style={styles.input}
+          <FormInput
+            label="Phone"
             value={phone}
             onChangeText={setPhone}
             placeholder="Enter phone number"
-            placeholderTextColor="#9CA3AF"
             keyboardType="phone-pad"
           />
-
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
+          <FormInput
+            label="Email"
             value={email}
             onChangeText={setEmail}
             placeholder="Enter email"
-            placeholderTextColor="#9CA3AF"
             keyboardType="email-address"
           />
         </View>
@@ -371,26 +338,23 @@ export default function EditLeadScreen() {
         {/* Lead Classification */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lead Classification</Text>
-          
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={LEAD_TYPES}
+            options={[...LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
           />
-
           <CustomDropdown
             label="Temperature"
             value={leadTemperature}
-            options={LEAD_TEMPERATURES}
+            options={[...LEAD_TEMPERATURES]}
             onSelect={setLeadTemperature}
           />
-
           <CustomDropdown
             label="Status"
             value={leadStatus}
-            options={isInventory ? INVENTORY_STATUSES : CLIENT_STATUSES}
+            options={isInventory ? [...INVENTORY_STATUSES] : [...CLIENT_STATUSES]}
             onSelect={setLeadStatus}
           />
         </View>
@@ -402,22 +366,20 @@ export default function EditLeadScreen() {
           <CustomDropdown
             label="Location"
             value={location}
-            options={LOCATIONS}
+            options={[...LOCATIONS]}
             onSelect={setLocation}
             placeholder="Select Location"
           />
 
+          <FormInput
+            label="Address"
+            value={address}
+            onChangeText={setAddress}
+            placeholder="Enter property address"
+          />
+
           {isInventory && (
             <>
-              <Text style={styles.label}>Address</Text>
-              <TextInput
-                style={styles.input}
-                value={address}
-                onChangeText={setAddress}
-                placeholder="Enter property address"
-                placeholderTextColor="#9CA3AF"
-              />
-
               <Text style={styles.label}>Google Map URL</Text>
               <View style={styles.mapUrlRow}>
                 <TextInput
@@ -427,15 +389,15 @@ export default function EditLeadScreen() {
                   placeholder="https://maps.google.com/..."
                   placeholderTextColor="#9CA3AF"
                 />
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.locationButton}
                   onPress={fetchCurrentLocation}
                   disabled={fetchingLocation}
                 >
                   {fetchingLocation ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <ActivityIndicator size="small" color="#3B82F6" />
                   ) : (
-                    <Ionicons name="location" size={22} color="#FFFFFF" />
+                    <Ionicons name="location" size={22} color="#3B82F6" />
                   )}
                 </TouchableOpacity>
               </View>
@@ -445,198 +407,178 @@ export default function EditLeadScreen() {
           <CustomDropdown
             label="Property Type"
             value={propertyType}
-            options={PROPERTY_TYPES}
+            options={[...PROPERTY_TYPES]}
             onSelect={setPropertyType}
-            placeholder="Select Type"
+            placeholder="Select Property Type"
           />
 
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>BHK</Text>
-              <TextInput
-                style={styles.input}
-                value={bhk}
-                onChangeText={setBhk}
-                placeholder="e.g., 3 BHK"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-            <View style={styles.halfField}>
-              <CustomDropdown
-                label="Floor"
-                value={floor}
-                options={FLOORS}
-                onSelect={setFloor}
-                placeholder="Select Floor"
-              />
-            </View>
-          </View>
+          <CustomDropdown
+            label="BHK"
+            value={bhk}
+            options={[...BHK_OPTIONS]}
+            onSelect={setBhk}
+            placeholder="Select BHK"
+          />
 
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Area (sq.yds)</Text>
-              <TextInput
-                style={styles.input}
-                value={areaSize}
-                onChangeText={setAreaSize}
-                placeholder="e.g., 200"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Parking</Text>
-              <TextInput
-                style={styles.input}
-                value={parking}
-                onChangeText={setParking}
-                placeholder="e.g., 2"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
+          <CustomDropdown
+            label="Floor"
+            value={floor}
+            options={[...FLOORS]}
+            onSelect={setFloor}
+            placeholder="Select Floor"
+          />
 
-          {isInventory && (
-            <View style={styles.row}>
-              <View style={styles.halfField}>
-                <Text style={styles.label}>Lift</Text>
-                <View style={styles.radioGroup}>
-                  {LIFT_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={styles.radioOption}
-                      onPress={() => setLift(option)}
-                    >
-                      <View style={[styles.radioCircle, lift === option && styles.radioCircleSelected]}>
-                        {lift === option && <View style={styles.radioInner} />}
-                      </View>
-                      <Text style={[styles.radioLabel, lift === option && styles.radioLabelSelected]}>
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+          <FormInput
+            label="Area Size (sq.yds)"
+            value={areaSize}
+            onChangeText={setAreaSize}
+            placeholder="Enter area"
+            keyboardType="decimal-pad"
+          />
+
+          <CustomDropdown
+            label="Facing"
+            value={facing}
+            options={[...FACINGS]}
+            onSelect={setFacing}
+            placeholder="Select Facing"
+          />
+        </View>
+
+        {/* Budget/Pricing */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            {isInventory ? 'Floor-wise Pricing' : 'Budget'}
+          </Text>
+          
+          <CustomDropdown
+            label="Unit"
+            value={unit}
+            options={[...UNITS]}
+            onSelect={setUnit}
+          />
+
+          {isClient && (
+            <View style={styles.budgetRow}>
+              <View style={styles.budgetField}>
+                <FormInput
+                  label="Min Budget"
+                  value={budgetMin}
+                  onChangeText={setBudgetMin}
+                  placeholder="Min"
+                  keyboardType="decimal-pad"
+                />
               </View>
-              <View style={styles.halfField}>
-                <CustomDropdown
-                  label="Unit"
-                  value={unit}
-                  options={UNITS}
-                  onSelect={setUnit}
+              <View style={styles.budgetField}>
+                <FormInput
+                  label="Max Budget"
+                  value={budgetMax}
+                  onChangeText={setBudgetMax}
+                  placeholder="Max"
+                  keyboardType="decimal-pad"
                 />
               </View>
             </View>
           )}
-        </View>
 
-        {/* Floor-wise Pricing (for Inventory) */}
-        {isInventory && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitleNoMargin}>Asking Price (Floor-wise)</Text>
-              <TouchableOpacity style={styles.addButton} onPress={addFloorPrice}>
-                <Ionicons name="add-circle" size={28} color="#10B981" />
-              </TouchableOpacity>
-            </View>
-
-            {floorPrices.length === 0 && (
-              <Text style={styles.emptyText}>No floor prices added. Tap + to add.</Text>
-            )}
-
-            {floorPrices.map((fp, index) => (
-              <View key={index} style={styles.floorPriceRow}>
-                <View style={styles.floorDropdownContainer}>
+          {isInventory && (
+            <>
+              {floorPrices.map((fp, index) => (
+                <View key={index} style={styles.floorPriceRow}>
+                  <View style={styles.floorPriceField}>
+                    <CustomDropdown
+                      label="Floor"
+                      value={fp.floor}
+                      options={[...FLOORS]}
+                      onSelect={(v) => updateFloorPrice(index, 'floor', v)}
+                      placeholder="Floor"
+                    />
+                  </View>
+                  <View style={styles.floorPriceField}>
+                    <FormInput
+                      label="Price"
+                      value={fp.price}
+                      onChangeText={(v) => updateFloorPrice(index, 'price', v)}
+                      placeholder="Price"
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
                   <TouchableOpacity
-                    style={styles.floorDropdownButton}
-                    onPress={() => {
-                      Alert.alert(
-                        'Select Floor',
-                        '',
-                        FLOORS.map(f => ({
-                          text: f,
-                          onPress: () => updateFloorPrice(index, 'floor', f)
-                        }))
-                      );
-                    }}
+                    style={styles.removeFloorBtn}
+                    onPress={() => removeFloorPrice(index)}
                   >
-                    <Text style={[styles.floorDropdownText, !fp.floor && styles.dropdownPlaceholder]}>
-                      {fp.floor || 'Floor'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color="#6B7280" />
+                    <Ionicons name="close-circle" size={24} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
-                <TextInput
-                  style={styles.priceInput}
-                  value={fp.price}
-                  onChangeText={(value) => updateFloorPrice(index, 'price', value)}
-                  placeholder="Price"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="numeric"
-                />
-                <TouchableOpacity onPress={() => removeFloorPrice(index)} style={styles.removeButton}>
-                  <Ionicons name="close-circle" size={24} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
+              ))}
+              <TouchableOpacity style={styles.addFloorBtn} onPress={addFloorPrice}>
+                <Ionicons name="add-circle" size={20} color="#3B82F6" />
+                <Text style={styles.addFloorText}>Add Floor Price</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
 
-        {/* Budget (for Clients) */}
-        {!isInventory && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Budget</Text>
-            
-            <View style={styles.row}>
-              <View style={styles.thirdField}>
-                <Text style={styles.label}>Min</Text>
-                <TextInput
-                  style={styles.input}
-                  value={budgetMin}
-                  onChangeText={setBudgetMin}
-                  placeholder="Min"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={styles.thirdField}>
-                <Text style={styles.label}>Max</Text>
-                <TextInput
-                  style={styles.input}
-                  value={budgetMax}
-                  onChangeText={setBudgetMax}
-                  placeholder="Max"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={styles.thirdField}>
-                <CustomDropdown
-                  label="Unit"
-                  value={unit}
-                  options={UNITS}
-                  onSelect={setUnit}
-                />
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Notes */}
+        {/* Additional Details */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notes</Text>
+          <Text style={styles.sectionTitle}>Additional Details</Text>
+          
+          <FormInput
+            label="Parking Spaces"
+            value={parking}
+            onChangeText={setParking}
+            placeholder="Number of parking spaces"
+            keyboardType="number-pad"
+          />
+
+          <RadioButtonGroup
+            label="Lift Available"
+            options={[...LIFT_OPTIONS]}
+            selectedValue={lift}
+            onSelect={setLift}
+          />
+
+          {isInventory && builders.length > 0 && (
+            <CustomDropdown
+              label="Builder"
+              value={builderId}
+              options={builders.map(b => b.id.toString())}
+              onSelect={setBuilderId}
+              placeholder="Select Builder (Optional)"
+              displayValue={builders.find(b => b.id.toString() === builderId)?.builder_name || ''}
+            />
+          )}
+
+          <Text style={styles.label}>Notes</Text>
           <TextInput
             style={[styles.input, styles.notesInput]}
             value={notes}
             onChangeText={setNotes}
-            placeholder="Add notes..."
+            placeholder="Additional notes..."
             placeholderTextColor="#9CA3AF"
             multiline
             numberOfLines={4}
           />
         </View>
 
-        <View style={styles.bottomPadding} />
+        {/* Amenities */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Additional Amenities</Text>
+          
+          {AMENITIES.map((amenity) => (
+            <View key={amenity.key} style={styles.amenityRow}>
+              <Text style={styles.amenityLabel}>{amenity.label}</Text>
+              <Switch
+                value={amenities[amenity.key as keyof typeof amenities]}
+                onValueChange={() => toggleAmenity(amenity.key)}
+                trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
+                thumbColor={amenities[amenity.key as keyof typeof amenities] ? '#3B82F6' : '#F3F4F6'}
+              />
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -651,10 +593,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
+    marginTop: 12,
+    fontSize: 14,
     color: '#6B7280',
   },
   header: {
@@ -662,8 +605,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
@@ -679,16 +622,16 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 8,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
   content: {
     flex: 1,
@@ -699,169 +642,42 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 16,
-  },
-  sectionTitleNoMargin: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
+    marginBottom: 8,
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 6,
+    marginTop: 12,
   },
   input: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
+    padding: 12,
+    fontSize: 15,
     color: '#1F2937',
-    marginBottom: 16,
-  },
-  // Custom Dropdown Styles
-  dropdownButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: '#1F2937',
-  },
-  dropdownPlaceholder: {
-    color: '#9CA3AF',
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  optionsList: {
-    maxHeight: 400,
-  },
-  optionItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  optionItemSelected: {
-    backgroundColor: '#EFF6FF',
-  },
-  optionText: {
-    fontSize: 16,
-    color: '#1F2937',
-  },
-  optionTextSelected: {
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  row: {
-    flexDirection: 'row',
-    marginHorizontal: -8,
-  },
-  halfField: {
-    flex: 1,
-    paddingHorizontal: 8,
-  },
-  thirdField: {
-    flex: 1,
-    paddingHorizontal: 8,
+    minHeight: 48,
   },
   notesInput: {
-    textAlignVertical: 'top',
     minHeight: 100,
+    textAlignVertical: 'top',
   },
-  addButton: {
-    padding: 4,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    paddingVertical: 16,
-  },
-  floorPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  floorDropdownContainer: {
-    flex: 1,
-    marginRight: 8,
-  },
-  floorDropdownButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  floorDropdownText: {
-    fontSize: 16,
-    color: '#1F2937',
-  },
-  priceInput: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    color: '#1F2937',
-    marginRight: 8,
-  },
-  removeButton: {
-    padding: 4,
-  },
-  bottomPadding: {
-    height: 40,
-  },
-  // Map URL and Location Button
   mapUrlRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
     gap: 8,
   },
   mapUrlInput: {
@@ -870,54 +686,68 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
+    padding: 12,
+    fontSize: 15,
     color: '#1F2937',
+    minHeight: 48,
   },
   locationButton: {
-    backgroundColor: '#10B981',
     width: 48,
     height: 48,
     borderRadius: 8,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Radio Button Styles
-  radioGroup: {
+  budgetRow: {
     flexDirection: 'row',
-    gap: 20,
-    paddingVertical: 12,
+    gap: 12,
   },
-  radioOption: {
+  budgetField: {
+    flex: 1,
+  },
+  floorPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginBottom: 8,
+  },
+  floorPriceField: {
+    flex: 1,
+  },
+  removeFloorBtn: {
+    padding: 8,
+    marginBottom: 8,
+  },
+  addFloorBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  radioCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  radioCircleSelected: {
+    padding: 12,
+    borderWidth: 1,
     borderColor: '#3B82F6',
+    borderRadius: 8,
+    borderStyle: 'dashed',
+    marginTop: 8,
   },
-  radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#3B82F6',
-  },
-  radioLabel: {
-    fontSize: 15,
-    color: '#6B7280',
-  },
-  radioLabelSelected: {
-    color: '#1F2937',
+  addFloorText: {
+    color: '#3B82F6',
     fontWeight: '500',
+    marginLeft: 8,
+  },
+  amenityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  amenityLabel: {
+    fontSize: 15,
+    color: '#374151',
+  },
+  bottomSpacer: {
+    height: 40,
   },
 });

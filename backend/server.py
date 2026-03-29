@@ -314,6 +314,7 @@ class LeadCreate(BaseModel):
     email: Optional[str] = None
     lead_type: Optional[str] = "buyer"
     location: Optional[str] = None
+    address: Optional[str] = None
     bhk: Optional[str] = None
     budget_min: Optional[float] = None
     budget_max: Optional[float] = None
@@ -322,6 +323,23 @@ class LeadCreate(BaseModel):
     lead_status: Optional[str] = "New"
     notes: Optional[str] = None
     builder_id: Optional[int] = None
+    floor: Optional[str] = None
+    area_size: Optional[str] = None
+    car_parking_number: Optional[int] = None
+    lift_available: Optional[str] = None
+    unit: Optional[str] = None
+    Property_locationUrl: Optional[str] = None
+    building_facing: Optional[str] = None
+    possession_on: Optional[str] = None
+    # Amenities
+    park_facing: Optional[int] = 0
+    park_at_rear: Optional[int] = 0
+    wide_road: Optional[int] = 0
+    peaceful_location: Optional[int] = 0
+    main_road: Optional[int] = 0
+    corner: Optional[int] = 0
+    # Floor pricing (list of dicts)
+    floor_pricing: Optional[List[dict]] = None
 
 class BuilderResponse(BaseModel):
     id: int
@@ -634,16 +652,74 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
 def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO leads (name, phone, email, lead_type, location, bhk, budget_min, budget_max,
-               property_type, lead_temperature, lead_status, notes, created_at, created_by)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (lead.name, lead.phone, lead.email, lead.lead_type, lead.location, lead.bhk,
-             lead.budget_min, lead.budget_max, lead.property_type, lead.lead_temperature, lead.lead_status, 
-             lead.notes, datetime.utcnow(), current_user['id'])
-        )
+        
+        # Build insert query with all available fields
+        fields = ['name', 'phone', 'email', 'lead_type', 'location', 'address', 'bhk', 
+                  'budget_min', 'budget_max', 'property_type', 'lead_temperature', 'lead_status', 
+                  'notes', 'floor', 'area_size', 'car_parking_number', 'lift_available', 'unit',
+                  'Property_locationUrl', 'building_facing', 'possession_on', 'builder_id',
+                  'park_facing', 'park_at_rear', 'wide_road', 'peaceful_location', 'main_road', 'corner',
+                  'created_at', 'created_by']
+        
+        values_dict = {
+            'name': lead.name,
+            'phone': lead.phone,
+            'email': lead.email,
+            'lead_type': lead.lead_type,
+            'location': lead.location,
+            'address': getattr(lead, 'address', None),
+            'bhk': lead.bhk,
+            'budget_min': lead.budget_min,
+            'budget_max': lead.budget_max,
+            'property_type': lead.property_type,
+            'lead_temperature': lead.lead_temperature,
+            'lead_status': lead.lead_status,
+            'notes': lead.notes,
+            'floor': getattr(lead, 'floor', None),
+            'area_size': getattr(lead, 'area_size', None),
+            'car_parking_number': getattr(lead, 'car_parking_number', None),
+            'lift_available': getattr(lead, 'lift_available', None),
+            'unit': getattr(lead, 'unit', None),
+            'Property_locationUrl': getattr(lead, 'Property_locationUrl', None),
+            'building_facing': getattr(lead, 'building_facing', None),
+            'possession_on': getattr(lead, 'possession_on', None),
+            'builder_id': getattr(lead, 'builder_id', None),
+            'park_facing': getattr(lead, 'park_facing', 0),
+            'park_at_rear': getattr(lead, 'park_at_rear', 0),
+            'wide_road': getattr(lead, 'wide_road', 0),
+            'peaceful_location': getattr(lead, 'peaceful_location', 0),
+            'main_road': getattr(lead, 'main_road', 0),
+            'corner': getattr(lead, 'corner', 0),
+            'created_at': datetime.utcnow(),
+            'created_by': current_user['id']
+        }
+        
+        # Filter out None values for optional fields (except required ones)
+        insert_fields = []
+        insert_values = []
+        for field in fields:
+            if values_dict[field] is not None or field in ['name', 'created_at', 'created_by']:
+                insert_fields.append(field)
+                insert_values.append(values_dict[field])
+        
+        placeholders = ', '.join(['%s'] * len(insert_fields))
+        query = f"INSERT INTO leads ({', '.join(insert_fields)}) VALUES ({placeholders})"
+        
+        cursor.execute(query, insert_values)
         conn.commit()
         lead_id = cursor.lastrowid
+        
+        # Handle floor pricing if provided
+        floor_pricing = getattr(lead, 'floor_pricing', None)
+        if floor_pricing:
+            for fp in floor_pricing:
+                if fp.get('floor') and fp.get('price'):
+                    cursor.execute(
+                        """INSERT INTO inventory_floor_pricing (lead_id, floor_label, floor_amount)
+                           VALUES (%s, %s, %s)""",
+                        (lead_id, fp['floor'], float(fp['price']))
+                    )
+            conn.commit()
         
         cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         created = cursor.fetchone()
@@ -664,7 +740,8 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
             'bhk', 'budget_min', 'budget_max', 'property_type',
             'lead_temperature', 'lead_status', 'notes', 'floor', 'area_size',
             'car_parking_number', 'lift_available', 'unit', 'Property_locationUrl',
-            'building_facing', 'possession_on', 'builder_id'
+            'building_facing', 'possession_on', 'builder_id',
+            'park_facing', 'park_at_rear', 'wide_road', 'peaceful_location', 'main_road', 'corner'
         ]
         
         for field in allowed_fields:

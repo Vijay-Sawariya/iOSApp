@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -28,11 +29,13 @@ import {
   CLIENT_STATUSES,
   INVENTORY_STATUSES,
   PROPERTY_TYPES,
+  BHK_OPTIONS,
   UNITS,
   FLOORS,
   FACINGS,
   LIFT_OPTIONS,
   LOCATIONS,
+  AMENITIES,
   FloorPrice,
   isInventoryType,
   isClientType,
@@ -76,6 +79,16 @@ export default function AddLeadScreen() {
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   const [builderId, setBuilderId] = useState('');
+  
+  // Additional Amenities (boolean toggles)
+  const [amenities, setAmenities] = useState({
+    park_facing: false,
+    park_at_rear: false,
+    wide_road: false,
+    peaceful_location: false,
+    main_road: false,
+    corner: false,
+  });
 
   const isInventory = isInventoryType(leadType);
   const isClient = isClientType(leadType);
@@ -140,6 +153,13 @@ export default function AddLeadScreen() {
     setFloorPrices(floorPrices.filter((_, i) => i !== index));
   };
 
+  const toggleAmenity = (key: string) => {
+    setAmenities(prev => ({
+      ...prev,
+      [key]: !prev[key as keyof typeof prev]
+    }));
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name is required');
@@ -160,13 +180,20 @@ export default function AddLeadScreen() {
         property_type: propertyType,
         bhk,
         floor,
-        area_size: areaSize ? parseFloat(areaSize) : null,
+        area_size: areaSize || null,
         unit,
-        car_parking_number: parking,
+        car_parking_number: parking ? parseInt(parking) : null,
         lift_available: lift,
         notes: notes.trim(),
         Property_locationUrl: googleMapUrl.trim(),
         building_facing: facing,
+        // Amenities
+        park_facing: amenities.park_facing ? 1 : 0,
+        park_at_rear: amenities.park_at_rear ? 1 : 0,
+        wide_road: amenities.wide_road ? 1 : 0,
+        peaceful_location: amenities.peaceful_location ? 1 : 0,
+        main_road: amenities.main_road ? 1 : 0,
+        corner: amenities.corner ? 1 : 0,
       };
 
       if (isInventory) {
@@ -184,6 +211,7 @@ export default function AddLeadScreen() {
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (err) {
+      console.error('Create lead error:', err);
       Alert.alert('Error', 'Failed to create lead');
     } finally {
       setSaving(false);
@@ -268,6 +296,7 @@ export default function AddLeadScreen() {
         {/* Property Details */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Property Details</Text>
+          
           <CustomDropdown
             label="Location"
             value={location}
@@ -276,15 +305,15 @@ export default function AddLeadScreen() {
             placeholder="Select Location"
           />
 
+          <FormInput
+            label="Address"
+            value={address}
+            onChangeText={setAddress}
+            placeholder="Enter property address"
+          />
+
           {isInventory && (
             <>
-              <FormInput
-                label="Address"
-                value={address}
-                onChangeText={setAddress}
-                placeholder="Enter property address"
-              />
-
               <Text style={styles.label}>Google Map URL</Text>
               <View style={styles.mapUrlRow}>
                 <TextInput
@@ -317,11 +346,12 @@ export default function AddLeadScreen() {
             placeholder="Select Property Type"
           />
 
-          <FormInput
+          <CustomDropdown
             label="BHK"
             value={bhk}
-            onChangeText={setBhk}
-            placeholder="e.g., 3 BHK"
+            options={[...BHK_OPTIONS]}
+            onSelect={setBhk}
+            placeholder="Select BHK"
           />
 
           <CustomDropdown
@@ -463,6 +493,23 @@ export default function AddLeadScreen() {
             multiline
             numberOfLines={4}
           />
+        </View>
+
+        {/* Amenities */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Additional Amenities</Text>
+          
+          {AMENITIES.map((amenity) => (
+            <View key={amenity.key} style={styles.amenityRow}>
+              <Text style={styles.amenityLabel}>{amenity.label}</Text>
+              <Switch
+                value={amenities[amenity.key as keyof typeof amenities]}
+                onValueChange={() => toggleAmenity(amenity.key)}
+                trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
+                thumbColor={amenities[amenity.key as keyof typeof amenities] ? '#3B82F6' : '#F3F4F6'}
+              />
+            </View>
+          ))}
         </View>
 
         <View style={styles.bottomSpacer} />
@@ -610,6 +657,18 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
     fontWeight: '500',
     marginLeft: 8,
+  },
+  amenityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  amenityLabel: {
+    fontSize: 15,
+    color: '#374151',
   },
   bottomSpacer: {
     height: 40,

@@ -12,6 +12,8 @@ export const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near 
 
 export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'] as const;
 
+export const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '5+ BHK', 'Hall', 'Plot', 'Kothi', 'Farm House'] as const;
+
 export const UNITS = ['CR', 'L', 'K'] as const;
 
 export const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'] as const;
@@ -19,6 +21,16 @@ export const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr'] as co
 export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'] as const;
 
 export const LIFT_OPTIONS = ['Yes', 'No'] as const;
+
+// Additional amenities from database schema
+export const AMENITIES = [
+  { key: 'park_facing', label: 'Park Facing' },
+  { key: 'park_at_rear', label: 'Park at Rear' },
+  { key: 'wide_road', label: 'Wide Road' },
+  { key: 'peaceful_location', label: 'Peaceful Location' },
+  { key: 'main_road', label: 'Main Road' },
+  { key: 'corner', label: 'Corner Plot' },
+] as const;
 
 export const LOCATIONS = [
   "Hauz Khas", "Sunder Nagar", "Shanti Niketan", "Panchsheel Park", "Panchsheel Enclave",
