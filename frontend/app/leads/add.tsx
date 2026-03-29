@@ -20,6 +20,7 @@ import * as Location from 'expo-location';
 // Import shared components
 import { CustomDropdown } from '../../components/forms/CustomDropdown';
 import { SearchableDropdown } from '../../components/forms/SearchableDropdown';
+import { SearchableMultiSelect } from '../../components/forms/SearchableMultiSelect';
 import { MultiSelectFloor } from '../../components/forms/MultiSelectFloor';
 import { BuilderDropdown } from '../../components/forms/BuilderDropdown';
 import { FormInput } from '../../components/forms/FormInput';
@@ -28,6 +29,8 @@ import { RadioButtonGroup } from '../../components/forms/RadioButtonGroup';
 // Import constants
 import {
   LEAD_TYPES,
+  CLIENT_LEAD_TYPES,
+  INVENTORY_LEAD_TYPES,
   LEAD_TEMPERATURES,
   CLIENT_STATUSES,
   INVENTORY_STATUSES,
@@ -59,7 +62,6 @@ export default function AddLeadScreen() {
   // Basic Info
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
   
   // Lead Classification
   const [leadType, setLeadType] = useState('seller');
@@ -69,12 +71,14 @@ export default function AddLeadScreen() {
   
   // Property Details
   const [location, setLocation] = useState('');
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For Clients multi-select
   const [address, setAddress] = useState('');
   const [propertyType, setPropertyType] = useState('');
   const [bhk, setBhk] = useState('');
   const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
   const [areaSize, setAreaSize] = useState('');
   const [facing, setFacing] = useState('');
+  const [selectedFacings, setSelectedFacings] = useState<string[]>([]); // For Clients multi-select
   
   // Budget (for Clients)
   const [budgetMin, setBudgetMin] = useState('');
@@ -180,6 +184,19 @@ export default function AddLeadScreen() {
     }));
   };
 
+  // Toggle functions for multi-select
+  const toggleLocation = (loc: string) => {
+    setSelectedLocations(prev => 
+      prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]
+    );
+  };
+
+  const toggleFacing = (face: string) => {
+    setSelectedFacings(prev => 
+      prev.includes(face) ? prev.filter(f => f !== face) : [...prev, face]
+    );
+  };
+
   // Build comma-separated amenities string
   const getRequiredAmenities = (): string => {
     const selected: string[] = [];
@@ -203,12 +220,9 @@ export default function AddLeadScreen() {
       const leadData: any = {
         name: name.trim(),
         phone: phone.trim(),
-        email: email.trim(),
         lead_type: leadType,
         lead_temperature: leadTemperature,
         lead_status: leadStatus,
-        location,
-        address: address.trim(),
         property_type: propertyType,
         bhk,
         floor: selectedFloors.join(', '),
@@ -217,8 +231,6 @@ export default function AddLeadScreen() {
         car_parking_number: parking ? parseInt(parking) : null,
         lift_available: lift,
         notes: notes.trim(),
-        Property_locationUrl: googleMapUrl.trim(),
-        building_facing: facing,
         // Required amenities as comma-separated string
         required_amenities: getRequiredAmenities(),
         // Legacy individual amenity fields
@@ -230,14 +242,22 @@ export default function AddLeadScreen() {
         corner: amenities.corner ? 1 : 0,
       };
 
-      if (isInventory) {
+      if (isClient) {
+        // Client-specific fields: multi-select location/facing, budget, no email/address/map/builder
+        leadData.location = selectedLocations.join(', ');
+        leadData.building_facing = selectedFacings.join(', ');
+        leadData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
+        leadData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
+      } else {
+        // Inventory-specific fields: single location/facing, floor pricing, address, map, builder
+        leadData.location = location;
+        leadData.address = address.trim();
+        leadData.building_facing = facing;
+        leadData.Property_locationUrl = googleMapUrl.trim();
         leadData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
         if (builderId) {
           leadData.builder_id = parseInt(builderId);
         }
-      } else {
-        leadData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
-        leadData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
       }
 
       await api.createLead(leadData);
@@ -284,7 +304,7 @@ export default function AddLeadScreen() {
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={[...LEAD_TYPES]}
+            options={isClient ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
             required
@@ -320,13 +340,6 @@ export default function AddLeadScreen() {
             placeholder="Enter phone number"
             keyboardType="phone-pad"
           />
-          <FormInput
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Enter email"
-            keyboardType="email-address"
-          />
         </View>
 
         {/* Lead Classification */}
@@ -350,25 +363,37 @@ export default function AddLeadScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Property Details</Text>
           
-          {/* Searchable Location Dropdown */}
-          <SearchableDropdown
-            label="Location"
-            value={location}
-            options={[...LOCATIONS]}
-            onSelect={setLocation}
-            placeholder="Select Location"
-            searchPlaceholder="Type to search locations..."
-          />
+          {/* Location: Multi-select for Clients, Single for Inventory */}
+          {isClient ? (
+            <SearchableMultiSelect
+              label="Locations"
+              selectedValues={selectedLocations}
+              options={[...LOCATIONS]}
+              onToggle={toggleLocation}
+              placeholder="Select Locations"
+              searchPlaceholder="Type to search locations..."
+            />
+          ) : (
+            <SearchableDropdown
+              label="Location"
+              value={location}
+              options={[...LOCATIONS]}
+              onSelect={setLocation}
+              placeholder="Select Location"
+              searchPlaceholder="Type to search locations..."
+            />
+          )}
 
-          <FormInput
-            label="Address"
-            value={address}
-            onChangeText={setAddress}
-            placeholder="Enter property address"
-          />
-
+          {/* Address & Google Map URL - Only for Inventory */}
           {isInventory && (
             <>
+              <FormInput
+                label="Address"
+                value={address}
+                onChangeText={setAddress}
+                placeholder="Enter property address"
+              />
+
               <Text style={styles.label}>Google Map URL</Text>
               <View style={styles.mapUrlRow}>
                 <TextInput
@@ -426,19 +451,31 @@ export default function AddLeadScreen() {
             keyboardType="decimal-pad"
           />
 
-          <CustomDropdown
-            label="Facing"
-            value={facing}
-            options={[...FACINGS]}
-            onSelect={setFacing}
-            placeholder="Select Facing"
-          />
+          {/* Facing: Multi-select for Clients, Single for Inventory */}
+          {isClient ? (
+            <SearchableMultiSelect
+              label="Facing"
+              selectedValues={selectedFacings}
+              options={[...FACINGS]}
+              onToggle={toggleFacing}
+              placeholder="Select Facing"
+              searchPlaceholder="Type to search..."
+            />
+          ) : (
+            <CustomDropdown
+              label="Facing"
+              value={facing}
+              options={[...FACINGS]}
+              onSelect={setFacing}
+              placeholder="Select Facing"
+            />
+          )}
         </View>
 
         {/* Budget/Pricing */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            {isInventory ? 'Floor-wise Pricing' : 'Budget'}
+            {isClient ? 'Budget' : 'Floor-wise Pricing'}
           </Text>
           
           <CustomDropdown
@@ -528,7 +565,7 @@ export default function AddLeadScreen() {
             onSelect={setLift}
           />
 
-          {/* Builder for non-builder lead types */}
+          {/* Builder for Inventory leads only (non-builder lead types) */}
           {isInventory && !isBuilderType && builders.length > 0 && (
             <BuilderDropdown
               label="Builder (Optional)"

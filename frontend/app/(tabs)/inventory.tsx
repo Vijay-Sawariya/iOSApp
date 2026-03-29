@@ -405,6 +405,23 @@ export default function InventoryLeadsScreen() {
             )}
           </View>
 
+          {/* Facing and Amenities Row */}
+          {(item.building_facing || (item as any).required_amenities) && (
+            <View style={styles.facingAmenitiesRow}>
+              {item.building_facing && (
+                <View style={styles.facingTag}>
+                  <Ionicons name="compass-outline" size={12} color="#6366F1" />
+                  <Text style={styles.facingText}>{item.building_facing}</Text>
+                </View>
+              )}
+              {(item as any).required_amenities && (
+                <Text style={styles.amenitiesText} numberOfLines={1}>
+                  {(item as any).required_amenities}
+                </Text>
+              )}
+            </View>
+          )}
+
           {floorPricing && (
             <View style={styles.pricingRow}>
               <Ionicons name="cash-outline" size={14} color="#10B981" />
@@ -1073,6 +1090,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#10B981',
     marginLeft: 6,
+    flex: 1,
+  },
+  facingAmenitiesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 6,
+  },
+  facingTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  facingText: {
+    fontSize: 11,
+    color: '#6366F1',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  amenitiesText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontStyle: 'italic',
     flex: 1,
   },
   specSection: {

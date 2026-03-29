@@ -20,6 +20,7 @@ import * as Location from 'expo-location';
 // Import shared components
 import { CustomDropdown } from '../../../components/forms/CustomDropdown';
 import { SearchableDropdown } from '../../../components/forms/SearchableDropdown';
+import { SearchableMultiSelect } from '../../../components/forms/SearchableMultiSelect';
 import { MultiSelectFloor } from '../../../components/forms/MultiSelectFloor';
 import { BuilderDropdown } from '../../../components/forms/BuilderDropdown';
 import { FormInput } from '../../../components/forms/FormInput';
@@ -28,6 +29,8 @@ import { RadioButtonGroup } from '../../../components/forms/RadioButtonGroup';
 // Import constants
 import {
   LEAD_TYPES,
+  CLIENT_LEAD_TYPES,
+  INVENTORY_LEAD_TYPES,
   LEAD_TEMPERATURES,
   CLIENT_STATUSES,
   INVENTORY_STATUSES,
@@ -61,7 +64,6 @@ export default function EditLeadScreen() {
   // Basic Info
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
   
   // Lead Classification
   const [leadType, setLeadType] = useState('seller');
@@ -71,12 +73,14 @@ export default function EditLeadScreen() {
   
   // Property Details
   const [location, setLocation] = useState('');
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For Clients multi-select
   const [address, setAddress] = useState('');
   const [propertyType, setPropertyType] = useState('');
   const [bhk, setBhk] = useState('');
   const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
   const [areaSize, setAreaSize] = useState('');
   const [facing, setFacing] = useState('');
+  const [selectedFacings, setSelectedFacings] = useState<string[]>([]); // For Clients multi-select
   
   // Budget (for Clients)
   const [budgetMin, setBudgetMin] = useState('');
@@ -128,7 +132,6 @@ export default function EditLeadScreen() {
       // Basic Info
       setName(data.name || '');
       setPhone(data.phone || '');
-      setEmail(data.email || '');
       
       // Lead Classification
       setLeadType(data.lead_type || 'seller');
@@ -138,6 +141,10 @@ export default function EditLeadScreen() {
       
       // Property Details
       setLocation(data.location || '');
+      // For clients, parse comma-separated locations
+      if (data.location && isClientType(data.lead_type)) {
+        setSelectedLocations(data.location.split(',').map((l: string) => l.trim()).filter(Boolean));
+      }
       setAddress(data.address || '');
       setPropertyType(data.property_type || '');
       setBhk(data.bhk || '');
@@ -147,6 +154,10 @@ export default function EditLeadScreen() {
       }
       setAreaSize(data.area_size?.toString() || '');
       setFacing(data.building_facing || '');
+      // For clients, parse comma-separated facings
+      if (data.building_facing && isClientType(data.lead_type)) {
+        setSelectedFacings(data.building_facing.split(',').map((f: string) => f.trim()).filter(Boolean));
+      }
       
       // Budget
       setBudgetMin(data.budget_min?.toString() || '');
@@ -241,6 +252,19 @@ export default function EditLeadScreen() {
     }));
   };
 
+  // Toggle functions for multi-select
+  const toggleLocation = (loc: string) => {
+    setSelectedLocations(prev => 
+      prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]
+    );
+  };
+
+  const toggleFacing = (face: string) => {
+    setSelectedFacings(prev => 
+      prev.includes(face) ? prev.filter(f => f !== face) : [...prev, face]
+    );
+  };
+
   // Build comma-separated amenities string
   const getRequiredAmenities = (): string => {
     const selected: string[] = [];
@@ -264,12 +288,9 @@ export default function EditLeadScreen() {
       const updateData: any = {
         name: name.trim(),
         phone: phone.trim(),
-        email: email.trim(),
         lead_type: leadType,
         lead_temperature: leadTemperature,
         lead_status: leadStatus,
-        location,
-        address: address.trim(),
         property_type: propertyType,
         bhk,
         floor: selectedFloors.join(', '),
@@ -278,8 +299,6 @@ export default function EditLeadScreen() {
         car_parking_number: parking ? parseInt(parking) : null,
         lift_available: lift,
         notes: notes.trim(),
-        Property_locationUrl: googleMapUrl.trim(),
-        building_facing: facing,
         // Required amenities as comma-separated string
         required_amenities: getRequiredAmenities(),
         // Legacy individual amenity fields
@@ -291,14 +310,22 @@ export default function EditLeadScreen() {
         corner: amenities.corner ? 1 : 0,
       };
 
-      if (isInventory) {
+      if (isClient) {
+        // Client-specific fields: multi-select location/facing, budget, no email/address/map/builder
+        updateData.location = selectedLocations.join(', ');
+        updateData.building_facing = selectedFacings.join(', ');
+        updateData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
+        updateData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
+      } else {
+        // Inventory-specific fields: single location/facing, floor pricing, address, map, builder
+        updateData.location = location;
+        updateData.address = address.trim();
+        updateData.building_facing = facing;
+        updateData.Property_locationUrl = googleMapUrl.trim();
         updateData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
         if (builderId) {
           updateData.builder_id = parseInt(builderId);
         }
-      } else {
-        updateData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
-        updateData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
       }
 
       await api.updateLead(id!, updateData);
@@ -354,7 +381,7 @@ export default function EditLeadScreen() {
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={[...LEAD_TYPES]}
+            options={isClient ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
             required
@@ -390,13 +417,6 @@ export default function EditLeadScreen() {
             placeholder="Enter phone number"
             keyboardType="phone-pad"
           />
-          <FormInput
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Enter email"
-            keyboardType="email-address"
-          />
         </View>
 
         {/* Lead Classification */}
@@ -420,25 +440,37 @@ export default function EditLeadScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Property Details</Text>
           
-          {/* Searchable Location Dropdown */}
-          <SearchableDropdown
-            label="Location"
-            value={location}
-            options={[...LOCATIONS]}
-            onSelect={setLocation}
-            placeholder="Select Location"
-            searchPlaceholder="Type to search locations..."
-          />
+          {/* Location: Multi-select for Clients, Single for Inventory */}
+          {isClient ? (
+            <SearchableMultiSelect
+              label="Locations"
+              selectedValues={selectedLocations}
+              options={[...LOCATIONS]}
+              onToggle={toggleLocation}
+              placeholder="Select Locations"
+              searchPlaceholder="Type to search locations..."
+            />
+          ) : (
+            <SearchableDropdown
+              label="Location"
+              value={location}
+              options={[...LOCATIONS]}
+              onSelect={setLocation}
+              placeholder="Select Location"
+              searchPlaceholder="Type to search locations..."
+            />
+          )}
 
-          <FormInput
-            label="Address"
-            value={address}
-            onChangeText={setAddress}
-            placeholder="Enter property address"
-          />
-
+          {/* Address & Google Map URL - Only for Inventory */}
           {isInventory && (
             <>
+              <FormInput
+                label="Address"
+                value={address}
+                onChangeText={setAddress}
+                placeholder="Enter property address"
+              />
+
               <Text style={styles.label}>Google Map URL</Text>
               <View style={styles.mapUrlRow}>
                 <TextInput
@@ -496,13 +528,25 @@ export default function EditLeadScreen() {
             keyboardType="decimal-pad"
           />
 
-          <CustomDropdown
-            label="Facing"
-            value={facing}
-            options={[...FACINGS]}
-            onSelect={setFacing}
-            placeholder="Select Facing"
-          />
+          {/* Facing: Multi-select for Clients, Single for Inventory */}
+          {isClient ? (
+            <SearchableMultiSelect
+              label="Facing"
+              selectedValues={selectedFacings}
+              options={[...FACINGS]}
+              onToggle={toggleFacing}
+              placeholder="Select Facing"
+              searchPlaceholder="Type to search..."
+            />
+          ) : (
+            <CustomDropdown
+              label="Facing"
+              value={facing}
+              options={[...FACINGS]}
+              onSelect={setFacing}
+              placeholder="Select Facing"
+            />
+          )}
         </View>
 
         {/* Budget/Pricing */}

@@ -64,7 +64,7 @@ export const FILTER_FACINGS = ['Any', ...FACINGS] as const;
 
 // Type guards
 export const isClientType = (type: string | null): boolean => {
-  return type === 'buyer' || type === 'tenant';
+  return type === 'buyer' || type === 'tenant' || type === 'agent';
 };
 
 export const isInventoryType = (type: string | null): boolean => {
@@ -76,6 +76,7 @@ export const getTypeColor = (type: string | null): { bg: string; text: string } 
   switch (type) {
     case 'buyer': return { bg: '#DBEAFE', text: '#1E40AF' };
     case 'tenant': return { bg: '#FEF3C7', text: '#92400E' };
+    case 'agent': return { bg: '#FCE7F3', text: '#9D174D' };
     case 'seller': return { bg: '#DCFCE7', text: '#166534' };
     case 'landlord': return { bg: '#FEF3C7', text: '#92400E' };
     case 'builder': return { bg: '#E0E7FF', text: '#3730A3' };
