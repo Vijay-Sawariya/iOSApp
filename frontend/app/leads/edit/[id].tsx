@@ -381,7 +381,7 @@ export default function EditLeadScreen() {
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={isClient ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
+            options={[...LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
             required
