@@ -351,6 +351,11 @@ export default function ClientLeadsScreen() {
                 <Text style={styles.tagText}>{item.bhk}</Text>
               </View>
             )}
+            {item.floor && (
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{item.floor}</Text>
+              </View>
+            )}
             {item.lead_status && (
               <View style={[styles.tag, styles.statusTag]}>
                 <Text style={[styles.tagText, styles.statusTagText]}>{item.lead_status}</Text>
