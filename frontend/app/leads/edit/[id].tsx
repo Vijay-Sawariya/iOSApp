@@ -19,6 +19,9 @@ import * as Location from 'expo-location';
 
 // Import shared components
 import { CustomDropdown } from '../../../components/forms/CustomDropdown';
+import { SearchableDropdown } from '../../../components/forms/SearchableDropdown';
+import { MultiSelectFloor } from '../../../components/forms/MultiSelectFloor';
+import { BuilderDropdown } from '../../../components/forms/BuilderDropdown';
 import { FormInput } from '../../../components/forms/FormInput';
 import { RadioButtonGroup } from '../../../components/forms/RadioButtonGroup';
 
@@ -41,12 +44,19 @@ import {
   isClientType,
 } from '../../../constants/leadOptions';
 
+interface Builder {
+  id: number;
+  builder_name: string;
+  phone?: string;
+  company_name?: string;
+}
+
 export default function EditLeadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fetchingLocation, setFetchingLocation] = useState(false);
-  const [builders, setBuilders] = useState<any[]>([]);
+  const [builders, setBuilders] = useState<Builder[]>([]);
   
   // Basic Info
   const [name, setName] = useState('');
@@ -57,13 +67,14 @@ export default function EditLeadScreen() {
   const [leadType, setLeadType] = useState('seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('');
+  const [builderId, setBuilderId] = useState('');
   
   // Property Details
   const [location, setLocation] = useState('');
   const [address, setAddress] = useState('');
   const [propertyType, setPropertyType] = useState('');
   const [bhk, setBhk] = useState('');
-  const [floor, setFloor] = useState('');
+  const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
   const [areaSize, setAreaSize] = useState('');
   const [facing, setFacing] = useState('');
   
@@ -80,7 +91,6 @@ export default function EditLeadScreen() {
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
-  const [builderId, setBuilderId] = useState('');
   
   // Additional Amenities (boolean toggles)
   const [amenities, setAmenities] = useState({
@@ -94,6 +104,7 @@ export default function EditLeadScreen() {
 
   const isInventory = isInventoryType(leadType);
   const isClient = isClientType(leadType);
+  const isBuilderType = leadType === 'builder';
 
   useEffect(() => {
     loadLead();
@@ -123,13 +134,17 @@ export default function EditLeadScreen() {
       setLeadType(data.lead_type || 'seller');
       setLeadTemperature(data.lead_temperature || 'Hot');
       setLeadStatus(data.lead_status || '');
+      setBuilderId(data.builder_id?.toString() || '');
       
       // Property Details
       setLocation(data.location || '');
       setAddress(data.address || '');
       setPropertyType(data.property_type || '');
       setBhk(data.bhk || '');
-      setFloor(data.floor || '');
+      // Parse floor as comma-separated to array
+      if (data.floor) {
+        setSelectedFloors(data.floor.split(',').map((f: string) => f.trim()).filter(Boolean));
+      }
       setAreaSize(data.area_size?.toString() || '');
       setFacing(data.building_facing || '');
       
@@ -143,16 +158,16 @@ export default function EditLeadScreen() {
       setLift(data.lift_available || '');
       setNotes(data.notes || '');
       setGoogleMapUrl(data.Property_locationUrl || '');
-      setBuilderId(data.builder_id?.toString() || '');
       
-      // Amenities
+      // Amenities - check both individual fields and required_amenities
+      const requiredAmenities = (data.required_amenities || '').toLowerCase();
       setAmenities({
-        park_facing: data.park_facing === 1 || data.park_facing === true,
-        park_at_rear: data.park_at_rear === 1 || data.park_at_rear === true,
-        wide_road: data.wide_road === 1 || data.wide_road === true,
-        peaceful_location: data.peaceful_location === 1 || data.peaceful_location === true,
-        main_road: data.main_road === 1 || data.main_road === true,
-        corner: data.corner === 1 || data.corner === true,
+        park_facing: data.park_facing === 1 || data.park_facing === true || requiredAmenities.includes('park facing'),
+        park_at_rear: data.park_at_rear === 1 || data.park_at_rear === true || requiredAmenities.includes('park at rear'),
+        wide_road: data.wide_road === 1 || data.wide_road === true || requiredAmenities.includes('wide road'),
+        peaceful_location: data.peaceful_location === 1 || data.peaceful_location === true || requiredAmenities.includes('peaceful'),
+        main_road: data.main_road === 1 || data.main_road === true || requiredAmenities.includes('main road'),
+        corner: data.corner === 1 || data.corner === true || requiredAmenities.includes('corner'),
       });
       
       // Load floor pricing if available
@@ -169,6 +184,15 @@ export default function EditLeadScreen() {
       Alert.alert('Error', 'Failed to load lead details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Handle builder selection - pre-fill name and phone
+  const handleBuilderSelect = (selectedBuilderId: string, builder: Builder | null) => {
+    setBuilderId(selectedBuilderId);
+    if (builder) {
+      setName(builder.builder_name || '');
+      setPhone(builder.phone || '');
     }
   };
 
@@ -217,6 +241,18 @@ export default function EditLeadScreen() {
     }));
   };
 
+  // Build comma-separated amenities string
+  const getRequiredAmenities = (): string => {
+    const selected: string[] = [];
+    if (amenities.park_facing) selected.push('Park Facing');
+    if (amenities.park_at_rear) selected.push('Park at Rear');
+    if (amenities.wide_road) selected.push('Wide Road');
+    if (amenities.peaceful_location) selected.push('Peaceful Location');
+    if (amenities.main_road) selected.push('Main Road');
+    if (amenities.corner) selected.push('Corner');
+    return selected.join(', ');
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name is required');
@@ -236,7 +272,7 @@ export default function EditLeadScreen() {
         address: address.trim(),
         property_type: propertyType,
         bhk,
-        floor,
+        floor: selectedFloors.join(', '),
         area_size: areaSize || null,
         unit,
         car_parking_number: parking ? parseInt(parking) : null,
@@ -244,7 +280,9 @@ export default function EditLeadScreen() {
         notes: notes.trim(),
         Property_locationUrl: googleMapUrl.trim(),
         building_facing: facing,
-        // Amenities
+        // Required amenities as comma-separated string
+        required_amenities: getRequiredAmenities(),
+        // Legacy individual amenity fields
         park_facing: amenities.park_facing ? 1 : 0,
         park_at_rear: amenities.park_at_rear ? 1 : 0,
         wide_road: amenities.wide_road ? 1 : 0,
@@ -309,6 +347,32 @@ export default function EditLeadScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Lead Type & Builder Selection - AT TOP */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Lead Type</Text>
+          
+          <CustomDropdown
+            label="Lead Type"
+            value={leadType}
+            options={[...LEAD_TYPES]}
+            onSelect={setLeadType}
+            displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
+            required
+          />
+
+          {/* Builder Dropdown - Shows when builder type selected */}
+          {isBuilderType && builders.length > 0 && (
+            <BuilderDropdown
+              label="Select Builder"
+              selectedBuilderId={builderId}
+              builders={builders}
+              onSelect={handleBuilderSelect}
+              placeholder="Search and select builder..."
+              required
+            />
+          )}
+        </View>
+
         {/* Basic Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
@@ -339,13 +403,6 @@ export default function EditLeadScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lead Classification</Text>
           <CustomDropdown
-            label="Lead Type"
-            value={leadType}
-            options={[...LEAD_TYPES]}
-            onSelect={setLeadType}
-            displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
-          />
-          <CustomDropdown
             label="Temperature"
             value={leadTemperature}
             options={[...LEAD_TEMPERATURES]}
@@ -363,12 +420,14 @@ export default function EditLeadScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Property Details</Text>
           
-          <CustomDropdown
+          {/* Searchable Location Dropdown */}
+          <SearchableDropdown
             label="Location"
             value={location}
             options={[...LOCATIONS]}
             onSelect={setLocation}
             placeholder="Select Location"
+            searchPlaceholder="Type to search locations..."
           />
 
           <FormInput
@@ -420,12 +479,13 @@ export default function EditLeadScreen() {
             placeholder="Select BHK"
           />
 
-          <CustomDropdown
+          {/* Multi-select Floor */}
+          <MultiSelectFloor
             label="Floor"
-            value={floor}
+            selectedFloors={selectedFloors}
             options={[...FLOORS]}
-            onSelect={setFloor}
-            placeholder="Select Floor"
+            onSelect={setSelectedFloors}
+            placeholder="Select Floors"
           />
 
           <FormInput
@@ -538,14 +598,14 @@ export default function EditLeadScreen() {
             onSelect={setLift}
           />
 
-          {isInventory && builders.length > 0 && (
-            <CustomDropdown
-              label="Builder"
-              value={builderId}
-              options={builders.map(b => b.id.toString())}
-              onSelect={setBuilderId}
-              placeholder="Select Builder (Optional)"
-              displayValue={builders.find(b => b.id.toString() === builderId)?.builder_name || ''}
+          {/* Builder for non-builder lead types */}
+          {isInventory && !isBuilderType && builders.length > 0 && (
+            <BuilderDropdown
+              label="Builder (Optional)"
+              selectedBuilderId={builderId}
+              builders={builders}
+              onSelect={(id) => setBuilderId(id)}
+              placeholder="Search and select builder..."
             />
           )}
 

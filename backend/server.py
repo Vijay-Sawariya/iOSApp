@@ -331,7 +331,9 @@ class LeadCreate(BaseModel):
     Property_locationUrl: Optional[str] = None
     building_facing: Optional[str] = None
     possession_on: Optional[str] = None
-    # Amenities
+    # Amenities as comma-separated string
+    required_amenities: Optional[str] = None
+    # Legacy individual amenity fields (kept for backward compatibility)
     park_facing: Optional[int] = 0
     park_at_rear: Optional[int] = 0
     wide_road: Optional[int] = 0
@@ -659,7 +661,7 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
                   'notes', 'floor', 'area_size', 'car_parking_number', 'lift_available', 'unit',
                   'Property_locationUrl', 'building_facing', 'possession_on', 'builder_id',
                   'park_facing', 'park_at_rear', 'wide_road', 'peaceful_location', 'main_road', 'corner',
-                  'created_at', 'created_by']
+                  'required_amenities', 'created_at', 'created_by']
         
         values_dict = {
             'name': lead.name,
@@ -690,6 +692,7 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
             'peaceful_location': getattr(lead, 'peaceful_location', 0),
             'main_road': getattr(lead, 'main_road', 0),
             'corner': getattr(lead, 'corner', 0),
+            'required_amenities': getattr(lead, 'required_amenities', None),
             'created_at': datetime.utcnow(),
             'created_by': current_user['id']
         }
@@ -741,7 +744,8 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
             'lead_temperature', 'lead_status', 'notes', 'floor', 'area_size',
             'car_parking_number', 'lift_available', 'unit', 'Property_locationUrl',
             'building_facing', 'possession_on', 'builder_id',
-            'park_facing', 'park_at_rear', 'wide_road', 'peaceful_location', 'main_road', 'corner'
+            'park_facing', 'park_at_rear', 'wide_road', 'peaceful_location', 'main_road', 'corner',
+            'required_amenities'
         ]
         
         for field in allowed_fields:
