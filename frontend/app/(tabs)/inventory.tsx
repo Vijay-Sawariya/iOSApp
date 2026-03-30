@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Import shared components
 import {
@@ -292,10 +293,10 @@ export default function InventoryLeadsScreen() {
   };
 
   const stats = {
-    total: filteredLeads.length,
-    sellers: filteredLeads.filter(l => l.lead_type === 'seller').length,
-    landlords: filteredLeads.filter(l => l.lead_type === 'landlord').length,
-    builders: filteredLeads.filter(l => l.lead_type === 'builder').length,
+    total: leads.length,
+    sellers: leads.filter(l => l.lead_type === 'seller').length,
+    landlords: leads.filter(l => l.lead_type === 'landlord').length,
+    builders: leads.filter(l => l.lead_type === 'builder').length,
   };
 
   const openMapUrl = (url: string) => {
@@ -443,35 +444,50 @@ export default function InventoryLeadsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Seller/Landlord Inventories ({stats.total})</Text>
-        <TouchableOpacity
-          style={[styles.filterToggle, hasActiveFilters() && styles.filterToggleActive]}
-          onPress={() => setShowFilters(true)}
-        >
-          <Ionicons name="filter" size={20} color={hasActiveFilters() ? '#FFFFFF' : '#374151'} />
-          <Text style={[styles.filterToggleText, hasActiveFilters() && styles.filterToggleTextActive]}>
-            Filters
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Blue Header */}
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <View style={styles.blueHeader}>
+          <Text style={styles.headerTitle}>Inventories</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(true)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={22} 
+                color="#FFFFFF" 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerAddBtn}
+              onPress={() => router.push('/leads/add?type=inventory' as any)}
+            >
+              <Ionicons name="add" size={24} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
 
-      {/* Stats Bar */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.sellers}</Text>
-          <Text style={styles.statLabel}>Sellers</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.landlords}</Text>
-          <Text style={styles.statLabel}>Landlords</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.builders}</Text>
-          <Text style={styles.statLabel}>Builders</Text>
+      {/* Stats Bar - Matching Clients design */}
+      <View style={styles.statsBarContainer}>
+        <View style={styles.statsBar}>
+          <View style={styles.statItemTotal}>
+            <Text style={styles.statNumberTotal}>{stats.total}</Text>
+            <Text style={styles.statLabelTotal}>Total</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.sellers}</Text>
+            <Text style={styles.statLabel}>Sellers</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.landlords}</Text>
+            <Text style={styles.statLabel}>Landlords</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.builders}</Text>
+            <Text style={styles.statLabel}>Builders</Text>
+          </View>
         </View>
       </View>
 
@@ -875,7 +891,88 @@ export default function InventoryLeadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#3B82F6',
+  },
+  headerSafeArea: {
+    backgroundColor: '#3B82F6',
+  },
+  blueHeader: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerAddBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statsBarContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statItemTotal: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  statNumberTotal: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#3B82F6',
+  },
+  statLabelTotal: {
+    fontSize: 12,
+    color: '#3B82F6',
+    marginTop: 2,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
   },
   header: {
     flexDirection: 'row',
@@ -887,12 +984,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
-    flex: 1,
   },
   headerButtons: {
     flexDirection: 'row',
@@ -935,28 +1026,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
-  statsBar: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
   statDivider: {
     width: 1,
     backgroundColor: '#E5E7EB',
@@ -964,6 +1033,7 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 16,
     paddingBottom: 100,
+    backgroundColor: '#F9FAFB',
   },
   leadCard: {
     backgroundColor: '#FFFFFF',
