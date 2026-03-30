@@ -175,34 +175,36 @@ export default function BuildersScreen() {
         </View>
       </SafeAreaView>
 
-      {/* Stats Bar */}
-      <View style={styles.statsBarContainer}>
-        <View style={styles.statsBar}>
-          <View style={styles.statItemTotal}>
-            <Text style={styles.statNumberTotal}>{filteredBuilders.length}</Text>
-            <Text style={styles.statLabelTotal}>Total</Text>
-          </View>
-          <View style={styles.statItemInfo}>
-            <Text style={styles.statSubtitle}>Companies & Contractors</Text>
+      {/* White Content Area */}
+      <View style={styles.contentArea}>
+        {/* Stats Bar */}
+        <View style={styles.statsBarContainer}>
+          <View style={styles.statsBar}>
+            <View style={styles.statItemTotal}>
+              <Text style={styles.statNumberTotal}>{filteredBuilders.length}</Text>
+              <Text style={styles.statLabelTotal}>Total</Text>
+            </View>
+            <View style={styles.statItemInfo}>
+              <Text style={styles.statSubtitle}>Companies & Contractors</Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#6B7280" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search builders..."
-          placeholderTextColor="#9CA3AF"
-          value={searchQuery}
-          onChangeText={handleSearch}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => handleSearch('')}>
-            <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-        )}
-      </View>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#6B7280" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search builders..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={handleSearch}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => handleSearch('')}>
+              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
 
       {showFilters && (
         <View style={styles.filterContainer}>
@@ -247,6 +249,7 @@ export default function BuildersScreen() {
           </View>
         }
       />
+      </View>
 
       <TouchableOpacity style={styles.fab} onPress={() => router.push('/builders/add')}>
         <Ionicons name="add" size={28} color="#FFFFFF" />
@@ -275,6 +278,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  contentArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
   },
   headerActions: {
     flexDirection: 'row',
@@ -338,7 +345,7 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginVertical: 8,
     paddingHorizontal: 16,
