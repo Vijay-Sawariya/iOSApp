@@ -555,83 +555,21 @@ export default function InventoryLeadsScreen() {
                 </View>
               </View>
 
-              {/* Locations */}
-              <Text style={styles.filterLabel}>Locations</Text>
-              <TouchableOpacity
-                style={styles.locationSelector}
-                onPress={() => setShowLocationPicker(true)}
-              >
-                <Text style={[styles.locationText, selectedLocations.length === 0 && styles.placeholderText]}>
-                  {selectedLocations.length > 0 
-                    ? `${selectedLocations.length} selected` 
-                    : 'Select locations'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
-              {selectedLocations.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedLocations.map(loc => (
-                    <TouchableOpacity
-                      key={loc}
-                      style={styles.selectedTag}
-                      onPress={() => toggleLocation(loc)}
-                    >
-                      <Text style={styles.selectedTagText}>{loc}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {/* Type & Floor Row */}
-              <View style={styles.filterRow}>
-                <View style={styles.filterHalf}>
-                  <Text style={styles.filterLabel}>Type</Text>
-                  <View style={styles.pickerContainer}>
-                    {TYPES.map(t => (
-                      <TouchableOpacity
-                        key={t.value}
-                        style={[styles.pickerOption, typeFilter === t.value && styles.pickerOptionActive]}
-                        onPress={() => setTypeFilter(t.value)}
-                      >
-                        <Text style={[styles.pickerOptionText, typeFilter === t.value && styles.pickerOptionTextActive]}>
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-                <View style={styles.filterHalf}>
-                  <Text style={styles.filterLabel}>Floor</Text>
+              {/* Type */}
+              <Text style={styles.filterLabel}>Type</Text>
+              <View style={styles.pickerContainer}>
+                {TYPES.map(t => (
                   <TouchableOpacity
-                    style={styles.locationSelector}
-                    onPress={() => setShowFloorPicker(true)}
+                    key={t.value}
+                    style={[styles.pickerOption, typeFilter === t.value && styles.pickerOptionActive]}
+                    onPress={() => setTypeFilter(t.value)}
                   >
-                    <Text style={[styles.locationText, selectedFloors.length === 0 && styles.placeholderText]}>
-                      {selectedFloors.length > 0 
-                        ? `${selectedFloors.length} selected` 
-                        : 'Select floors'}
+                    <Text style={[styles.pickerOptionText, typeFilter === t.value && styles.pickerOptionTextActive]}>
+                      {t.label}
                     </Text>
-                    <Ionicons name="chevron-down" size={20} color="#6B7280" />
                   </TouchableOpacity>
-                </View>
+                ))}
               </View>
-
-              {/* Selected Floors Tags */}
-              {selectedFloors.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedFloors.map(floor => (
-                    <TouchableOpacity
-                      key={floor}
-                      style={styles.selectedTag}
-                      onPress={() => toggleFloor(floor)}
-                    >
-                      <Text style={styles.selectedTagText}>{floor}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
 
               {/* Status */}
               <Text style={styles.filterLabel}>Status</Text>
@@ -729,150 +667,6 @@ export default function InventoryLeadsScreen() {
                 <Text style={styles.searchButtonText}>Search</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Location Picker Modal */}
-      <Modal visible={showLocationPicker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.locationModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Locations</Text>
-              <TouchableOpacity onPress={() => {
-                setShowLocationPicker(false);
-                setLocationSearch('');
-              }}>
-                <Ionicons name="close" size={24} color="#374151" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#9CA3AF" />
-              <TextInput
-                style={styles.modalSearchInput}
-                value={locationSearch}
-                onChangeText={setLocationSearch}
-                placeholder="Type to search locations..."
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              {locationSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setLocationSearch('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={filteredLocations}
-              keyExtractor={(item) => item}
-              initialNumToRender={15}
-              maxToRenderPerBatch={10}
-              windowSize={5}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 52,
-                offset: 52 * index,
-                index,
-              })}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.locationItem}
-                  onPress={() => toggleLocation(item)}
-                >
-                  <Text style={styles.locationItemText}>{item}</Text>
-                  {selectedLocations.includes(item) && (
-                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-                  )}
-                </TouchableOpacity>
-              )}
-              style={styles.locationList}
-              ListEmptyComponent={
-                <View style={styles.emptySearchResult}>
-                  <Text style={styles.emptySearchText}>No locations found</Text>
-                </View>
-              }
-            />
-            <TouchableOpacity
-              style={styles.locationDoneButton}
-              onPress={() => {
-                setShowLocationPicker(false);
-                setLocationSearch('');
-              }}
-            >
-              <Text style={styles.locationDoneText}>Done ({selectedLocations.length} selected)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Floor Picker Modal */}
-      <Modal visible={showFloorPicker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.locationModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Floors</Text>
-              <TouchableOpacity onPress={() => {
-                setShowFloorPicker(false);
-                setFloorSearch('');
-              }}>
-                <Ionicons name="close" size={24} color="#374151" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#9CA3AF" />
-              <TextInput
-                style={styles.modalSearchInput}
-                value={floorSearch}
-                onChangeText={setFloorSearch}
-                placeholder="Type to search floors..."
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              {floorSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setFloorSearch('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={filteredFloors}
-              keyExtractor={(item) => item}
-              initialNumToRender={10}
-              maxToRenderPerBatch={10}
-              windowSize={5}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 52,
-                offset: 52 * index,
-                index,
-              })}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.locationItem}
-                  onPress={() => toggleFloor(item)}
-                >
-                  <Text style={styles.locationItemText}>{item}</Text>
-                  {selectedFloors.includes(item) && (
-                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-                  )}
-                </TouchableOpacity>
-              )}
-              style={styles.locationList}
-              ListEmptyComponent={
-                <View style={styles.emptySearchResult}>
-                  <Text style={styles.emptySearchText}>No floors found</Text>
-                </View>
-              }
-            />
-            <TouchableOpacity
-              style={styles.locationDoneButton}
-              onPress={() => {
-                setShowFloorPicker(false);
-                setFloorSearch('');
-              }}
-            >
-              <Text style={styles.locationDoneText}>Done ({selectedFloors.length} selected)</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
