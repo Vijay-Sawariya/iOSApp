@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
 import { useOffline } from '../../contexts/OfflineContext';
 import { router, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Builder {
   id: string;
@@ -167,9 +168,36 @@ export default function BuildersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Builders</Text>
-        <Text style={styles.headerSubtitle}>Companies & Contractors ({filteredBuilders.length})</Text>
+      {/* Blue Header */}
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <View style={styles.blueHeader}>
+          <Text style={styles.headerTitle}>Builders</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={22} 
+                color={sortBy ? '#FFD700' : '#FFFFFF'} 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* Stats Bar */}
+      <View style={styles.statsBarContainer}>
+        <View style={styles.statsBar}>
+          <View style={styles.statItemTotal}>
+            <Text style={styles.statNumberTotal}>{filteredBuilders.length}</Text>
+            <Text style={styles.statLabelTotal}>Total</Text>
+          </View>
+          <View style={styles.statItemInfo}>
+            <Text style={styles.statSubtitle}>Companies & Contractors</Text>
+          </View>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -181,9 +209,11 @@ export default function BuildersScreen() {
           value={searchQuery}
           onChangeText={handleSearch}
         />
-        <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={styles.filterButton}>
-          <Ionicons name="filter" size={20} color={sortBy ? '#3B82F6' : '#6B7280'} />
-        </TouchableOpacity>
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => handleSearch('')}>
+            <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {showFilters && (
@@ -240,17 +270,77 @@ export default function BuildersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#3B82F6',
+  },
+  headerSafeArea: {
+    backgroundColor: '#3B82F6',
+  },
+  blueHeader: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statsBarContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statItemTotal: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  statNumberTotal: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#3B82F6',
+  },
+  statLabelTotal: {
+    fontSize: 12,
+    color: '#3B82F6',
+    marginTop: 2,
+  },
+  statItemInfo: {
+    flex: 1,
+  },
+  statSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
   },
   header: {
     backgroundColor: '#3B82F6',
     padding: 20,
     paddingTop: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
   },
   headerSubtitle: {
     fontSize: 14,
@@ -261,18 +351,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    margin: 16,
+    marginHorizontal: 16,
+    marginVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    height: 48,
   },
   searchInput: {
     flex: 1,
-    height: 44,
+    height: 48,
     marginLeft: 12,
     fontSize: 16,
     color: '#1F2937',
@@ -338,8 +427,9 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingTop: 0,
+    paddingTop: 8,
     paddingBottom: 100,
+    backgroundColor: '#F9FAFB',
   },
   builderCard: {
     backgroundColor: '#FFFFFF',
