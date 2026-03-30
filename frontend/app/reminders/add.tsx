@@ -201,6 +201,7 @@ export default function AddReminderScreen() {
   };
 
   const formatDisplayDate = (date: Date) => {
+    // Display in IST
     return date.toLocaleDateString('en-IN', {
       weekday: 'short',
       month: 'short',
@@ -210,12 +211,24 @@ export default function AddReminderScreen() {
   };
 
   const formatDisplayTime = (date: Date) => {
+    // Display in IST
     return date.toLocaleTimeString('en-IN', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
       timeZone: 'Asia/Kolkata',
     });
+  };
+
+  // Get current time in IST for initial date
+  const getISTDate = () => {
+    const now = new Date();
+    // Add 1 hour and round to next 30 min
+    const istDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    istDate.setHours(istDate.getHours() + 1);
+    istDate.setMinutes(istDate.getMinutes() >= 30 ? 30 : 0);
+    istDate.setSeconds(0, 0);
+    return istDate;
   };
 
   return (

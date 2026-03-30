@@ -44,32 +44,38 @@ const formatDateIST = (dateString: string) => {
 };
 
 const getDateInfo = (dateString: string) => {
-  // Parse the date from the server (which may be in format YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD HH:MM:SS)
+  // Parse the date - the server sends it in format YYYY-MM-DDTHH:MM:SS (IST)
   let date: Date;
+  
   if (dateString.includes('T')) {
-    date = new Date(dateString);
+    // Parse ISO format - treat it as IST time
+    const [datePart, timePart] = dateString.split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes, seconds] = timePart.split(':').map(Number);
+    date = new Date(year, month - 1, day, hours, minutes, seconds || 0);
   } else if (dateString.includes(' ')) {
-    // Handle "YYYY-MM-DD HH:MM:SS" format
-    date = new Date(dateString.replace(' ', 'T'));
+    const [datePart, timePart] = dateString.split(' ');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes, seconds] = timePart.split(':').map(Number);
+    date = new Date(year, month - 1, day, hours, minutes, seconds || 0);
   } else {
     date = new Date(dateString);
   }
   
-  // Get current time in IST
+  // Get current time - assuming device is in IST or we compare directly
   const now = new Date();
   
-  // Compare dates properly - the date from server is stored in IST
-  // So we need to compare it with current IST time
-  const nowIST = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  
-  // For date comparison, use the date object directly
-  const isToday = date.toDateString() === nowIST.toDateString();
-  const tomorrow = new Date(nowIST);
+  // For date comparison
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const reminderDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const isTomorrow = date.toDateString() === tomorrow.toDateString();
   
-  // Check if overdue - compare actual timestamps
-  const isPast = date.getTime() < nowIST.getTime();
+  const isToday = reminderDay.getTime() === today.getTime();
+  const isTomorrow = reminderDay.getTime() === tomorrow.getTime();
+  
+  // Check if overdue - compare timestamps
+  const isPast = date.getTime() < now.getTime();
 
   let dateLabel = '';
   if (isToday) {
@@ -84,11 +90,13 @@ const getDateInfo = (dateString: string) => {
     });
   }
 
-  const timeStr = date.toLocaleTimeString('en-IN', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    hour12: true 
-  });
+  // Format time in 12-hour format
+  let hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? 'pm' : 'am';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
   
   return { dateLabel, timeStr, isPast, isToday };
 };

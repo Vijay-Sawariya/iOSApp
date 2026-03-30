@@ -223,6 +223,7 @@ export default function EditReminderScreen() {
   };
 
   const formatDisplayDate = (date: Date) => {
+    // Display in IST
     return date.toLocaleDateString('en-IN', {
       weekday: 'short',
       month: 'short',
@@ -232,6 +233,7 @@ export default function EditReminderScreen() {
   };
 
   const formatDisplayTime = (date: Date) => {
+    // Display in IST
     return date.toLocaleTimeString('en-IN', {
       hour: '2-digit',
       minute: '2-digit',
