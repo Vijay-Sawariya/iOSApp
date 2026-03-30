@@ -162,7 +162,7 @@ export default function EditReminderScreen() {
       }
 
       Alert.alert('Success', 'Follow-up updated successfully!', [
-        { text: 'OK', onPress: () => router.back() }
+        { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
       ]);
     } catch (error) {
       Alert.alert('Error', 'Failed to update follow-up');
@@ -181,7 +181,7 @@ export default function EditReminderScreen() {
           try {
             await api.deleteReminder(reminderId);
             await notificationService.cancelReminderNotification(reminderId);
-            router.back();
+            router.replace('/(tabs)/reminders');
           } catch (error) {
             Alert.alert('Error', 'Failed to delete follow-up');
           }

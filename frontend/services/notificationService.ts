@@ -64,6 +64,12 @@ export const notificationService = {
     leadName?: string
   ): Promise<string | null> => {
     try {
+      // Check if we're on web - notifications not supported
+      if (Platform.OS === 'web') {
+        console.log('Notifications not supported on web platform');
+        return null;
+      }
+
       // Calculate notification time (10 minutes before)
       const notificationTime = new Date(reminderDate.getTime() - 10 * 60 * 1000);
       

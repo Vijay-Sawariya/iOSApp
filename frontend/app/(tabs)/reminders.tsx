@@ -44,18 +44,32 @@ const formatDateIST = (dateString: string) => {
 };
 
 const getDateInfo = (dateString: string) => {
-  const date = new Date(dateString);
+  // Parse the date from the server (which may be in format YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD HH:MM:SS)
+  let date: Date;
+  if (dateString.includes('T')) {
+    date = new Date(dateString);
+  } else if (dateString.includes(' ')) {
+    // Handle "YYYY-MM-DD HH:MM:SS" format
+    date = new Date(dateString.replace(' ', 'T'));
+  } else {
+    date = new Date(dateString);
+  }
+  
+  // Get current time in IST
   const now = new Date();
   
-  // Get IST dates for comparison
-  const istDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  // Compare dates properly - the date from server is stored in IST
+  // So we need to compare it with current IST time
+  const nowIST = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   
-  const isToday = istDate.toDateString() === istNow.toDateString();
-  const tomorrow = new Date(istNow);
+  // For date comparison, use the date object directly
+  const isToday = date.toDateString() === nowIST.toDateString();
+  const tomorrow = new Date(nowIST);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const isTomorrow = istDate.toDateString() === tomorrow.toDateString();
-  const isPast = date < now;
+  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+  
+  // Check if overdue - compare actual timestamps
+  const isPast = date.getTime() < nowIST.getTime();
 
   let dateLabel = '';
   if (isToday) {
@@ -64,7 +78,6 @@ const getDateInfo = (dateString: string) => {
     dateLabel = 'Tomorrow';
   } else {
     dateLabel = date.toLocaleDateString('en-IN', { 
-      timeZone: 'Asia/Kolkata',
       month: 'short', 
       day: 'numeric', 
       year: 'numeric' 
@@ -72,7 +85,6 @@ const getDateInfo = (dateString: string) => {
   }
 
   const timeStr = date.toLocaleTimeString('en-IN', { 
-    timeZone: 'Asia/Kolkata',
     hour: '2-digit', 
     minute: '2-digit',
     hour12: true 

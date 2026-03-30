@@ -1007,24 +1007,52 @@ def get_reminders(
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT r.*, l.name as lead_name, l.phone as lead_phone 
+            """SELECT r.*, l.name as lead_name, l.phone as lead_phone,
+               CONCAT(r.reminder_date, ' ', COALESCE(r.reminder_time, '00:00:00')) as reminder_datetime
                FROM reminders r
                LEFT JOIN leads l ON r.lead_id = l.id
-               ORDER BY r.reminder_date ASC LIMIT %s OFFSET %s""",
+               ORDER BY r.reminder_date ASC, r.reminder_time ASC LIMIT %s OFFSET %s""",
             (limit, skip)
         )
         reminders = cursor.fetchall()
+        
+        # Convert datetime for proper JSON serialization
+        result = []
+        for r in reminders:
+            r_dict = dict(r)
+            # Combine date and time into ISO format
+            if r_dict.get('reminder_date') and r_dict.get('reminder_time'):
+                date_str = str(r_dict['reminder_date'])
+                time_str = str(r_dict['reminder_time'])
+                r_dict['reminder_date'] = f"{date_str}T{time_str}"
+            result.append(r_dict)
     
-    return reminders
+    return result
 
 @api_router.post("/reminders")
 def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
+        
+        # Parse the reminder_date to extract date and time parts
+        reminder_datetime = reminder.reminder_date
+        if isinstance(reminder_datetime, str):
+            # Handle ISO format datetime string
+            try:
+                dt = datetime.fromisoformat(reminder_datetime.replace('Z', '+00:00'))
+                date_part = dt.strftime('%Y-%m-%d')
+                time_part = dt.strftime('%H:%M:%S')
+            except:
+                date_part = reminder_datetime[:10] if len(reminder_datetime) >= 10 else reminder_datetime
+                time_part = '00:00:00'
+        else:
+            date_part = reminder_datetime.strftime('%Y-%m-%d')
+            time_part = reminder_datetime.strftime('%H:%M:%S')
+        
         cursor.execute(
-            """INSERT INTO reminders (lead_id, title, reminder_date, reminder_type, notes, status, created_at, created_by)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (reminder.lead_id, reminder.title, reminder.reminder_date, reminder.reminder_type,
+            """INSERT INTO reminders (lead_id, title, reminder_date, reminder_time, reminder_type, notes, status, created_at, created_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (reminder.lead_id, reminder.title, date_part, time_part, reminder.reminder_type,
              reminder.notes, reminder.status, datetime.utcnow(), current_user['id'])
         )
         conn.commit()
@@ -1038,6 +1066,14 @@ def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_c
             (reminder_id,)
         )
         created = cursor.fetchone()
+        
+        # Format response
+        if created:
+            created = dict(created)
+            if created.get('reminder_date') and created.get('reminder_time'):
+                date_str = str(created['reminder_date'])
+                time_str = str(created['reminder_time'])
+                created['reminder_date'] = f"{date_str}T{time_str}"
     
     return created
 
@@ -1047,11 +1083,22 @@ def update_reminder(reminder_id: int, reminder_data: dict, current_user: dict = 
     with get_db() as conn:
         cursor = conn.cursor()
         
+        # Handle reminder_date - split into date and time parts
+        if 'reminder_date' in reminder_data:
+            reminder_datetime = reminder_data['reminder_date']
+            if isinstance(reminder_datetime, str) and 'T' in reminder_datetime:
+                try:
+                    dt = datetime.fromisoformat(reminder_datetime.replace('Z', '+00:00'))
+                    reminder_data['reminder_date'] = dt.strftime('%Y-%m-%d')
+                    reminder_data['reminder_time'] = dt.strftime('%H:%M:%S')
+                except:
+                    pass
+        
         # Build dynamic update query
         update_fields = []
         values = []
         
-        allowed_fields = ['title', 'reminder_date', 'reminder_type', 'notes', 'status', 'lead_id']
+        allowed_fields = ['title', 'reminder_date', 'reminder_time', 'reminder_type', 'notes', 'status', 'lead_id']
         
         for field in allowed_fields:
             if field in reminder_data:

@@ -159,7 +159,7 @@ export default function AddReminderScreen() {
       );
 
       Alert.alert('Success', 'Follow-up created! You will be notified 10 minutes before.', [
-        { text: 'OK', onPress: () => router.back() }
+        { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
       ]);
     } catch (error) {
       Alert.alert('Error', 'Failed to create follow-up');
