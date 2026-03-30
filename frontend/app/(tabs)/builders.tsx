@@ -172,18 +172,6 @@ export default function BuildersScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Builders</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.headerIconBtn}
-              onPress={() => setShowFilters(!showFilters)}
-            >
-              <Ionicons 
-                name="options-outline" 
-                size={22} 
-                color={sortBy ? '#FFD700' : '#FFFFFF'} 
-              />
-            </TouchableOpacity>
-          </View>
         </View>
       </SafeAreaView>
 
@@ -350,7 +338,7 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     marginHorizontal: 16,
     marginVertical: 8,
     paddingHorizontal: 16,
