@@ -47,7 +47,6 @@ export default function TabLayout() {
         name="inventory"
         options={{
           title: 'Inventory',
-          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
