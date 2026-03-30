@@ -5,15 +5,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const NOTIFICATION_STORAGE_KEY = 'scheduled_notifications';
 
-// IST offset in milliseconds (5 hours 30 minutes)
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+// IST offset in minutes (5 hours 30 minutes = 330 minutes)
+const IST_OFFSET_MINUTES = 330;
 
 // Configure notification handler - This runs when app is in foreground
+// CRITICAL: This must be set for notifications to display with sound when app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldShowAlert: true,    // Show the notification popup
+    shouldPlaySound: true,    // Play notification sound
+    shouldSetBadge: true,     // Update app badge
     priority: Notifications.AndroidNotificationPriority.MAX,
   }),
 });
@@ -24,16 +25,47 @@ export interface ScheduledNotification {
   scheduledTime: string;
 }
 
-// Convert IST time to device local time for notification scheduling
-const convertISTToLocal = (istDate: Date): Date => {
-  // Get current device timezone offset in milliseconds
-  const deviceOffsetMs = new Date().getTimezoneOffset() * -60 * 1000;
+/**
+ * Get the current device timezone offset from IST in minutes
+ * This is used to correctly schedule notifications at the right local time
+ */
+const getDeviceOffsetFromIST = (): number => {
+  // Device's UTC offset in minutes (negative for UTC+)
+  const deviceOffsetMinutes = new Date().getTimezoneOffset() * -1;
+  // IST is UTC+330 minutes
+  // Difference = IST - Device
+  return IST_OFFSET_MINUTES - deviceOffsetMinutes;
+};
+
+/**
+ * Convert IST date/time components to a local Date for notification scheduling
+ * @param year - Year in IST
+ * @param month - Month (1-12) in IST
+ * @param day - Day in IST
+ * @param hour - Hour (0-23) in IST
+ * @param minute - Minute in IST
+ * @returns Date object in local device time
+ */
+const istToLocalDate = (
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): Date => {
+  // Create a date assuming IST values
+  // First, create the date as if it's local time
+  const localDate = new Date(year, month - 1, day, hour, minute, 0);
   
-  // Calculate the difference between IST and device timezone
-  const diffMs = IST_OFFSET_MS - deviceOffsetMs;
+  // Calculate the offset between IST and device timezone
+  const offsetMinutes = getDeviceOffsetFromIST();
   
-  // Adjust the time
-  return new Date(istDate.getTime() - diffMs);
+  // Adjust the time by subtracting the offset
+  // If device is behind IST (e.g., UTC), we subtract the difference
+  // If device is ahead of IST (e.g., UTC+8), we add the difference
+  const adjustedTime = new Date(localDate.getTime() - offsetMinutes * 60 * 1000);
+  
+  return adjustedTime;
 };
 
 export const notificationService = {
@@ -93,6 +125,7 @@ export const notificationService = {
   },
 
   // Schedule a notification 10 minutes before the reminder time (IST)
+  // DEPRECATED: Use scheduleReminderNotificationIST instead for better IST handling
   scheduleReminderNotification: async (
     reminderId: string,
     title: string,
@@ -112,12 +145,112 @@ export const notificationService = {
         return null;
       }
 
-      // Calculate notification time (10 minutes before) in IST
-      const notificationTimeIST = new Date(reminderDateIST.getTime() - 10 * 60 * 1000);
+      // Calculate notification time (10 minutes before)
+      const notificationTime = new Date(reminderDateIST.getTime() - 10 * 60 * 1000);
       
-      // Convert IST to local device time for scheduling
-      const notificationTimeLocal = convertISTToLocal(notificationTimeIST);
-      
+      // Don't schedule if the notification time is in the past
+      if (notificationTime <= new Date()) {
+        console.log('Notification time is in the past, skipping');
+        return null;
+      }
+
+      // Cancel any existing notification for this reminder
+      await notificationService.cancelReminderNotification(reminderId);
+
+      const notificationTitle = `🔔 Reminder: ${title}`;
+      const notificationBody = leadName 
+        ? `Follow-up with ${leadName} in 10 minutes`
+        : body || 'You have a reminder in 10 minutes';
+
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: notificationTitle,
+          body: notificationBody,
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          data: { reminderId, type: 'reminder' },
+          vibrate: [0, 250, 250, 250],
+        },
+        trigger: {
+          date: notificationTime,
+          channelId: Platform.OS === 'android' ? 'reminders' : undefined,
+        },
+      });
+
+      // Store the notification mapping
+      await notificationService.storeNotificationMapping(
+        reminderId, 
+        notificationId, 
+        notificationTime.toISOString()
+      );
+
+      console.log(`Scheduled notification ${notificationId} for reminder ${reminderId}`);
+      return notificationId;
+    } catch (error) {
+      console.error('Error scheduling notification:', error);
+      return null;
+    }
+  },
+
+  /**
+   * Schedule a notification 10 minutes before the reminder time using IST components
+   * This method correctly handles IST timezone without any Date conversion issues
+   */
+  scheduleReminderNotificationIST: async (
+    reminderId: string,
+    title: string,
+    body: string,
+    year: number,
+    month: number,  // 1-12
+    day: number,
+    hour: number,   // 0-23 in IST
+    minute: number,
+    leadName?: string
+  ): Promise<string | null> => {
+    try {
+      // Web doesn't support push notifications
+      if (Platform.OS === 'web') {
+        console.log('Notifications not supported on web platform');
+        return null;
+      }
+
+      if (!Device.isDevice) {
+        console.log('Notifications only work on physical devices');
+        return null;
+      }
+
+      // Calculate notification time (10 minutes before the reminder) in IST
+      let notifMinute = minute - 10;
+      let notifHour = hour;
+      let notifDay = day;
+      let notifMonth = month;
+      let notifYear = year;
+
+      if (notifMinute < 0) {
+        notifMinute += 60;
+        notifHour -= 1;
+      }
+
+      if (notifHour < 0) {
+        notifHour += 24;
+        notifDay -= 1;
+      }
+
+      // Handle month/year rollback (simplified - for edge cases)
+      if (notifDay < 1) {
+        notifMonth -= 1;
+        if (notifMonth < 1) {
+          notifMonth = 12;
+          notifYear -= 1;
+        }
+        // Get last day of previous month
+        const lastDay = new Date(notifYear, notifMonth, 0).getDate();
+        notifDay = lastDay;
+      }
+
+      // Convert IST notification time to local device time
+      const notificationTimeLocal = istToLocalDate(notifYear, notifMonth, notifDay, notifHour, notifMinute);
+
       // Don't schedule if the notification time is in the past
       if (notificationTimeLocal <= new Date()) {
         console.log('Notification time is in the past, skipping');
@@ -127,10 +260,7 @@ export const notificationService = {
       // Cancel any existing notification for this reminder
       await notificationService.cancelReminderNotification(reminderId);
 
-      const notificationTitle = leadName 
-        ? `🔔 Reminder: ${title}` 
-        : `🔔 Reminder: ${title}`;
-      
+      const notificationTitle = `🔔 Reminder: ${title}`;
       const notificationBody = leadName 
         ? `Follow-up with ${leadName} in 10 minutes`
         : body || 'You have a reminder in 10 minutes';
@@ -150,19 +280,18 @@ export const notificationService = {
         },
       });
 
-      // Store the notification mapping
+      // Format IST time for logging
+      const hour12 = notifHour % 12 || 12;
+      const ampm = notifHour < 12 ? 'AM' : 'PM';
+      const timeStr = `${hour12}:${notifMinute.toString().padStart(2, '0')} ${ampm}`;
+
+      // Store the notification mapping with IST time
+      const istTimeStr = `${notifYear}-${notifMonth.toString().padStart(2, '0')}-${notifDay.toString().padStart(2, '0')}T${notifHour.toString().padStart(2, '0')}:${notifMinute.toString().padStart(2, '0')}:00`;
       await notificationService.storeNotificationMapping(
         reminderId, 
         notificationId, 
-        notificationTimeIST.toISOString()
+        istTimeStr
       );
-
-      // Format time for logging
-      const timeStr = notificationTimeIST.toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
 
       console.log(`Scheduled notification ${notificationId} for reminder ${reminderId} at ${timeStr} IST`);
       return notificationId;

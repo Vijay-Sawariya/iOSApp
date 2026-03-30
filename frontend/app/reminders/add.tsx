@@ -198,6 +198,7 @@ export default function AddReminderScreen() {
     setLoading(true);
     try {
       // Format date and time as IST string for backend
+      // The backend stores these as-is (IST) without timezone conversion
       // Format: YYYY-MM-DDTHH:MM:SS
       const dateStr = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
       const timeStr = `${selectedHour.toString().padStart(2, '0')}:${selectedMinute.toString().padStart(2, '0')}:00`;
@@ -212,16 +213,21 @@ export default function AddReminderScreen() {
         status: 'pending',
       };
 
+      console.log('Saving reminder with IST time:', reminderDateIST);
       const created = await api.createReminder(reminderData);
 
-      // Schedule notification - create a Date object for IST time
-      const notificationDate = new Date(selectedYear, selectedMonth - 1, selectedDay, selectedHour, selectedMinute, 0);
-      
-      await notificationService.scheduleReminderNotification(
+      // Schedule notification - create the notification time directly
+      // The selectedHour and selectedMinute are already in IST
+      // We need to schedule the notification 10 minutes before
+      await notificationService.scheduleReminderNotificationIST(
         created.id.toString(),
         title,
         `${reminderType} reminder${selectedLead ? ` for ${selectedLead.name}` : ''}`,
-        notificationDate,
+        selectedYear,
+        selectedMonth,
+        selectedDay,
+        selectedHour,
+        selectedMinute,
         selectedLead?.name
       );
 
