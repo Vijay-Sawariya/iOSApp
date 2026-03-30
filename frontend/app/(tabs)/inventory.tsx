@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Import shared components
 import {
@@ -291,12 +292,13 @@ export default function InventoryLeadsScreen() {
     return pricing.map(p => `${p.floor_label}: ₹${p.floor_amount}${unitStr}`).join(' | ');
   };
 
-  const stats = {
-    total: filteredLeads.length,
-    sellers: filteredLeads.filter(l => l.lead_type === 'seller').length,
-    landlords: filteredLeads.filter(l => l.lead_type === 'landlord').length,
-    builders: filteredLeads.filter(l => l.lead_type === 'builder').length,
-  };
+  const stats = useMemo(() => ({
+    total: leads.length,
+    sellers: leads.filter(l => l.lead_type === 'seller').length,
+    landlords: leads.filter(l => l.lead_type === 'landlord').length,
+    builders: leads.filter(l => l.lead_type === 'builder').length,
+    agents: leads.filter(l => l.lead_type === 'agent').length,
+  }), [leads]);
 
   const openMapUrl = (url: string) => {
     Linking.openURL(url).catch(err => console.error('Failed to open map URL:', err));
@@ -460,54 +462,102 @@ export default function InventoryLeadsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Seller/Landlord Inventories ({stats.total})</Text>
-        <TouchableOpacity
-          style={[styles.filterToggle, hasActiveFilters() && styles.filterToggleActive]}
-          onPress={() => setShowFilters(true)}
-        >
-          <Ionicons name="filter" size={20} color={hasActiveFilters() ? '#FFFFFF' : '#374151'} />
-          <Text style={[styles.filterToggleText, hasActiveFilters() && styles.filterToggleTextActive]}>
-            Filters
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Stats Bar */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.sellers}</Text>
-          <Text style={styles.statLabel}>Sellers</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.landlords}</Text>
-          <Text style={styles.statLabel}>Landlords</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.builders}</Text>
-          <Text style={styles.statLabel}>Builders</Text>
-        </View>
-      </View>
-
-      {/* Leads List */}
-      <FlatList
-        data={filteredLeads}
-        renderItem={renderLeadCard}
-        keyExtractor={(item) => item.id.toString()}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="file-tray-outline" size={48} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No inventory found</Text>
-            <Text style={styles.emptySubText}>Try adjusting your filters</Text>
+      {/* Blue Header */}
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <View style={styles.blueHeader}>
+          <Text style={styles.headerTitle}>Inventories</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(true)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={22} 
+                color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerAddBtn}
+              onPress={() => router.push('/leads/add?type=inventory' as any)}
+            >
+              <Ionicons name="add" size={24} color="#3B82F6" />
+            </TouchableOpacity>
           </View>
-        }
-      />
+        </View>
+      </SafeAreaView>
+
+      {/* White Content Area */}
+      <View style={styles.contentArea}>
+        {/* Stats Bar - Same style as Clients */}
+        <View style={styles.statsBar}>
+          <View style={[styles.statItem, styles.statItemActive]}>
+            <Text style={[styles.statNumber, styles.statNumberActive]}>{stats.total}</Text>
+            <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.sellers}</Text>
+            <Text style={styles.statLabel}>Sellers</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.landlords}</Text>
+            <Text style={styles.statLabel}>Landlords</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{stats.builders}</Text>
+            <Text style={styles.statLabel}>Builders</Text>
+          </View>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#9CA3AF" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search inventories..."
+            placeholderTextColor="#9CA3AF"
+            value={nameFilter}
+            onChangeText={(text) => {
+              setNameFilter(text);
+              // Auto apply name filter
+              let filtered = [...leads];
+              if (text.trim()) {
+                filtered = filtered.filter(lead =>
+                  lead.name.toLowerCase().includes(text.toLowerCase()) ||
+                  lead.phone?.includes(text) ||
+                  lead.address?.toLowerCase().includes(text.toLowerCase())
+                );
+              }
+              setFilteredLeads(filtered);
+            }}
+          />
+          {nameFilter.length > 0 && (
+            <TouchableOpacity onPress={() => {
+              setNameFilter('');
+              setFilteredLeads(leads);
+            }}>
+              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Leads List */}
+        <FlatList
+          data={filteredLeads}
+          renderItem={renderLeadCard}
+          keyExtractor={(item) => item.id.toString()}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="file-tray-outline" size={48} color="#9CA3AF" />
+              <Text style={styles.emptyText}>No inventory found</Text>
+              <Text style={styles.emptySubText}>Try adjusting your filters</Text>
+            </View>
+          }
+        />
+      </View>
 
       {/* Filter Modal */}
       <Modal visible={showFilters} animationType="slide" transparent>
@@ -556,83 +606,21 @@ export default function InventoryLeadsScreen() {
                 </View>
               </View>
 
-              {/* Locations */}
-              <Text style={styles.filterLabel}>Locations</Text>
-              <TouchableOpacity
-                style={styles.locationSelector}
-                onPress={() => setShowLocationPicker(true)}
-              >
-                <Text style={[styles.locationText, selectedLocations.length === 0 && styles.placeholderText]}>
-                  {selectedLocations.length > 0 
-                    ? `${selectedLocations.length} selected` 
-                    : 'Select locations'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
-              {selectedLocations.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedLocations.map(loc => (
-                    <TouchableOpacity
-                      key={loc}
-                      style={styles.selectedTag}
-                      onPress={() => toggleLocation(loc)}
-                    >
-                      <Text style={styles.selectedTagText}>{loc}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {/* Type & Floor Row */}
-              <View style={styles.filterRow}>
-                <View style={styles.filterHalf}>
-                  <Text style={styles.filterLabel}>Type</Text>
-                  <View style={styles.pickerContainer}>
-                    {TYPES.map(t => (
-                      <TouchableOpacity
-                        key={t.value}
-                        style={[styles.pickerOption, typeFilter === t.value && styles.pickerOptionActive]}
-                        onPress={() => setTypeFilter(t.value)}
-                      >
-                        <Text style={[styles.pickerOptionText, typeFilter === t.value && styles.pickerOptionTextActive]}>
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-                <View style={styles.filterHalf}>
-                  <Text style={styles.filterLabel}>Floor</Text>
+              {/* Type */}
+              <Text style={styles.filterLabel}>Type</Text>
+              <View style={styles.pickerContainer}>
+                {TYPES.map(t => (
                   <TouchableOpacity
-                    style={styles.locationSelector}
-                    onPress={() => setShowFloorPicker(true)}
+                    key={t.value}
+                    style={[styles.pickerOption, typeFilter === t.value && styles.pickerOptionActive]}
+                    onPress={() => setTypeFilter(t.value)}
                   >
-                    <Text style={[styles.locationText, selectedFloors.length === 0 && styles.placeholderText]}>
-                      {selectedFloors.length > 0 
-                        ? `${selectedFloors.length} selected` 
-                        : 'Select floors'}
+                    <Text style={[styles.pickerOptionText, typeFilter === t.value && styles.pickerOptionTextActive]}>
+                      {t.label}
                     </Text>
-                    <Ionicons name="chevron-down" size={20} color="#6B7280" />
                   </TouchableOpacity>
-                </View>
+                ))}
               </View>
-
-              {/* Selected Floors Tags */}
-              {selectedFloors.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedFloors.map(floor => (
-                    <TouchableOpacity
-                      key={floor}
-                      style={styles.selectedTag}
-                      onPress={() => toggleFloor(floor)}
-                    >
-                      <Text style={styles.selectedTagText}>{floor}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
 
               {/* Status */}
               <Text style={styles.filterLabel}>Status</Text>
@@ -734,150 +722,6 @@ export default function InventoryLeadsScreen() {
         </View>
       </Modal>
 
-      {/* Location Picker Modal */}
-      <Modal visible={showLocationPicker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.locationModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Locations</Text>
-              <TouchableOpacity onPress={() => {
-                setShowLocationPicker(false);
-                setLocationSearch('');
-              }}>
-                <Ionicons name="close" size={24} color="#374151" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#9CA3AF" />
-              <TextInput
-                style={styles.modalSearchInput}
-                value={locationSearch}
-                onChangeText={setLocationSearch}
-                placeholder="Type to search locations..."
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              {locationSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setLocationSearch('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={filteredLocations}
-              keyExtractor={(item) => item}
-              initialNumToRender={15}
-              maxToRenderPerBatch={10}
-              windowSize={5}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 52,
-                offset: 52 * index,
-                index,
-              })}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.locationItem}
-                  onPress={() => toggleLocation(item)}
-                >
-                  <Text style={styles.locationItemText}>{item}</Text>
-                  {selectedLocations.includes(item) && (
-                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-                  )}
-                </TouchableOpacity>
-              )}
-              style={styles.locationList}
-              ListEmptyComponent={
-                <View style={styles.emptySearchResult}>
-                  <Text style={styles.emptySearchText}>No locations found</Text>
-                </View>
-              }
-            />
-            <TouchableOpacity
-              style={styles.locationDoneButton}
-              onPress={() => {
-                setShowLocationPicker(false);
-                setLocationSearch('');
-              }}
-            >
-              <Text style={styles.locationDoneText}>Done ({selectedLocations.length} selected)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Floor Picker Modal */}
-      <Modal visible={showFloorPicker} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.locationModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Floors</Text>
-              <TouchableOpacity onPress={() => {
-                setShowFloorPicker(false);
-                setFloorSearch('');
-              }}>
-                <Ionicons name="close" size={24} color="#374151" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#9CA3AF" />
-              <TextInput
-                style={styles.modalSearchInput}
-                value={floorSearch}
-                onChangeText={setFloorSearch}
-                placeholder="Type to search floors..."
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-              />
-              {floorSearch.length > 0 && (
-                <TouchableOpacity onPress={() => setFloorSearch('')}>
-                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={filteredFloors}
-              keyExtractor={(item) => item}
-              initialNumToRender={10}
-              maxToRenderPerBatch={10}
-              windowSize={5}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 52,
-                offset: 52 * index,
-                index,
-              })}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.locationItem}
-                  onPress={() => toggleFloor(item)}
-                >
-                  <Text style={styles.locationItemText}>{item}</Text>
-                  {selectedFloors.includes(item) && (
-                    <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-                  )}
-                </TouchableOpacity>
-              )}
-              style={styles.locationList}
-              ListEmptyComponent={
-                <View style={styles.emptySearchResult}>
-                  <Text style={styles.emptySearchText}>No floors found</Text>
-                </View>
-              }
-            />
-            <TouchableOpacity
-              style={styles.locationDoneButton}
-              onPress={() => {
-                setShowFloorPicker(false);
-                setFloorSearch('');
-              }}
-            >
-              <Text style={styles.locationDoneText}>Done ({selectedFloors.length} selected)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* FAB - Add Button */}
       <TouchableOpacity
         style={styles.fab}
@@ -892,7 +736,102 @@ export default function InventoryLeadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#3B82F6',
+  },
+  headerSafeArea: {
+    backgroundColor: '#3B82F6',
+  },
+  blueHeader: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerAddBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contentArea: {
+    flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginHorizontal: 4,
+  },
+  statItemActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  statNumberActive: {
+    color: '#3B82F6',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  statLabelActive: {
+    color: '#3B82F6',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    height: 48,
+  },
+  searchInput: {
+    flex: 1,
+    height: 48,
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#1F2937',
   },
   header: {
     flexDirection: 'row',
