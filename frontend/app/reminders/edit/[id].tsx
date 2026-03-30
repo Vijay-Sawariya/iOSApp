@@ -11,12 +11,13 @@ import {
   Platform,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { api } from '../../services/api';
-import { notificationService } from '../../services/notificationService';
+import { api } from '../../../services/api';
+import { notificationService } from '../../../services/notificationService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface Lead {
@@ -35,51 +36,37 @@ const REMINDER_TYPES = [
   { value: 'Follow Up', icon: 'chatbubbles', color: '#10B981' },
 ];
 
-export default function AddReminderScreen() {
-  const params = useLocalSearchParams();
-  const preselectedLeadId = params.lead_id as string | undefined;
-  const preselectedLeadName = params.lead_name as string | undefined;
+export default function EditReminderScreen() {
+  const { id } = useLocalSearchParams();
+  const reminderId = id as string;
 
   const [title, setTitle] = useState('');
-  const [reminderDate, setReminderDate] = useState(() => {
-    const date = new Date();
-    date.setHours(date.getHours() + 1, 0, 0, 0);
-    return date;
-  });
+  const [reminderDate, setReminderDate] = useState(new Date());
   const [reminderType, setReminderType] = useState('Call');
   const [notes, setNotes] = useState('');
+  const [status, setStatus] = useState('pending');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showLeadPicker, setShowLeadPicker] = useState(false);
   const [leadSearch, setLeadSearch] = useState('');
 
   useEffect(() => {
-    loadLeads();
-  }, []);
+    loadData();
+  }, [reminderId]);
 
-  useEffect(() => {
-    // If preselected lead, set it
-    if (preselectedLeadId && preselectedLeadName) {
-      setSelectedLead({
-        id: parseInt(preselectedLeadId),
-        name: preselectedLeadName,
-        phone: null,
-        lead_type: null,
-      });
-      setTitle(`Follow up with ${preselectedLeadName}`);
-    }
-  }, [preselectedLeadId, preselectedLeadName]);
-
-  const loadLeads = async () => {
+  const loadData = async () => {
     try {
-      // Load both clients and inventory leads
-      const [clients, inventory] = await Promise.all([
+      // Load reminder and leads in parallel
+      const [reminders, clients, inventory] = await Promise.all([
+        api.getReminders(),
         api.getClientLeads(),
         api.getInventoryLeads(),
       ]);
+
       const allLeads = [...clients, ...inventory].map(l => ({
         id: l.id,
         name: l.name,
@@ -88,15 +75,27 @@ export default function AddReminderScreen() {
       }));
       setLeads(allLeads);
 
-      // If preselected lead, find full details
-      if (preselectedLeadId) {
-        const lead = allLeads.find(l => l.id === parseInt(preselectedLeadId));
-        if (lead) {
-          setSelectedLead(lead);
+      // Find the specific reminder
+      const reminder = reminders.find((r: any) => r.id.toString() === reminderId);
+      if (reminder) {
+        setTitle(reminder.title);
+        setReminderDate(new Date(reminder.reminder_date));
+        setReminderType(reminder.reminder_type);
+        setNotes(reminder.notes || '');
+        setStatus(reminder.status);
+
+        if (reminder.lead_id) {
+          const lead = allLeads.find(l => l.id === reminder.lead_id);
+          if (lead) {
+            setSelectedLead(lead);
+          }
         }
       }
     } catch (error) {
-      console.error('Failed to load leads:', error);
+      console.error('Failed to load data:', error);
+      Alert.alert('Error', 'Failed to load reminder data');
+    } finally {
+      setInitialLoading(false);
     }
   };
 
@@ -114,28 +113,52 @@ export default function AddReminderScreen() {
         reminder_type: reminderType,
         notes: notes || null,
         lead_id: selectedLead?.id || null,
-        status: 'pending',
+        status,
       };
 
-      const created = await api.createReminder(reminderData);
+      await api.updateReminder(reminderId, reminderData);
 
-      // Schedule notification 10 minutes before
-      await notificationService.scheduleReminderNotification(
-        created.id.toString(),
-        title,
-        `${reminderType} reminder${selectedLead ? ` for ${selectedLead.name}` : ''}`,
-        reminderDate,
-        selectedLead?.name
-      );
+      // Reschedule notification if status is pending
+      if (status === 'pending') {
+        await notificationService.scheduleReminderNotification(
+          reminderId,
+          title,
+          `${reminderType} reminder${selectedLead ? ` for ${selectedLead.name}` : ''}`,
+          reminderDate,
+          selectedLead?.name
+        );
+      } else {
+        // Cancel notification if completed
+        await notificationService.cancelReminderNotification(reminderId);
+      }
 
-      Alert.alert('Success', 'Follow-up created successfully! You will be notified 10 minutes before.', [
+      Alert.alert('Success', 'Follow-up updated successfully!', [
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to create follow-up');
+      Alert.alert('Error', 'Failed to update follow-up');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Delete Follow-up', 'Are you sure you want to delete this follow-up?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteReminder(reminderId);
+            await notificationService.cancelReminderNotification(reminderId);
+            router.back();
+          } catch (error) {
+            Alert.alert('Error', 'Failed to delete follow-up');
+          }
+        },
+      },
+    ]);
   };
 
   const onDateChange = (event: any, selectedDate?: Date) => {
@@ -175,6 +198,14 @@ export default function AddReminderScreen() {
     }
   };
 
+  if (initialLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -183,8 +214,10 @@ export default function AddReminderScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Follow-up</Text>
-          <View style={{ width: 40 }} />
+          <Text style={styles.headerTitle}>Edit Follow-up</Text>
+          <TouchableOpacity onPress={handleDelete} style={styles.deleteHeaderBtn}>
+            <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
 
@@ -193,6 +226,55 @@ export default function AddReminderScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {/* Status Toggle */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Status</Text>
+            <View style={styles.statusToggle}>
+              <TouchableOpacity
+                style={[
+                  styles.statusButton,
+                  status === 'pending' && styles.statusButtonActive,
+                ]}
+                onPress={() => setStatus('pending')}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={18}
+                  color={status === 'pending' ? '#F59E0B' : '#9CA3AF'}
+                />
+                <Text
+                  style={[
+                    styles.statusButtonText,
+                    status === 'pending' && { color: '#F59E0B' },
+                  ]}
+                >
+                  Pending
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.statusButton,
+                  status === 'completed' && styles.statusButtonCompleted,
+                ]}
+                onPress={() => setStatus('completed')}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={status === 'completed' ? '#10B981' : '#9CA3AF'}
+                />
+                <Text
+                  style={[
+                    styles.statusButtonText,
+                    status === 'completed' && { color: '#10B981' },
+                  ]}
+                >
+                  Completed
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           {/* Reminder Type Selection */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Type</Text>
@@ -291,9 +373,11 @@ export default function AddReminderScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.notificationHint}>
-              <Ionicons name="notifications" size={12} color="#6B7280" /> You'll be notified 10 minutes before
-            </Text>
+            {status === 'pending' && (
+              <Text style={styles.notificationHint}>
+                <Ionicons name="notifications" size={12} color="#6B7280" /> You'll be notified 10 minutes before
+              </Text>
+            )}
           </View>
 
           {showDatePicker && (
@@ -301,7 +385,6 @@ export default function AddReminderScreen() {
               value={reminderDate}
               mode="date"
               display="default"
-              minimumDate={new Date()}
               onChange={onDateChange}
             />
           )}
@@ -334,9 +417,9 @@ export default function AddReminderScreen() {
             onPress={handleSubmit}
             disabled={loading}
           >
-            <Ionicons name="notifications" size={20} color="#FFFFFF" />
+            <Ionicons name="save" size={20} color="#FFFFFF" />
             <Text style={styles.submitButtonText}>
-              {loading ? 'Creating...' : 'Create Follow-up'}
+              {loading ? 'Saving...' : 'Save Changes'}
             </Text>
           </TouchableOpacity>
 
@@ -379,9 +462,6 @@ export default function AddReminderScreen() {
                   setSelectedLead(item);
                   setShowLeadPicker(false);
                   setLeadSearch('');
-                  if (!title) {
-                    setTitle(`Follow up with ${item.name}`);
-                  }
                 }}
               >
                 <View style={styles.leadItemIcon}>
@@ -416,6 +496,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
   headerSafeArea: {
     backgroundColor: '#3B82F6',
   },
@@ -435,6 +521,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  deleteHeaderBtn: {
+    padding: 8,
+  },
   content: {
     flex: 1,
   },
@@ -453,6 +542,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
     marginBottom: 12,
+  },
+  statusToggle: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statusButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  statusButtonActive: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  statusButtonCompleted: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+  },
+  statusButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#9CA3AF',
   },
   typeGrid: {
     flexDirection: 'row',

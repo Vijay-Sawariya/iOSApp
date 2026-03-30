@@ -997,23 +997,27 @@ def create_followup(lead_id: int, followup: FollowupCreate, current_user: dict =
     return created
 
 # ============= Reminder Routes =============
-@api_router.get("/reminders", response_model=List[ReminderResponse])
+@api_router.get("/reminders")
 def get_reminders(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
+    """Get all reminders with lead information"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM reminders ORDER BY reminder_date ASC LIMIT %s OFFSET %s",
+            """SELECT r.*, l.name as lead_name, l.phone as lead_phone 
+               FROM reminders r
+               LEFT JOIN leads l ON r.lead_id = l.id
+               ORDER BY r.reminder_date ASC LIMIT %s OFFSET %s""",
             (limit, skip)
         )
         reminders = cursor.fetchall()
     
-    return [ReminderResponse(**reminder) for reminder in reminders]
+    return reminders
 
-@api_router.post("/reminders", response_model=ReminderResponse)
+@api_router.post("/reminders")
 def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1026,10 +1030,56 @@ def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_c
         conn.commit()
         reminder_id = cursor.lastrowid
         
-        cursor.execute("SELECT * FROM reminders WHERE id = %s", (reminder_id,))
+        cursor.execute(
+            """SELECT r.*, l.name as lead_name, l.phone as lead_phone 
+               FROM reminders r
+               LEFT JOIN leads l ON r.lead_id = l.id
+               WHERE r.id = %s""", 
+            (reminder_id,)
+        )
         created = cursor.fetchone()
     
-    return ReminderResponse(**created)
+    return created
+
+@api_router.put("/reminders/{reminder_id}")
+def update_reminder(reminder_id: int, reminder_data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a reminder"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Build dynamic update query
+        update_fields = []
+        values = []
+        
+        allowed_fields = ['title', 'reminder_date', 'reminder_type', 'notes', 'status', 'lead_id']
+        
+        for field in allowed_fields:
+            if field in reminder_data:
+                update_fields.append(f"{field} = %s")
+                values.append(reminder_data[field])
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        values.append(reminder_id)
+        query = f"UPDATE reminders SET {', '.join(update_fields)} WHERE id = %s"
+        
+        cursor.execute(query, values)
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Reminder not found")
+        
+        cursor.execute(
+            """SELECT r.*, l.name as lead_name, l.phone as lead_phone 
+               FROM reminders r
+               LEFT JOIN leads l ON r.lead_id = l.id
+               WHERE r.id = %s""", 
+            (reminder_id,)
+        )
+        updated = cursor.fetchone()
+    
+    return updated
 
 @api_router.delete("/reminders/{reminder_id}")
 def delete_reminder(reminder_id: int, current_user: dict = Depends(get_current_user)):
