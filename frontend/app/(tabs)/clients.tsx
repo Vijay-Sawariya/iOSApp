@@ -404,7 +404,7 @@ export default function ClientLeadsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Blue Header with Title, Filter and Add */}
+      {/* Blue Header with Title and Filter */}
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Clients</Text>
@@ -418,12 +418,6 @@ export default function ClientLeadsScreen() {
                 size={22} 
                 color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
               />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.headerAddBtn}
-              onPress={() => router.push('/leads/add?type=client' as any)}
-            >
-              <Ionicons name="add" size={24} color="#3B82F6" />
             </TouchableOpacity>
           </View>
         </View>
@@ -706,6 +700,14 @@ export default function ClientLeadsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* FAB - Blue Floating Add Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/leads/add?type=client' as any)}
+      >
+        <Ionicons name="add" size={28} color="#FFFFFF" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1116,5 +1118,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 90,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
   },
 });
