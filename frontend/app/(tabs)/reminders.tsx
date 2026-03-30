@@ -15,7 +15,7 @@ import { notificationService } from '../../services/notificationService';
 import { router, useFocusEffect } from 'expo-router';
 
 interface Reminder {
-  id: string;
+  id: number;
   title: string;
   reminder_date: string;
   reminder_type: string;
@@ -25,6 +25,61 @@ interface Reminder {
   lead_name?: string;
   lead_phone?: string;
 }
+
+// India timezone offset (UTC+5:30)
+const formatDateIST = (dateString: string) => {
+  const date = new Date(dateString);
+  // Format for IST display
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  };
+  return date.toLocaleString('en-IN', options);
+};
+
+const getDateInfo = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  
+  // Get IST dates for comparison
+  const istDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  
+  const isToday = istDate.toDateString() === istNow.toDateString();
+  const tomorrow = new Date(istNow);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isTomorrow = istDate.toDateString() === tomorrow.toDateString();
+  const isPast = date < now;
+
+  let dateLabel = '';
+  if (isToday) {
+    dateLabel = 'Today';
+  } else if (isTomorrow) {
+    dateLabel = 'Tomorrow';
+  } else {
+    dateLabel = date.toLocaleDateString('en-IN', { 
+      timeZone: 'Asia/Kolkata',
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  }
+
+  const timeStr = date.toLocaleTimeString('en-IN', { 
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: true 
+  });
+  
+  return { dateLabel, timeStr, isPast, isToday };
+};
 
 export default function RemindersScreen() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -41,12 +96,10 @@ export default function RemindersScreen() {
   };
 
   useEffect(() => {
-    // Request notification permissions on mount
     notificationService.requestPermissions();
     loadReminders();
   }, []);
 
-  // Refresh when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadReminders();
@@ -59,76 +112,50 @@ export default function RemindersScreen() {
     setRefreshing(false);
   };
 
-  const handleDelete = (id: string, title: string) => {
-    Alert.alert('Delete Reminder', `Are you sure you want to delete "${title}"?`, [
+  const handleDelete = (id: number, title: string) => {
+    Alert.alert('Delete Follow-up', `Are you sure you want to delete "${title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           try {
-            await api.deleteReminder(id);
-            await notificationService.cancelReminderNotification(id);
+            await api.deleteReminder(id.toString());
+            await notificationService.cancelReminderNotification(id.toString());
             loadReminders();
           } catch (error) {
-            Alert.alert('Error', 'Failed to delete reminder');
+            console.error('Delete error:', error);
+            Alert.alert('Error', 'Failed to delete follow-up');
           }
         },
       },
     ]);
   };
 
-  const handleMarkComplete = async (id: string) => {
+  const handleMarkComplete = async (id: number) => {
     try {
-      await api.updateReminder(id, { status: 'completed' });
-      await notificationService.cancelReminderNotification(id);
+      await api.updateReminder(id.toString(), { status: 'completed' });
+      await notificationService.cancelReminderNotification(id.toString());
       loadReminders();
     } catch (error) {
-      Alert.alert('Error', 'Failed to update reminder');
+      Alert.alert('Error', 'Failed to update follow-up');
     }
   };
 
   const getReminderIcon = (type: string) => {
     switch (type) {
-      case 'Call':
-        return 'call';
-      case 'WhatsApp':
-        return 'logo-whatsapp';
-      case 'Email':
-        return 'mail';
-      case 'Meeting':
-        return 'people';
-      case 'Site Visit':
-        return 'location';
-      case 'Follow Up':
-        return 'chatbubbles';
-      default:
-        return 'notifications';
+      case 'Call': return 'call';
+      case 'WhatsApp': return 'logo-whatsapp';
+      case 'Email': return 'mail';
+      case 'Meeting': return 'people';
+      case 'Site Visit': return 'location';
+      case 'Follow Up': return 'chatbubbles';
+      default: return 'notifications';
     }
   };
 
   const getStatusColor = (status: string) => {
     return status === 'completed' ? '#10B981' : '#F59E0B';
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    const isTomorrow = date.toDateString() === new Date(now.getTime() + 86400000).toDateString();
-    const isPast = date < now;
-
-    let dateLabel = '';
-    if (isToday) {
-      dateLabel = 'Today';
-    } else if (isTomorrow) {
-      dateLabel = 'Tomorrow';
-    } else {
-      dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
-
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return { dateLabel, timeStr, isPast, isToday };
   };
 
   const filteredReminders = reminders.filter(r => {
@@ -137,7 +164,6 @@ export default function RemindersScreen() {
     return true;
   });
 
-  // Sort: pending first (by date), then completed
   const sortedReminders = [...filteredReminders].sort((a, b) => {
     if (a.status === 'pending' && b.status === 'completed') return -1;
     if (a.status === 'completed' && b.status === 'pending') return 1;
@@ -148,7 +174,7 @@ export default function RemindersScreen() {
   const completedCount = reminders.filter(r => r.status === 'completed').length;
 
   const renderReminder = ({ item }: { item: Reminder }) => {
-    const { dateLabel, timeStr, isPast, isToday } = formatDate(item.reminder_date);
+    const { dateLabel, timeStr, isPast, isToday } = getDateInfo(item.reminder_date);
     const isOverdue = isPast && item.status === 'pending';
 
     return (
@@ -169,7 +195,6 @@ export default function RemindersScreen() {
             <Text style={styles.reminderTitle}>{item.title}</Text>
             <Text style={styles.reminderType}>{item.reminder_type}</Text>
             
-            {/* Client info */}
             {item.lead_name && (
               <View style={styles.clientRow}>
                 <Ionicons name="person" size={12} color="#6B7280" />

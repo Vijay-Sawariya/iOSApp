@@ -28,6 +28,7 @@ export default function TabLayout() {
         name="dashboard"
         options={{
           title: 'Dashboard',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="grid" size={size} color={color} />
           ),
@@ -67,6 +68,7 @@ export default function TabLayout() {
         name="reminders"
         options={{
           title: 'Reminders',
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="notifications" size={size} color={color} />
           ),

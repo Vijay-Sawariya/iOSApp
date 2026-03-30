@@ -15,10 +15,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, Stack } from 'expo-router';
 import { api } from '../../../services/api';
 import { notificationService } from '../../../services/notificationService';
-import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface Lead {
   id: number;
@@ -35,6 +34,40 @@ const REMINDER_TYPES = [
   { value: 'Site Visit', icon: 'location', color: '#F59E0B' },
   { value: 'Follow Up', icon: 'chatbubbles', color: '#10B981' },
 ];
+
+// Generate time options for picker (every 30 mins)
+const generateTimeOptions = () => {
+  const options = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hour = h % 12 || 12;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const label = `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+      options.push({ label, hour: h, minute: m });
+    }
+  }
+  return options;
+};
+
+const TIME_OPTIONS = generateTimeOptions();
+
+// Generate date options (past 7 days + next 30 days)
+const generateDateOptions = () => {
+  const options = [];
+  const today = new Date();
+  for (let i = -7; i < 30; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const label = date.toLocaleDateString('en-IN', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric',
+      timeZone: 'Asia/Kolkata'
+    });
+    options.push({ label, date: new Date(date) });
+  }
+  return options;
+};
 
 export default function EditReminderScreen() {
   const { id } = useLocalSearchParams();
@@ -54,13 +87,14 @@ export default function EditReminderScreen() {
   const [showLeadPicker, setShowLeadPicker] = useState(false);
   const [leadSearch, setLeadSearch] = useState('');
 
+  const dateOptions = generateDateOptions();
+
   useEffect(() => {
     loadData();
   }, [reminderId]);
 
   const loadData = async () => {
     try {
-      // Load reminder and leads in parallel
       const [reminders, clients, inventory] = await Promise.all([
         api.getReminders(),
         api.getClientLeads(),
@@ -75,7 +109,6 @@ export default function EditReminderScreen() {
       }));
       setLeads(allLeads);
 
-      // Find the specific reminder
       const reminder = reminders.find((r: any) => r.id.toString() === reminderId);
       if (reminder) {
         setTitle(reminder.title);
@@ -86,9 +119,7 @@ export default function EditReminderScreen() {
 
         if (reminder.lead_id) {
           const lead = allLeads.find(l => l.id === reminder.lead_id);
-          if (lead) {
-            setSelectedLead(lead);
-          }
+          if (lead) setSelectedLead(lead);
         }
       }
     } catch (error) {
@@ -118,7 +149,6 @@ export default function EditReminderScreen() {
 
       await api.updateReminder(reminderId, reminderData);
 
-      // Reschedule notification if status is pending
       if (status === 'pending') {
         await notificationService.scheduleReminderNotification(
           reminderId,
@@ -128,7 +158,6 @@ export default function EditReminderScreen() {
           selectedLead?.name
         );
       } else {
-        // Cancel notification if completed
         await notificationService.cancelReminderNotification(reminderId);
       }
 
@@ -161,25 +190,20 @@ export default function EditReminderScreen() {
     ]);
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
+  const handleDateSelect = (selectedDate: Date) => {
+    const newDate = new Date(reminderDate);
+    newDate.setFullYear(selectedDate.getFullYear());
+    newDate.setMonth(selectedDate.getMonth());
+    newDate.setDate(selectedDate.getDate());
+    setReminderDate(newDate);
     setShowDatePicker(false);
-    if (selectedDate) {
-      const newDate = new Date(reminderDate);
-      newDate.setFullYear(selectedDate.getFullYear());
-      newDate.setMonth(selectedDate.getMonth());
-      newDate.setDate(selectedDate.getDate());
-      setReminderDate(newDate);
-    }
   };
 
-  const onTimeChange = (event: any, selectedTime?: Date) => {
+  const handleTimeSelect = (hour: number, minute: number) => {
+    const newDate = new Date(reminderDate);
+    newDate.setHours(hour, minute, 0, 0);
+    setReminderDate(newDate);
     setShowTimePicker(false);
-    if (selectedTime) {
-      const newDate = new Date(reminderDate);
-      newDate.setHours(selectedTime.getHours());
-      newDate.setMinutes(selectedTime.getMinutes());
-      setReminderDate(newDate);
-    }
   };
 
   const filteredLeads = leads.filter(l =>
@@ -198,6 +222,24 @@ export default function EditReminderScreen() {
     }
   };
 
+  const formatDisplayDate = (date: Date) => {
+    return date.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'Asia/Kolkata',
+    });
+  };
+
+  const formatDisplayTime = (date: Date) => {
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+  };
+
   if (initialLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -208,6 +250,8 @@ export default function EditReminderScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+      
       {/* Header */}
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.header}>
@@ -352,51 +396,29 @@ export default function EditReminderScreen() {
 
           {/* Date & Time */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Date & Time</Text>
+            <Text style={styles.sectionTitle}>Date & Time (IST)</Text>
             <View style={styles.dateTimeContainer}>
               <TouchableOpacity
                 style={styles.dateTimeButton}
                 onPress={() => setShowDatePicker(true)}
               >
                 <Ionicons name="calendar-outline" size={20} color="#3B82F6" />
-                <Text style={styles.dateTimeText}>
-                  {reminderDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                </Text>
+                <Text style={styles.dateTimeText}>{formatDisplayDate(reminderDate)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.dateTimeButton}
                 onPress={() => setShowTimePicker(true)}
               >
                 <Ionicons name="time-outline" size={20} color="#3B82F6" />
-                <Text style={styles.dateTimeText}>
-                  {reminderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
+                <Text style={styles.dateTimeText}>{formatDisplayTime(reminderDate)}</Text>
               </TouchableOpacity>
             </View>
             {status === 'pending' && (
               <Text style={styles.notificationHint}>
-                <Ionicons name="notifications" size={12} color="#6B7280" /> You'll be notified 10 minutes before
+                🔔 You'll be notified 10 minutes before
               </Text>
             )}
           </View>
-
-          {showDatePicker && (
-            <DateTimePicker
-              value={reminderDate}
-              mode="date"
-              display="default"
-              onChange={onDateChange}
-            />
-          )}
-
-          {showTimePicker && (
-            <DateTimePicker
-              value={reminderDate}
-              mode="time"
-              display="default"
-              onChange={onTimeChange}
-            />
-          )}
 
           {/* Notes */}
           <View style={styles.section}>
@@ -423,17 +445,91 @@ export default function EditReminderScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Delete Button */}
+          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            <Text style={styles.deleteButtonText}>Delete Follow-up</Text>
+          </TouchableOpacity>
+
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Date Picker Modal */}
+      <Modal visible={showDatePicker} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.pickerModal}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Date</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={dateOptions}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.pickerItem,
+                    item.date.toDateString() === reminderDate.toDateString() && styles.pickerItemActive,
+                  ]}
+                  onPress={() => handleDateSelect(item.date)}
+                >
+                  <Text style={[
+                    styles.pickerItemText,
+                    item.date.toDateString() === reminderDate.toDateString() && styles.pickerItemTextActive,
+                  ]}>
+                    {item.label}
+                  </Text>
+                  {item.date.toDateString() === reminderDate.toDateString() && (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  )}
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 400 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Time Picker Modal */}
+      <Modal visible={showTimePicker} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.pickerModal}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Time</Text>
+              <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={TIME_OPTIONS}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => {
+                const isSelected = reminderDate.getHours() === item.hour && 
+                                   reminderDate.getMinutes() === item.minute;
+                return (
+                  <TouchableOpacity
+                    style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+                    onPress={() => handleTimeSelect(item.hour, item.minute)}
+                  >
+                    <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
+                      {item.label}
+                    </Text>
+                    {isSelected && <Ionicons name="checkmark" size={20} color="#3B82F6" />}
+                  </TouchableOpacity>
+                );
+              }}
+              style={{ maxHeight: 400 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
       {/* Lead Picker Modal */}
-      <Modal
-        visible={showLeadPicker}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
+      <Modal visible={showLeadPicker} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.leadModalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select Client</Text>
             <TouchableOpacity onPress={() => setShowLeadPicker(false)}>
@@ -679,6 +775,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    marginBottom: 12,
   },
   submitButtonDisabled: {
     backgroundColor: '#93C5FD',
@@ -688,7 +785,65 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  modalContainer: {
+  deleteButton: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deleteButtonText: {
+    color: '#EF4444',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerModal: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  pickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  pickerItemActive: {
+    backgroundColor: '#EFF6FF',
+  },
+  pickerItemText: {
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  pickerItemTextActive: {
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  leadModalContainer: {
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
