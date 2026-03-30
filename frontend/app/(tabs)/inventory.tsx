@@ -408,20 +408,25 @@ export default function InventoryLeadsScreen() {
             </View>
           )}
 
-          {/* Location Row */}
-          {item.location && (
-            <View style={styles.infoRow}>
-              <Ionicons name="location" size={14} color="#6B7280" />
-              <Text style={styles.infoText} numberOfLines={2}>{item.location}</Text>
+          {/* Address & Location Row */}
+          {(item.address || item.location) && (
+            <TouchableOpacity 
+              style={styles.infoRow}
+              onPress={hasMapUrl ? () => openMapUrl(item.Property_locationUrl!) : undefined}
+              disabled={!hasMapUrl}
+              activeOpacity={hasMapUrl ? 0.7 : 1}
+            >
+              <Ionicons name="location" size={14} color={hasMapUrl ? "#3B82F6" : "#6B7280"} />
+              <Text 
+                style={[styles.infoText, hasMapUrl && styles.linkText]} 
+                numberOfLines={2}
+              >
+                {[item.address, item.location].filter(Boolean).join(', ')}
+              </Text>
               {hasMapUrl && (
-                <TouchableOpacity 
-                  style={styles.mapIconButton}
-                  onPress={() => openMapUrl(item.Property_locationUrl!)}
-                >
-                  <Ionicons name="map" size={16} color="#3B82F6" />
-                </TouchableOpacity>
+                <Ionicons name="open-outline" size={14} color="#3B82F6" style={{ marginLeft: 4 }} />
               )}
-            </View>
+            </TouchableOpacity>
           )}
 
           {/* Tags Row */}
@@ -1210,6 +1215,10 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginLeft: 8,
     flex: 1,
+  },
+  linkText: {
+    color: '#3B82F6',
+    textDecorationLine: 'underline',
   },
   mapIconButton: {
     marginLeft: 8,
