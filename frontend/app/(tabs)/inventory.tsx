@@ -336,12 +336,20 @@ export default function InventoryLeadsScreen() {
 
   const renderLeadCard = ({ item }: { item: Lead }) => {
     const typeColor = getTypeColor(item.lead_type);
-    const tempColor = getTemperatureColor(item.lead_temperature);
+    const isHot = item.lead_temperature === 'Hot';
     const floorPricing = formatFloorPricing(item.floor_pricing, item.unit);
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
-    // Format address and location display
-    const addressLocation = [item.address, item.location].filter(Boolean).join(', ');
+    // Get lead type display
+    const getLeadTypeDisplay = (type: string | null) => {
+      switch (type) {
+        case 'seller': return 'Sell';
+        case 'landlord': return 'Rent';
+        case 'builder': return 'Builder';
+        case 'agent': return 'Agent';
+        default: return type || 'N/A';
+      }
+    };
 
     return (
       <View style={styles.leadCard}>
@@ -349,41 +357,39 @@ export default function InventoryLeadsScreen() {
         <TouchableOpacity
           style={styles.leadContent}
           onPress={() => router.push(`/leads/${item.id}`)}
+          activeOpacity={0.7}
         >
+          {/* Name and Type Badge Row */}
           <View style={styles.cardHeader}>
-            <View style={styles.cardTitleRow}>
-              <View style={styles.nameContainer}>
-                <Text style={styles.leadName}>{item.name}</Text>
-                {item.created_by_name && (
-                  <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
-                )}
-              </View>
+            <View style={styles.nameSection}>
+              <Text style={styles.leadName}>{item.name}</Text>
+              {item.created_by_name && (
+                <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
+              )}
+            </View>
+            <View style={styles.typeBadgeContainer}>
               <View style={[styles.typeBadge, { backgroundColor: typeColor.bg }]}>
-                <Text style={[styles.typeText, { color: typeColor.text }]}>
-                  {item.lead_type === 'seller' ? 'Sell' : item.lead_type === 'landlord' ? 'Rent' : 'Builder'}
+                <Text style={[styles.typeBadgeText, { color: typeColor.text }]}>
+                  {getLeadTypeDisplay(item.lead_type)}
                 </Text>
               </View>
+              {isHot && <View style={styles.hotDot} />}
             </View>
-            <View style={[styles.tempIndicator, { backgroundColor: tempColor }]} />
           </View>
 
+          {/* Phone Row */}
           {item.phone && (
             <View style={styles.infoRow}>
-              <Ionicons name="call-outline" size={14} color="#6B7280" />
+              <Ionicons name="call" size={14} color="#6B7280" />
               <Text style={styles.infoText}>{item.phone}</Text>
             </View>
           )}
 
-          {addressLocation && (
+          {/* Location Row */}
+          {item.location && (
             <View style={styles.infoRow}>
-              <Ionicons name="location-outline" size={14} color="#6B7280" />
-              {hasMapUrl ? (
-                <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
-                  <Text style={[styles.infoText, styles.mapLink]}>{addressLocation}</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.infoText}>{addressLocation}</Text>
-              )}
+              <Ionicons name="location" size={14} color="#6B7280" />
+              <Text style={styles.infoText} numberOfLines={2}>{item.location}</Text>
               {hasMapUrl && (
                 <TouchableOpacity 
                   style={styles.mapIconButton}
@@ -395,39 +401,42 @@ export default function InventoryLeadsScreen() {
             </View>
           )}
 
-          <View style={styles.propertyInfo}>
+          {/* Tags Row */}
+          <View style={styles.tagsRow}>
             {item.property_type && (
-              <Text style={styles.propertyText}>{item.property_type}</Text>
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{item.property_type}</Text>
+              </View>
+            )}
+            {item.bhk && (
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{item.bhk}</Text>
+              </View>
             )}
             {item.area_size && (
-              <Text style={styles.propertyText}>{item.area_size} sq.yds</Text>
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{item.area_size} sq.yds</Text>
+              </View>
             )}
             {item.lead_status && (
-              <Text style={styles.statusText}>{item.lead_status}</Text>
+              <View style={[styles.tag, styles.statusTag]}>
+                <Text style={[styles.tagText, styles.statusTagText]}>{item.lead_status}</Text>
+              </View>
             )}
           </View>
 
-          {/* Facing and Amenities Row */}
-          {(item.building_facing || (item as any).required_amenities) && (
-            <View style={styles.facingAmenitiesRow}>
-              {item.building_facing && (
-                <View style={styles.facingTag}>
-                  <Ionicons name="compass-outline" size={12} color="#6366F1" />
-                  <Text style={styles.facingText}>{item.building_facing}</Text>
-                </View>
-              )}
-              {(item as any).required_amenities && (
-                <Text style={styles.amenitiesText} numberOfLines={1}>
-                  {(item as any).required_amenities}
-                </Text>
-              )}
-            </View>
+          {/* Amenities Row */}
+          {(item as any).required_amenities && (
+            <Text style={styles.amenitiesText} numberOfLines={1}>
+              {(item as any).required_amenities}
+            </Text>
           )}
 
+          {/* Floor Pricing Row */}
           {floorPricing && (
-            <View style={styles.pricingRow}>
-              <Ionicons name="cash-outline" size={14} color="#10B981" />
-              <Text style={styles.pricingText} numberOfLines={1}>{floorPricing}</Text>
+            <View style={styles.budgetRow}>
+              <Ionicons name="eye" size={16} color="#10B981" />
+              <Text style={styles.budgetText}>{floorPricing}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -439,15 +448,17 @@ export default function InventoryLeadsScreen() {
             onPress={() => handleAddReminder(item)}
           >
             <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
-            <Text style={styles.actionText}>Reminder</Text>
+            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
           </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => router.push(`/leads/edit/${item.id}` as any)}
           >
             <Ionicons name="create-outline" size={18} color="#3B82F6" />
-            <Text style={styles.actionText}>Edit</Text>
+            <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
           </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleDelete(item.id, item.name)}
@@ -923,12 +934,12 @@ const styles = StyleSheet.create({
   },
   leadCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
   },
@@ -939,175 +950,121 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  nameSection: {
     flex: 1,
+    marginRight: 12,
   },
   leadName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#1F2937',
-    marginRight: 8,
+    marginBottom: 2,
+  },
+  createdByText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  typeBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  typeText: {
-    fontSize: 11,
+  typeBadgeText: {
+    fontSize: 13,
     fontWeight: '600',
   },
-  tempIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  hotDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    marginLeft: 6,
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
   infoText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginLeft: 6,
+    fontSize: 14,
+    color: '#4B5563',
+    marginLeft: 8,
     flex: 1,
-  },
-  mapLink: {
-    color: '#3B82F6',
-    textDecorationLine: 'underline',
   },
   mapIconButton: {
     marginLeft: 8,
     padding: 4,
   },
-  nameContainer: {
-    flex: 1,
-  },
-  createdByText: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  propertyInfo: {
+  tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginTop: 8,
+    marginBottom: 8,
+    gap: 8,
   },
-  propertyText: {
+  tag: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  tagText: {
     fontSize: 12,
     color: '#374151',
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 6,
-    marginBottom: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    color: '#059669',
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  pricingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  pricingText: {
-    fontSize: 12,
-    color: '#10B981',
-    marginLeft: 6,
-    flex: 1,
-  },
-  facingAmenitiesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    marginTop: 6,
-    gap: 6,
-  },
-  facingTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  facingText: {
-    fontSize: 11,
-    color: '#6366F1',
-    marginLeft: 4,
     fontWeight: '500',
+  },
+  statusTag: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#86EFAC',
+  },
+  statusTagText: {
+    color: '#16A34A',
   },
   amenitiesText: {
     fontSize: 11,
     color: '#6B7280',
     fontStyle: 'italic',
-    flex: 1,
+    marginBottom: 4,
   },
-  specSection: {
-    backgroundColor: '#F0F9FF',
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 8,
-  },
-  specTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0369A1',
-    marginBottom: 6,
-  },
-  specRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  specItem: {
-    flex: 1,
-  },
-  specLabel: {
-    fontSize: 10,
-    color: '#6B7280',
-    marginBottom: 2,
-  },
-  specValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0369A1',
-  },
-  circleValueSection: {
-    backgroundColor: '#F5F3FF',
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 8,
-  },
-  circleValueHeader: {
+  budgetRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 4,
   },
-  circleValueTitle: {
-    fontSize: 12,
+  budgetText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#10B981',
+    marginLeft: 8,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  actionDivider: {
+    width: 1,
+    backgroundColor: '#F3F4F6',
+  },
+  actionText: {
+    fontSize: 13,
     fontWeight: '500',
-    color: '#6D28D9',
     marginLeft: 6,
-  },
-  circleValueTotal: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#7C3AED',
-    marginLeft: 'auto',
   },
   emptyContainer: {
     alignItems: 'center',
