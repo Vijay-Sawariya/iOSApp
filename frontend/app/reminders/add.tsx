@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,13 @@ import {
   Platform,
   Modal,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import { api } from '../../services/api';
 import { notificationService } from '../../services/notificationService';
-import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface Lead {
   id: number;
@@ -35,15 +35,15 @@ const REMINDER_TYPES = [
   { value: 'Follow Up', icon: 'chatbubbles', color: '#10B981' },
 ];
 
-// Generate time options for picker (every 30 mins)
+// Generate time options (every 30 mins) - these are IST times
 const generateTimeOptions = () => {
   const options = [];
   for (let h = 0; h < 24; h++) {
     for (let m = 0; m < 60; m += 30) {
-      const hour = h % 12 || 12;
+      const hour12 = h % 12 || 12;
       const ampm = h < 12 ? 'AM' : 'PM';
-      const label = `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
-      options.push({ label, hour: h, minute: m });
+      const label = `${hour12}:${m.toString().padStart(2, '0')} ${ampm}`;
+      options.push({ label, hour24: h, minute: m });
     }
   }
   return options;
@@ -54,17 +54,27 @@ const TIME_OPTIONS = generateTimeOptions();
 // Generate date options (next 30 days)
 const generateDateOptions = () => {
   const options = [];
-  const today = new Date();
+  // Get current date in IST
+  const now = new Date();
+  const istOffset = 5.5 * 60; // IST is UTC+5:30
+  const utcOffset = now.getTimezoneOffset();
+  const istTime = new Date(now.getTime() + (utcOffset + istOffset) * 60 * 1000);
+  
   for (let i = 0; i < 30; i++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() + i);
+    const date = new Date(istTime);
+    date.setDate(istTime.getDate() + i);
     const label = date.toLocaleDateString('en-IN', { 
       weekday: 'short', 
       month: 'short', 
-      day: 'numeric',
-      timeZone: 'Asia/Kolkata'
+      day: 'numeric'
     });
-    options.push({ label, date: new Date(date) });
+    // Store year, month, day for easy reconstruction
+    options.push({ 
+      label, 
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      day: date.getDate()
+    });
   }
   return options;
 };
@@ -74,26 +84,49 @@ export default function AddReminderScreen() {
   const preselectedLeadId = params.lead_id as string | undefined;
   const preselectedLeadName = params.lead_name as string | undefined;
 
+  // Store date and time separately as IST values
+  const [selectedYear, setSelectedYear] = useState<number>(0);
+  const [selectedMonth, setSelectedMonth] = useState<number>(0);
+  const [selectedDay, setSelectedDay] = useState<number>(0);
+  const [selectedHour, setSelectedHour] = useState<number>(0);
+  const [selectedMinute, setSelectedMinute] = useState<number>(0);
+  
   const [title, setTitle] = useState('');
-  const [reminderDate, setReminderDate] = useState(() => {
-    const date = new Date();
-    date.setHours(date.getHours() + 1, 0, 0, 0);
-    return date;
-  });
   const [reminderType, setReminderType] = useState('Call');
   const [notes, setNotes] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showLeadPicker, setShowLeadPicker] = useState(false);
+  
+  // Client search state
   const [leadSearch, setLeadSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<Lead[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   
   const dateOptions = generateDateOptions();
 
+  // Initialize with current IST time + 1 hour
   useEffect(() => {
-    loadLeads();
+    const now = new Date();
+    const istOffset = 5.5 * 60;
+    const utcOffset = now.getTimezoneOffset();
+    const istTime = new Date(now.getTime() + (utcOffset + istOffset) * 60 * 1000);
+    
+    // Add 1 hour and round to next 30 min
+    istTime.setHours(istTime.getHours() + 1);
+    if (istTime.getMinutes() >= 30) {
+      istTime.setMinutes(30);
+    } else {
+      istTime.setMinutes(0);
+    }
+    
+    setSelectedYear(istTime.getFullYear());
+    setSelectedMonth(istTime.getMonth() + 1);
+    setSelectedDay(istTime.getDate());
+    setSelectedHour(istTime.getHours());
+    setSelectedMinute(istTime.getMinutes());
   }, []);
 
   useEffect(() => {
@@ -108,28 +141,53 @@ export default function AddReminderScreen() {
     }
   }, [preselectedLeadId, preselectedLeadName]);
 
-  const loadLeads = async () => {
+  // Debounced search for clients
+  const searchClients = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setSearchLoading(true);
     try {
       const [clients, inventory] = await Promise.all([
         api.getClientLeads(),
         api.getInventoryLeads(),
       ]);
+      
       const allLeads = [...clients, ...inventory].map(l => ({
         id: l.id,
         name: l.name,
         phone: l.phone,
         lead_type: l.lead_type,
       }));
-      setLeads(allLeads);
-
-      if (preselectedLeadId) {
-        const lead = allLeads.find(l => l.id === parseInt(preselectedLeadId));
-        if (lead) setSelectedLead(lead);
-      }
+      
+      // Filter by search query
+      const filtered = allLeads.filter(l =>
+        l.name.toLowerCase().includes(query.toLowerCase()) ||
+        (l.phone && l.phone.includes(query))
+      );
+      
+      setSearchResults(filtered.slice(0, 20)); // Limit to 20 results
     } catch (error) {
-      console.error('Failed to load leads:', error);
+      console.error('Failed to search clients:', error);
+    } finally {
+      setSearchLoading(false);
     }
-  };
+  }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (leadSearch.length >= 2) {
+        searchClients(leadSearch);
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [leadSearch, searchClients]);
 
   const handleSubmit = async () => {
     if (!title) {
@@ -139,9 +197,15 @@ export default function AddReminderScreen() {
 
     setLoading(true);
     try {
+      // Format date and time as IST string for backend
+      // Format: YYYY-MM-DDTHH:MM:SS
+      const dateStr = `${selectedYear}-${selectedMonth.toString().padStart(2, '0')}-${selectedDay.toString().padStart(2, '0')}`;
+      const timeStr = `${selectedHour.toString().padStart(2, '0')}:${selectedMinute.toString().padStart(2, '0')}:00`;
+      const reminderDateIST = `${dateStr}T${timeStr}`;
+
       const reminderData = {
         title,
-        reminder_date: reminderDate.toISOString(),
+        reminder_date: reminderDateIST,
         reminder_type: reminderType,
         notes: notes || null,
         lead_id: selectedLead?.id || null,
@@ -150,11 +214,14 @@ export default function AddReminderScreen() {
 
       const created = await api.createReminder(reminderData);
 
+      // Schedule notification - create a Date object for IST time
+      const notificationDate = new Date(selectedYear, selectedMonth - 1, selectedDay, selectedHour, selectedMinute, 0);
+      
       await notificationService.scheduleReminderNotification(
         created.id.toString(),
         title,
         `${reminderType} reminder${selectedLead ? ` for ${selectedLead.name}` : ''}`,
-        reminderDate,
+        notificationDate,
         selectedLead?.name
       );
 
@@ -162,32 +229,25 @@ export default function AddReminderScreen() {
         { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
       ]);
     } catch (error) {
+      console.error('Create error:', error);
       Alert.alert('Error', 'Failed to create follow-up');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDateSelect = (selectedDate: Date) => {
-    const newDate = new Date(reminderDate);
-    newDate.setFullYear(selectedDate.getFullYear());
-    newDate.setMonth(selectedDate.getMonth());
-    newDate.setDate(selectedDate.getDate());
-    setReminderDate(newDate);
+  const handleDateSelect = (option: { year: number; month: number; day: number }) => {
+    setSelectedYear(option.year);
+    setSelectedMonth(option.month);
+    setSelectedDay(option.day);
     setShowDatePicker(false);
   };
 
-  const handleTimeSelect = (hour: number, minute: number) => {
-    const newDate = new Date(reminderDate);
-    newDate.setHours(hour, minute, 0, 0);
-    setReminderDate(newDate);
+  const handleTimeSelect = (option: { hour24: number; minute: number }) => {
+    setSelectedHour(option.hour24);
+    setSelectedMinute(option.minute);
     setShowTimePicker(false);
   };
-
-  const filteredLeads = leads.filter(l =>
-    l.name.toLowerCase().includes(leadSearch.toLowerCase()) ||
-    (l.phone && l.phone.includes(leadSearch))
-  );
 
   const getLeadTypeLabel = (type: string | null) => {
     switch (type) {
@@ -200,35 +260,31 @@ export default function AddReminderScreen() {
     }
   };
 
-  const formatDisplayDate = (date: Date) => {
-    // Display in IST
+  // Format display date (IST)
+  const formatDisplayDate = () => {
+    if (!selectedYear) return 'Select Date';
+    const date = new Date(selectedYear, selectedMonth - 1, selectedDay);
     return date.toLocaleDateString('en-IN', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
-      timeZone: 'Asia/Kolkata',
     });
   };
 
-  const formatDisplayTime = (date: Date) => {
-    // Display in IST
-    return date.toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Kolkata',
-    });
+  // Format display time (IST)
+  const formatDisplayTime = () => {
+    const hour12 = selectedHour % 12 || 12;
+    const ampm = selectedHour < 12 ? 'am' : 'pm';
+    return `${hour12.toString().padStart(2, '0')}:${selectedMinute.toString().padStart(2, '0')} ${ampm}`;
   };
 
-  // Get current time in IST for initial date
-  const getISTDate = () => {
-    const now = new Date();
-    // Add 1 hour and round to next 30 min
-    const istDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    istDate.setHours(istDate.getHours() + 1);
-    istDate.setMinutes(istDate.getMinutes() >= 30 ? 30 : 0);
-    istDate.setSeconds(0, 0);
-    return istDate;
+  // Check if current selection matches picker option
+  const isDateSelected = (option: { year: number; month: number; day: number }) => {
+    return option.year === selectedYear && option.month === selectedMonth && option.day === selectedDay;
+  };
+
+  const isTimeSelected = (option: { hour24: number; minute: number }) => {
+    return option.hour24 === selectedHour && option.minute === selectedMinute;
   };
 
   return (
@@ -294,7 +350,7 @@ export default function AddReminderScreen() {
             />
           </View>
 
-          {/* Client Selection */}
+          {/* Client Selection - Search Based */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Link to Client</Text>
             <TouchableOpacity
@@ -312,7 +368,7 @@ export default function AddReminderScreen() {
                   </View>
                 </View>
               ) : (
-                <Text style={styles.placeholderText}>Select a client (optional)</Text>
+                <Text style={styles.placeholderText}>Search and select a client</Text>
               )}
               <Ionicons name="chevron-down" size={20} color="#6B7280" />
             </TouchableOpacity>
@@ -326,7 +382,7 @@ export default function AddReminderScreen() {
             )}
           </View>
 
-          {/* Date & Time - Custom Pickers */}
+          {/* Date & Time - IST */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Date & Time (IST)</Text>
             <View style={styles.dateTimeContainer}>
@@ -335,18 +391,18 @@ export default function AddReminderScreen() {
                 onPress={() => setShowDatePicker(true)}
               >
                 <Ionicons name="calendar-outline" size={20} color="#3B82F6" />
-                <Text style={styles.dateTimeText}>{formatDisplayDate(reminderDate)}</Text>
+                <Text style={styles.dateTimeText}>{formatDisplayDate()}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.dateTimeButton}
                 onPress={() => setShowTimePicker(true)}
               >
                 <Ionicons name="time-outline" size={20} color="#3B82F6" />
-                <Text style={styles.dateTimeText}>{formatDisplayTime(reminderDate)}</Text>
+                <Text style={styles.dateTimeText}>{formatDisplayTime()}</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.notificationHint}>
-              🔔 You'll be notified 10 minutes before
+              🔔 You'll be notified 10 minutes before (IST)
             </Text>
           </View>
 
@@ -384,7 +440,7 @@ export default function AddReminderScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.pickerModal}>
             <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>Select Date</Text>
+              <Text style={styles.pickerTitle}>Select Date (IST)</Text>
               <TouchableOpacity onPress={() => setShowDatePicker(false)}>
                 <Ionicons name="close" size={24} color="#1F2937" />
               </TouchableOpacity>
@@ -396,17 +452,17 @@ export default function AddReminderScreen() {
                 <TouchableOpacity
                   style={[
                     styles.pickerItem,
-                    item.date.toDateString() === reminderDate.toDateString() && styles.pickerItemActive,
+                    isDateSelected(item) && styles.pickerItemActive,
                   ]}
-                  onPress={() => handleDateSelect(item.date)}
+                  onPress={() => handleDateSelect(item)}
                 >
                   <Text style={[
                     styles.pickerItemText,
-                    item.date.toDateString() === reminderDate.toDateString() && styles.pickerItemTextActive,
+                    isDateSelected(item) && styles.pickerItemTextActive,
                   ]}>
                     {item.label}
                   </Text>
-                  {item.date.toDateString() === reminderDate.toDateString() && (
+                  {isDateSelected(item) && (
                     <Ionicons name="checkmark" size={20} color="#3B82F6" />
                   )}
                 </TouchableOpacity>
@@ -422,7 +478,7 @@ export default function AddReminderScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.pickerModal}>
             <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>Select Time</Text>
+              <Text style={styles.pickerTitle}>Select Time (IST)</Text>
               <TouchableOpacity onPress={() => setShowTimePicker(false)}>
                 <Ionicons name="close" size={24} color="#1F2937" />
               </TouchableOpacity>
@@ -430,33 +486,41 @@ export default function AddReminderScreen() {
             <FlatList
               data={TIME_OPTIONS}
               keyExtractor={(item, index) => index.toString()}
-              renderItem={({ item }) => {
-                const isSelected = reminderDate.getHours() === item.hour && 
-                                   reminderDate.getMinutes() === item.minute;
-                return (
-                  <TouchableOpacity
-                    style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
-                    onPress={() => handleTimeSelect(item.hour, item.minute)}
-                  >
-                    <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
-                      {item.label}
-                    </Text>
-                    {isSelected && <Ionicons name="checkmark" size={20} color="#3B82F6" />}
-                  </TouchableOpacity>
-                );
-              }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.pickerItem,
+                    isTimeSelected(item) && styles.pickerItemActive,
+                  ]}
+                  onPress={() => handleTimeSelect(item)}
+                >
+                  <Text style={[
+                    styles.pickerItemText,
+                    isTimeSelected(item) && styles.pickerItemTextActive,
+                  ]}>
+                    {item.label}
+                  </Text>
+                  {isTimeSelected(item) && (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  )}
+                </TouchableOpacity>
+              )}
               style={{ maxHeight: 400 }}
             />
           </View>
         </View>
       </Modal>
 
-      {/* Lead Picker Modal */}
+      {/* Lead Picker Modal - Search Based */}
       <Modal visible={showLeadPicker} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={styles.leadModalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Client</Text>
-            <TouchableOpacity onPress={() => setShowLeadPicker(false)}>
+            <Text style={styles.modalTitle}>Search Client</Text>
+            <TouchableOpacity onPress={() => {
+              setShowLeadPicker(false);
+              setLeadSearch('');
+              setSearchResults([]);
+            }}>
               <Ionicons name="close" size={24} color="#1F2937" />
             </TouchableOpacity>
           </View>
@@ -467,45 +531,59 @@ export default function AddReminderScreen() {
               style={styles.searchInput}
               value={leadSearch}
               onChangeText={setLeadSearch}
-              placeholder="Search by name or phone..."
+              placeholder="Type at least 2 characters to search..."
               placeholderTextColor="#9CA3AF"
+              autoFocus
             />
+            {searchLoading && (
+              <ActivityIndicator size="small" color="#3B82F6" />
+            )}
           </View>
 
-          <FlatList
-            data={filteredLeads}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.leadItem}
-                onPress={() => {
-                  setSelectedLead(item);
-                  setShowLeadPicker(false);
-                  setLeadSearch('');
-                  if (!title) setTitle(`Follow up with ${item.name}`);
-                }}
-              >
-                <View style={styles.leadItemIcon}>
-                  <Ionicons name="person" size={20} color="#3B82F6" />
-                </View>
-                <View style={styles.leadItemContent}>
-                  <Text style={styles.leadItemName}>{item.name}</Text>
-                  <View style={styles.leadItemMeta}>
-                    {item.phone && <Text style={styles.leadItemPhone}>{item.phone}</Text>}
-                    <View style={styles.leadTypeBadge}>
-                      <Text style={styles.leadTypeText}>{getLeadTypeLabel(item.lead_type)}</Text>
+          {leadSearch.length < 2 ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="information-circle-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.searchHintText}>Enter client name or phone number</Text>
+              <Text style={styles.searchHintSubtext}>Minimum 2 characters required</Text>
+            </View>
+          ) : searchResults.length === 0 && !searchLoading ? (
+            <View style={styles.searchHint}>
+              <Ionicons name="search-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.searchHintText}>No clients found</Text>
+              <Text style={styles.searchHintSubtext}>Try a different search term</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.leadItem}
+                  onPress={() => {
+                    setSelectedLead(item);
+                    setShowLeadPicker(false);
+                    setLeadSearch('');
+                    setSearchResults([]);
+                    if (!title) setTitle(`Follow up with ${item.name}`);
+                  }}
+                >
+                  <View style={styles.leadItemIcon}>
+                    <Ionicons name="person" size={20} color="#3B82F6" />
+                  </View>
+                  <View style={styles.leadItemContent}>
+                    <Text style={styles.leadItemName}>{item.name}</Text>
+                    <View style={styles.leadItemMeta}>
+                      {item.phone && <Text style={styles.leadItemPhone}>{item.phone}</Text>}
+                      <View style={styles.leadTypeBadge}>
+                        <Text style={styles.leadTypeText}>{getLeadTypeLabel(item.lead_type)}</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <View style={styles.emptyList}>
-                <Text style={styles.emptyText}>No clients found</Text>
-              </View>
-            }
-          />
+                  <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+                </TouchableOpacity>
+              )}
+            />
+          )}
         </SafeAreaView>
       </Modal>
     </View>
@@ -750,6 +828,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1F2937',
   },
+  searchHint: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  searchHintText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginTop: 16,
+  },
+  searchHintSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
   leadItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -796,13 +891,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#6B7280',
     fontWeight: '500',
-  },
-  emptyList: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#9CA3AF',
   },
 });
