@@ -208,8 +208,55 @@ export default function InventoryLeadsScreen() {
       });
     }
 
-    // Budget filter (using floor_pricing or other budget field)
-    // For now, we'll skip budget filtering as it's complex with floor pricing
+    // Budget filter based on floor_pricing
+    // Logic: 
+    // - If no floor is selected: search min/max price among ALL available floors
+    // - If floor is selected: search only for those specific floors' prices
+    if (bMin || bMax) {
+      const budgetMinVal = bMin ? parseFloat(bMin) : 0;
+      const budgetMaxVal = bMax ? parseFloat(bMax) : Infinity;
+      
+      filtered = filtered.filter((lead) => {
+        // Get floor pricing array
+        const floorPricing = lead.floor_pricing;
+        if (!floorPricing || floorPricing.length === 0) {
+          // No floor pricing data - skip this lead if budget filter is active
+          return false;
+        }
+        
+        let pricesToCheck: number[] = [];
+        
+        if (floors.length === 0) {
+          // No floor selected - check ALL floors' prices
+          pricesToCheck = floorPricing.map(fp => fp.floor_amount);
+        } else {
+          // Floors selected - only check those specific floors' prices
+          pricesToCheck = floorPricing
+            .filter(fp => {
+              const fpLabel = fp.floor_label.toLowerCase();
+              return floors.some(selectedFloor => 
+                fpLabel.includes(selectedFloor.toLowerCase()) || 
+                selectedFloor.toLowerCase().includes(fpLabel)
+              );
+            })
+            .map(fp => fp.floor_amount);
+        }
+        
+        if (pricesToCheck.length === 0) {
+          // No matching floor prices found
+          return false;
+        }
+        
+        // Check if any price falls within the budget range
+        // Logic: Lead matches if ANY of its floor prices fall within the budget range
+        const minPrice = Math.min(...pricesToCheck);
+        const maxPrice = Math.max(...pricesToCheck);
+        
+        // A lead matches if its price range overlaps with the search budget range
+        // This means: lead's max price >= search min AND lead's min price <= search max
+        return maxPrice >= budgetMinVal && minPrice <= budgetMaxVal;
+      });
+    }
 
     setFilteredLeads(filtered);
   };
@@ -531,273 +578,7 @@ export default function InventoryLeadsScreen() {
 
       {/* Content Area */}
       <View style={styles.contentArea}>
-        {/* Stats Bar */}
-        <View style={styles.statsBar}>
-          <View style={[styles.statItem, styles.statItemActive]}>
-            <Text style={[styles.statNumber, styles.statNumberActive]}>{stats.total}</Text>
-            <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.sellers}</Text>
-            <Text style={styles.statLabel}>Sellers</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.landlords}</Text>
-            <Text style={styles.statLabel}>Landlords</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.builders}</Text>
-            <Text style={styles.statLabel}>Builders</Text>
-          </View>
-        </View>
-
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#9CA3AF" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search inventories..."
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={handleSearch}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch('')}>
-              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Filter Panel - Same as Clients */}
-        {showFilters && (
-          <View style={styles.filterContainer}>
-            {/* Location Selector */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Location:</Text>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setShowLocationPicker(true)}
-              >
-                <Text style={[styles.selectorText, selectedLocations.length === 0 && styles.placeholderText]}>
-                  {selectedLocations.length > 0 
-                    ? `${selectedLocations.length} selected` 
-                    : 'Select locations'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
-              {selectedLocations.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedLocations.map(loc => (
-                    <TouchableOpacity
-                      key={loc}
-                      style={styles.selectedTag}
-                      onPress={() => {
-                        toggleLocation(loc);
-                        handleApplyFilters();
-                      }}
-                    >
-                      <Text style={styles.selectedTagText}>{loc}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Floor Selector */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Floor:</Text>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setShowFloorPicker(true)}
-              >
-                <Text style={[styles.selectorText, selectedFloors.length === 0 && styles.placeholderText]}>
-                  {selectedFloors.length > 0 
-                    ? `${selectedFloors.length} selected` 
-                    : 'Select floors'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
-              {selectedFloors.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedFloors.map(floor => (
-                    <TouchableOpacity
-                      key={floor}
-                      style={styles.selectedTag}
-                      onPress={() => {
-                        toggleFloor(floor);
-                        handleApplyFilters();
-                      }}
-                    >
-                      <Text style={styles.selectedTagText}>{floor}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Type Filter */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Type:</Text>
-              <View style={styles.filterOptions}>
-                {TYPE_OPTIONS.map((t) => (
-                  <TouchableOpacity
-                    key={t.value}
-                    style={[
-                      styles.filterChip,
-                      typeFilter === t.value && styles.filterChipActive,
-                    ]}
-                    onPress={() => {
-                      setTypeFilter(typeFilter === t.value ? '' : t.value);
-                      setTimeout(handleApplyFilters, 0);
-                    }}
-                  >
-                    <Text style={[
-                      styles.filterChipText,
-                      typeFilter === t.value && styles.filterChipTextActive
-                    ]}>{t.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Status Selector */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Status:</Text>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setShowStatusPicker(true)}
-              >
-                <Text style={[styles.selectorText, selectedStatuses.length === 0 && styles.placeholderText]}>
-                  {selectedStatuses.length > 0 
-                    ? `${selectedStatuses.length} selected` 
-                    : 'Select statuses'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
-              {selectedStatuses.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedStatuses.map(status => (
-                    <TouchableOpacity
-                      key={status}
-                      style={styles.selectedTag}
-                      onPress={() => {
-                        toggleStatus(status);
-                        handleApplyFilters();
-                      }}
-                    >
-                      <Text style={styles.selectedTagText}>{status}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Area Range */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Area (Sq Yds):</Text>
-              <View style={styles.rangeRow}>
-                <TextInput
-                  style={styles.rangeInput}
-                  placeholder="Min"
-                  placeholderTextColor="#9CA3AF"
-                  value={areaMin}
-                  onChangeText={(text) => {
-                    setAreaMin(text);
-                  }}
-                  onBlur={handleApplyFilters}
-                  keyboardType="numeric"
-                />
-                <Text style={styles.rangeSeparator}>-</Text>
-                <TextInput
-                  style={styles.rangeInput}
-                  placeholder="Max"
-                  placeholderTextColor="#9CA3AF"
-                  value={areaMax}
-                  onChangeText={(text) => {
-                    setAreaMax(text);
-                  }}
-                  onBlur={handleApplyFilters}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            {/* Budget Range */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Budget (CR):</Text>
-              <View style={styles.rangeRow}>
-                <TextInput
-                  style={styles.rangeInput}
-                  placeholder="Min"
-                  placeholderTextColor="#9CA3AF"
-                  value={budgetMin}
-                  onChangeText={(text) => {
-                    setBudgetMin(text);
-                  }}
-                  onBlur={handleApplyFilters}
-                  keyboardType="numeric"
-                />
-                <Text style={styles.rangeSeparator}>-</Text>
-                <TextInput
-                  style={styles.rangeInput}
-                  placeholder="Max"
-                  placeholderTextColor="#9CA3AF"
-                  value={budgetMax}
-                  onChangeText={(text) => {
-                    setBudgetMax(text);
-                  }}
-                  onBlur={handleApplyFilters}
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            {/* Facing Selector */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Facing:</Text>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setShowFacingPicker(true)}
-              >
-                <Text style={[styles.selectorText, selectedFacings.length === 0 && styles.placeholderText]}>
-                  {selectedFacings.length > 0 
-                    ? `${selectedFacings.length} selected` 
-                    : 'Select facings'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
-              {selectedFacings.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedFacings.map(facing => (
-                    <TouchableOpacity
-                      key={facing}
-                      style={styles.selectedTag}
-                      onPress={() => {
-                        toggleFacing(facing);
-                        handleApplyFilters();
-                      }}
-                    >
-                      <Text style={styles.selectedTagText}>{facing}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-            
-            {hasActiveFilters() && (
-              <TouchableOpacity style={styles.clearFiltersBtn} onPress={clearAllFilters}>
-                <Ionicons name="refresh" size={16} color="#EF4444" />
-                <Text style={styles.clearFiltersText}>Clear All Filters</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Leads List */}
+        {/* Leads List with Header Components */}
         <FlatList
           data={filteredLeads}
           renderItem={renderLeadCard}
@@ -805,6 +586,275 @@ export default function InventoryLeadsScreen() {
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
+          }
+          ListHeaderComponent={
+            <>
+              {/* Stats Bar */}
+              <View style={styles.statsBar}>
+                <View style={[styles.statItem, styles.statItemActive]}>
+                  <Text style={[styles.statNumber, styles.statNumberActive]}>{stats.total}</Text>
+                  <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{stats.sellers}</Text>
+                  <Text style={styles.statLabel}>Sellers</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{stats.landlords}</Text>
+                  <Text style={styles.statLabel}>Landlords</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{stats.builders}</Text>
+                  <Text style={styles.statLabel}>Builders</Text>
+                </View>
+              </View>
+
+              {/* Search Bar */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#9CA3AF" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search inventories..."
+                  placeholderTextColor="#9CA3AF"
+                  value={searchQuery}
+                  onChangeText={handleSearch}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => handleSearch('')}>
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Filter Panel */}
+              {showFilters && (
+                <View style={styles.filterContainer}>
+                  {/* Location Selector */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Location:</Text>
+                    <TouchableOpacity
+                      style={styles.selectorButton}
+                      onPress={() => setShowLocationPicker(true)}
+                    >
+                      <Text style={[styles.selectorText, selectedLocations.length === 0 && styles.placeholderText]}>
+                        {selectedLocations.length > 0 
+                          ? `${selectedLocations.length} selected` 
+                          : 'Select locations'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                    {selectedLocations.length > 0 && (
+                      <View style={styles.selectedTags}>
+                        {selectedLocations.map(loc => (
+                          <TouchableOpacity
+                            key={loc}
+                            style={styles.selectedTag}
+                            onPress={() => {
+                              toggleLocation(loc);
+                              handleApplyFilters();
+                            }}
+                          >
+                            <Text style={styles.selectedTagText}>{loc}</Text>
+                            <Ionicons name="close" size={14} color="#6B7280" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Floor Selector */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Floor:</Text>
+                    <TouchableOpacity
+                      style={styles.selectorButton}
+                      onPress={() => setShowFloorPicker(true)}
+                    >
+                      <Text style={[styles.selectorText, selectedFloors.length === 0 && styles.placeholderText]}>
+                        {selectedFloors.length > 0 
+                          ? `${selectedFloors.length} selected` 
+                          : 'Select floors'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                    {selectedFloors.length > 0 && (
+                      <View style={styles.selectedTags}>
+                        {selectedFloors.map(floor => (
+                          <TouchableOpacity
+                            key={floor}
+                            style={styles.selectedTag}
+                            onPress={() => {
+                              toggleFloor(floor);
+                              handleApplyFilters();
+                            }}
+                          >
+                            <Text style={styles.selectedTagText}>{floor}</Text>
+                            <Ionicons name="close" size={14} color="#6B7280" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Type Filter */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Type:</Text>
+                    <View style={styles.filterOptions}>
+                      {TYPE_OPTIONS.map((t) => (
+                        <TouchableOpacity
+                          key={t.value}
+                          style={[
+                            styles.filterChip,
+                            typeFilter === t.value && styles.filterChipActive,
+                          ]}
+                          onPress={() => {
+                            setTypeFilter(typeFilter === t.value ? '' : t.value);
+                            setTimeout(handleApplyFilters, 0);
+                          }}
+                        >
+                          <Text style={[
+                            styles.filterChipText,
+                            typeFilter === t.value && styles.filterChipTextActive
+                          ]}>{t.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Status Selector */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Status:</Text>
+                    <TouchableOpacity
+                      style={styles.selectorButton}
+                      onPress={() => setShowStatusPicker(true)}
+                    >
+                      <Text style={[styles.selectorText, selectedStatuses.length === 0 && styles.placeholderText]}>
+                        {selectedStatuses.length > 0 
+                          ? `${selectedStatuses.length} selected` 
+                          : 'Select statuses'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                    {selectedStatuses.length > 0 && (
+                      <View style={styles.selectedTags}>
+                        {selectedStatuses.map(status => (
+                          <TouchableOpacity
+                            key={status}
+                            style={styles.selectedTag}
+                            onPress={() => {
+                              toggleStatus(status);
+                              handleApplyFilters();
+                            }}
+                          >
+                            <Text style={styles.selectedTagText}>{status}</Text>
+                            <Ionicons name="close" size={14} color="#6B7280" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Area Range */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Area (Sq Yds):</Text>
+                    <View style={styles.rangeRow}>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Min"
+                        placeholderTextColor="#9CA3AF"
+                        value={areaMin}
+                        onChangeText={(text) => {
+                          setAreaMin(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.rangeSeparator}>-</Text>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Max"
+                        placeholderTextColor="#9CA3AF"
+                        value={areaMax}
+                        onChangeText={(text) => {
+                          setAreaMax(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Budget Range */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Budget (CR):</Text>
+                    <View style={styles.rangeRow}>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Min"
+                        placeholderTextColor="#9CA3AF"
+                        value={budgetMin}
+                        onChangeText={(text) => {
+                          setBudgetMin(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.rangeSeparator}>-</Text>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Max"
+                        placeholderTextColor="#9CA3AF"
+                        value={budgetMax}
+                        onChangeText={(text) => {
+                          setBudgetMax(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Facing Selector */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Facing:</Text>
+                    <TouchableOpacity
+                      style={styles.selectorButton}
+                      onPress={() => setShowFacingPicker(true)}
+                    >
+                      <Text style={[styles.selectorText, selectedFacings.length === 0 && styles.placeholderText]}>
+                        {selectedFacings.length > 0 
+                          ? `${selectedFacings.length} selected` 
+                          : 'Select facings'}
+                      </Text>
+                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
+                    </TouchableOpacity>
+                    {selectedFacings.length > 0 && (
+                      <View style={styles.selectedTags}>
+                        {selectedFacings.map(facing => (
+                          <TouchableOpacity
+                            key={facing}
+                            style={styles.selectedTag}
+                            onPress={() => {
+                              toggleFacing(facing);
+                              handleApplyFilters();
+                            }}
+                          >
+                            <Text style={styles.selectedTagText}>{facing}</Text>
+                            <Ionicons name="close" size={14} color="#6B7280" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                  
+                  {hasActiveFilters() && (
+                    <TouchableOpacity style={styles.clearFiltersBtn} onPress={clearAllFilters}>
+                      <Ionicons name="refresh" size={16} color="#EF4444" />
+                      <Text style={styles.clearFiltersText}>Clear All Filters</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+            </>
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -967,6 +1017,18 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     fontSize: 16,
     color: '#1F2937',
+  },
+  filterScrollContainer: {
+    maxHeight: 400,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  filterScrollContent: {
+    padding: 16,
   },
   filterContainer: {
     backgroundColor: '#FFFFFF',
