@@ -1110,6 +1110,7 @@ const styles = StyleSheet.create({
   rangeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   rangeInput: {
     flex: 1,
@@ -1120,9 +1121,9 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 15,
     color: '#1F2937',
+    minWidth: 0,
   },
   rangeSeparator: {
-    marginHorizontal: 12,
     fontSize: 16,
     color: '#6B7280',
   },
