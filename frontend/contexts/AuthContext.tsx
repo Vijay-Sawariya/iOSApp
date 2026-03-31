@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setAuthToken } from '../services/api';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -71,9 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('Clearing old MongoDB auth data');
           await storage.deleteItem('token');
           await storage.deleteItem('user');
+          setAuthToken(null);
         } else {
           setToken(storedToken);
           setUser(user);
+          setAuthToken(storedToken);  // Set token for API calls
         }
       }
     } catch (error) {
@@ -81,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Clear corrupted data
       await storage.deleteItem('token');
       await storage.deleteItem('user');
+      setAuthToken(null);
     } finally {
       setLoading(false);
     }
@@ -101,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         setToken(data.access_token);
         setUser(data.user);
+        setAuthToken(data.access_token);  // Set token for API calls
         await storage.setItem('token', data.access_token);
         await storage.setItem('user', JSON.stringify(data.user));
         return true;
@@ -154,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setUser(null);
       setToken(null);
+      setAuthToken(null);  // Clear token for API calls
       await storage.deleteItem('token');
       await storage.deleteItem('user');
     } catch (error) {
