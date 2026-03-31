@@ -45,37 +45,63 @@ const formatDateIST = (dateString: string) => {
 
 const getDateInfo = (dateString: string) => {
   // Parse the date - the server sends it in format YYYY-MM-DDTHH:MM:SS (IST)
-  let date: Date;
+  // We parse it as local date components (since the string already represents IST)
+  let year: number, month: number, day: number, hours: number, minutes: number, seconds: number;
   
   if (dateString.includes('T')) {
-    // Parse ISO format - treat it as IST time
+    // Parse ISO format - these values ARE IST values
     const [datePart, timePart] = dateString.split('T');
-    const [year, month, day] = datePart.split('-').map(Number);
-    const [hours, minutes, seconds] = timePart.split(':').map(Number);
-    date = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+    [year, month, day] = datePart.split('-').map(Number);
+    const timeParts = timePart.split(':').map(Number);
+    hours = timeParts[0];
+    minutes = timeParts[1];
+    seconds = timeParts[2] || 0;
   } else if (dateString.includes(' ')) {
     const [datePart, timePart] = dateString.split(' ');
-    const [year, month, day] = datePart.split('-').map(Number);
-    const [hours, minutes, seconds] = timePart.split(':').map(Number);
-    date = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+    [year, month, day] = datePart.split('-').map(Number);
+    const timeParts = timePart.split(':').map(Number);
+    hours = timeParts[0];
+    minutes = timeParts[1];
+    seconds = timeParts[2] || 0;
   } else {
-    date = new Date(dateString);
+    const date = new Date(dateString);
+    year = date.getFullYear();
+    month = date.getMonth() + 1;
+    day = date.getDate();
+    hours = date.getHours();
+    minutes = date.getMinutes();
+    seconds = 0;
   }
   
-  // Get current time - assuming device is in IST or we compare directly
+  // Get current time in IST
+  // IST is UTC+5:30
   const now = new Date();
+  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const istTime = new Date(utcTime + (5.5 * 60 * 60000));
   
-  // For date comparison
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const reminderDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // Create comparable values
+  const reminderTimestamp = new Date(year, month - 1, day, hours, minutes, seconds).getTime();
   
-  const isToday = reminderDay.getTime() === today.getTime();
-  const isTomorrow = reminderDay.getTime() === tomorrow.getTime();
+  // Get IST date components for comparison
+  const nowYear = istTime.getFullYear();
+  const nowMonth = istTime.getMonth();
+  const nowDay = istTime.getDate();
+  const nowHours = istTime.getHours();
+  const nowMinutes = istTime.getMinutes();
   
-  // Check if overdue - compare timestamps
-  const isPast = date.getTime() < now.getTime();
+  // Create timestamps for comparison (treating IST as local)
+  const nowTimestampIST = new Date(nowYear, nowMonth, nowDay, nowHours, nowMinutes, 0).getTime();
+  
+  // Today/Tomorrow comparison (in IST)
+  const todayStartIST = new Date(nowYear, nowMonth, nowDay, 0, 0, 0).getTime();
+  const reminderDayStartIST = new Date(year, month - 1, day, 0, 0, 0).getTime();
+  const tomorrowStartIST = todayStartIST + 24 * 60 * 60 * 1000;
+  
+  const isToday = reminderDayStartIST === todayStartIST;
+  const isTomorrow = reminderDayStartIST === tomorrowStartIST;
+  
+  // Check if overdue - compare full timestamps
+  const isPast = reminderTimestamp < nowTimestampIST;
 
   let dateLabel = '';
   if (isToday) {
@@ -83,20 +109,19 @@ const getDateInfo = (dateString: string) => {
   } else if (isTomorrow) {
     dateLabel = 'Tomorrow';
   } else {
-    dateLabel = date.toLocaleDateString('en-IN', { 
+    const displayDate = new Date(year, month - 1, day);
+    dateLabel = displayDate.toLocaleDateString('en-IN', { 
       month: 'short', 
       day: 'numeric', 
       year: 'numeric' 
     });
   }
 
-  // Format time in 12-hour format
-  let hours = date.getHours();
-  const minutes = date.getMinutes();
+  // Format time in 12-hour format (IST)
+  let hour12 = hours % 12;
+  hour12 = hour12 ? hour12 : 12;
   const ampm = hours >= 12 ? 'pm' : 'am';
-  hours = hours % 12;
-  hours = hours ? hours : 12;
-  const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+  const timeStr = `${hour12.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
   
   return { dateLabel, timeStr, isPast, isToday };
 };
@@ -175,27 +200,32 @@ export default function RemindersScreen() {
   };
 
   const getStatusColor = (status: string) => {
-    return status === 'completed' ? '#10B981' : '#F59E0B';
+    const statusLower = status?.toLowerCase() || '';
+    return statusLower === 'completed' ? '#10B981' : '#F59E0B';
   };
 
   const filteredReminders = reminders.filter(r => {
-    if (filter === 'pending') return r.status === 'pending';
-    if (filter === 'completed') return r.status === 'completed';
+    const statusLower = (r.status || '').toLowerCase();
+    if (filter === 'pending') return statusLower === 'pending' || statusLower === 'up coming';
+    if (filter === 'completed') return statusLower === 'completed';
     return true;
   });
 
   const sortedReminders = [...filteredReminders].sort((a, b) => {
-    if (a.status === 'pending' && b.status === 'completed') return -1;
-    if (a.status === 'completed' && b.status === 'pending') return 1;
+    const aStatusLower = (a.status || '').toLowerCase();
+    const bStatusLower = (b.status || '').toLowerCase();
+    if (aStatusLower === 'pending' && bStatusLower === 'completed') return -1;
+    if (aStatusLower === 'completed' && bStatusLower === 'pending') return 1;
     return new Date(a.reminder_date).getTime() - new Date(b.reminder_date).getTime();
   });
 
-  const pendingCount = reminders.filter(r => r.status === 'pending').length;
-  const completedCount = reminders.filter(r => r.status === 'completed').length;
+  const pendingCount = reminders.filter(r => (r.status || '').toLowerCase() === 'pending').length;
+  const completedCount = reminders.filter(r => (r.status || '').toLowerCase() === 'completed').length;
 
   const renderReminder = ({ item }: { item: Reminder }) => {
     const { dateLabel, timeStr, isPast, isToday } = getDateInfo(item.reminder_date);
-    const isOverdue = isPast && item.status === 'pending';
+    const statusLower = (item.status || '').toLowerCase();
+    const isOverdue = isPast && statusLower === 'pending';
 
     return (
       <TouchableOpacity
@@ -239,7 +269,7 @@ export default function RemindersScreen() {
                   <Text style={styles.overdueLabel}>OVERDUE</Text>
                 </View>
               )}
-              {isToday && !isOverdue && item.status === 'pending' && (
+              {isToday && !isOverdue && statusLower === 'pending' && (
                 <View style={styles.todayBadge}>
                   <Text style={styles.todayLabel}>TODAY</Text>
                 </View>
@@ -265,7 +295,7 @@ export default function RemindersScreen() {
               </Text>
             </View>
             
-            {item.status === 'pending' && (
+            {statusLower === 'pending' && (
               <TouchableOpacity
                 style={styles.completeButton}
                 onPress={() => handleMarkComplete(item.id)}

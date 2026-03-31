@@ -361,19 +361,24 @@ class ReminderResponse(BaseModel):
     id: int
     lead_id: Optional[int]
     title: str
-    reminder_date: datetime
-    reminder_type: str
-    notes: Optional[str]
+    due_date: str  # Date in YYYY-MM-DD format
+    due_time: Optional[str]  # Time in HH:MM:SS format
+    action_type: str
+    description: Optional[str]
     status: str
+    priority: Optional[str]
+    outcome: Optional[str]
+    is_notified: Optional[int]
     created_at: Optional[datetime]
 
 class ReminderCreate(BaseModel):
     lead_id: Optional[int] = None
     title: str
-    reminder_date: datetime
-    reminder_type: str
-    notes: Optional[str] = None
-    status: str = "pending"
+    reminder_date: str  # ISO format datetime string (YYYY-MM-DDTHH:MM:SS)
+    reminder_type: str  # Maps to action_type
+    notes: Optional[str] = None  # Maps to description
+    status: str = "Pending"
+    priority: Optional[str] = "Medium"
 
 class DashboardStats(BaseModel):
     total_leads: int
@@ -996,109 +1001,148 @@ def create_followup(lead_id: int, followup: FollowupCreate, current_user: dict =
     
     return created
 
-# ============= Reminder Routes =============
+# ============= Reminder Routes (using actions table) =============
 @api_router.get("/reminders")
 def get_reminders(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get all reminders with lead information"""
+    """Get all actions/reminders with lead information"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT r.*, l.name as lead_name, l.phone as lead_phone,
-               CONCAT(r.reminder_date, ' ', COALESCE(r.reminder_time, '00:00:00')) as reminder_datetime
-               FROM reminders r
-               LEFT JOIN leads l ON r.lead_id = l.id
-               ORDER BY r.reminder_date ASC, r.reminder_time ASC LIMIT %s OFFSET %s""",
-            (limit, skip)
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone
+               FROM actions a
+               LEFT JOIN leads l ON a.lead_id = l.id
+               WHERE a.user_id = %s
+               ORDER BY a.due_date ASC, a.due_time ASC LIMIT %s OFFSET %s""",
+            (current_user['id'], limit, skip)
         )
-        reminders = cursor.fetchall()
+        actions = cursor.fetchall()
         
-        # Convert datetime for proper JSON serialization
+        # Convert to expected frontend format
         result = []
-        for r in reminders:
-            r_dict = dict(r)
-            # Combine date and time into ISO format
-            if r_dict.get('reminder_date') and r_dict.get('reminder_time'):
-                date_str = str(r_dict['reminder_date'])
-                time_str = str(r_dict['reminder_time'])
-                r_dict['reminder_date'] = f"{date_str}T{time_str}"
-            result.append(r_dict)
+        for a in actions:
+            a_dict = dict(a)
+            # Map actions columns to reminder format for frontend
+            # Combine due_date and due_time into reminder_date
+            if a_dict.get('due_date'):
+                date_str = str(a_dict['due_date'])
+                time_str = str(a_dict.get('due_time', '00:00:00') or '00:00:00')
+                a_dict['reminder_date'] = f"{date_str}T{time_str}"
+            
+            # Map action_type to reminder_type
+            a_dict['reminder_type'] = a_dict.get('action_type', 'Task')
+            
+            # Map description to notes
+            a_dict['notes'] = a_dict.get('description')
+            
+            result.append(a_dict)
     
     return result
 
 @api_router.post("/reminders")
 def create_reminder(reminder: ReminderCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new action/reminder in the actions table"""
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Parse the reminder_date to extract date and time parts
+        # Parse the reminder_date to extract date and time parts (IST)
+        # Format expected: YYYY-MM-DDTHH:MM:SS (already in IST from frontend)
         reminder_datetime = reminder.reminder_date
-        if isinstance(reminder_datetime, str):
-            # Handle ISO format datetime string
-            try:
-                dt = datetime.fromisoformat(reminder_datetime.replace('Z', '+00:00'))
-                date_part = dt.strftime('%Y-%m-%d')
-                time_part = dt.strftime('%H:%M:%S')
-            except:
-                date_part = reminder_datetime[:10] if len(reminder_datetime) >= 10 else reminder_datetime
-                time_part = '00:00:00'
+        if isinstance(reminder_datetime, str) and 'T' in reminder_datetime:
+            parts = reminder_datetime.split('T')
+            date_part = parts[0]  # YYYY-MM-DD
+            time_part = parts[1] if len(parts) > 1 else '00:00:00'  # HH:MM:SS
+            # Ensure time format is correct
+            if len(time_part) == 5:  # HH:MM
+                time_part += ':00'
         else:
-            date_part = reminder_datetime.strftime('%Y-%m-%d')
-            time_part = reminder_datetime.strftime('%H:%M:%S')
+            date_part = str(reminder_datetime)[:10] if reminder_datetime else None
+            time_part = '00:00:00'
         
+        # Map status to valid enum values for actions table
+        # actions status: 'Pending','Completed','Snoozed','Missed','Dismissed','Up Coming'
+        status = reminder.status
+        if status.lower() == 'pending':
+            status = 'Pending'
+        elif status.lower() == 'completed':
+            status = 'Completed'
+        
+        # Insert into actions table
         cursor.execute(
-            """INSERT INTO reminders (lead_id, title, reminder_date, reminder_time, reminder_type, notes, status, created_at, created_by)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (reminder.lead_id, reminder.title, date_part, time_part, reminder.reminder_type,
-             reminder.notes, reminder.status, datetime.utcnow(), current_user['id'])
+            """INSERT INTO actions (user_id, lead_id, title, description, action_type, due_date, due_time, status, priority, is_notified)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (current_user['id'], reminder.lead_id, reminder.title, reminder.notes,
+             reminder.reminder_type, date_part, time_part, status, reminder.priority or 'Medium', 0)
         )
         conn.commit()
-        reminder_id = cursor.lastrowid
+        action_id = cursor.lastrowid
         
         cursor.execute(
-            """SELECT r.*, l.name as lead_name, l.phone as lead_phone 
-               FROM reminders r
-               LEFT JOIN leads l ON r.lead_id = l.id
-               WHERE r.id = %s""", 
-            (reminder_id,)
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone 
+               FROM actions a
+               LEFT JOIN leads l ON a.lead_id = l.id
+               WHERE a.id = %s""", 
+            (action_id,)
         )
         created = cursor.fetchone()
         
-        # Format response
+        # Format response for frontend
         if created:
             created = dict(created)
-            if created.get('reminder_date') and created.get('reminder_time'):
-                date_str = str(created['reminder_date'])
-                time_str = str(created['reminder_time'])
+            if created.get('due_date'):
+                date_str = str(created['due_date'])
+                time_str = str(created.get('due_time', '00:00:00') or '00:00:00')
                 created['reminder_date'] = f"{date_str}T{time_str}"
+            created['reminder_type'] = created.get('action_type', 'Task')
+            created['notes'] = created.get('description')
     
     return created
 
 @api_router.put("/reminders/{reminder_id}")
 def update_reminder(reminder_id: int, reminder_data: dict, current_user: dict = Depends(get_current_user)):
-    """Update a reminder"""
+    """Update an action/reminder"""
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Handle reminder_date - split into date and time parts
+        # Handle reminder_date - split into due_date and due_time parts
         if 'reminder_date' in reminder_data:
             reminder_datetime = reminder_data['reminder_date']
             if isinstance(reminder_datetime, str) and 'T' in reminder_datetime:
-                try:
-                    dt = datetime.fromisoformat(reminder_datetime.replace('Z', '+00:00'))
-                    reminder_data['reminder_date'] = dt.strftime('%Y-%m-%d')
-                    reminder_data['reminder_time'] = dt.strftime('%H:%M:%S')
-                except:
-                    pass
+                parts = reminder_datetime.split('T')
+                reminder_data['due_date'] = parts[0]
+                time_part = parts[1] if len(parts) > 1 else '00:00:00'
+                if len(time_part) == 5:
+                    time_part += ':00'
+                reminder_data['due_time'] = time_part
+            del reminder_data['reminder_date']
+        
+        # Map reminder_type to action_type
+        if 'reminder_type' in reminder_data:
+            reminder_data['action_type'] = reminder_data['reminder_type']
+            del reminder_data['reminder_type']
+        
+        # Map notes to description
+        if 'notes' in reminder_data:
+            reminder_data['description'] = reminder_data['notes']
+            del reminder_data['notes']
+        
+        # Map status
+        if 'status' in reminder_data:
+            status = reminder_data['status']
+            if status.lower() == 'pending':
+                reminder_data['status'] = 'Pending'
+            elif status.lower() == 'completed':
+                reminder_data['status'] = 'Completed'
+                reminder_data['completed_at'] = datetime.now()
         
         # Build dynamic update query
         update_fields = []
         values = []
         
-        allowed_fields = ['title', 'reminder_date', 'reminder_time', 'reminder_type', 'notes', 'status', 'lead_id']
+        allowed_fields = ['title', 'due_date', 'due_time', 'action_type', 'description', 'status', 'lead_id', 'priority', 'outcome', 'completed_at', 'is_notified']
         
         for field in allowed_fields:
             if field in reminder_data:
@@ -1109,36 +1153,48 @@ def update_reminder(reminder_id: int, reminder_data: dict, current_user: dict = 
             raise HTTPException(status_code=400, detail="No fields to update")
         
         values.append(reminder_id)
-        query = f"UPDATE reminders SET {', '.join(update_fields)} WHERE id = %s"
+        values.append(current_user['id'])
+        query = f"UPDATE actions SET {', '.join(update_fields)} WHERE id = %s AND user_id = %s"
         
         cursor.execute(query, values)
         conn.commit()
         
         if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Reminder not found")
+            raise HTTPException(status_code=404, detail="Action/Reminder not found")
         
         cursor.execute(
-            """SELECT r.*, l.name as lead_name, l.phone as lead_phone 
-               FROM reminders r
-               LEFT JOIN leads l ON r.lead_id = l.id
-               WHERE r.id = %s""", 
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone 
+               FROM actions a
+               LEFT JOIN leads l ON a.lead_id = l.id
+               WHERE a.id = %s""", 
             (reminder_id,)
         )
         updated = cursor.fetchone()
+        
+        # Format response
+        if updated:
+            updated = dict(updated)
+            if updated.get('due_date'):
+                date_str = str(updated['due_date'])
+                time_str = str(updated.get('due_time', '00:00:00') or '00:00:00')
+                updated['reminder_date'] = f"{date_str}T{time_str}"
+            updated['reminder_type'] = updated.get('action_type', 'Task')
+            updated['notes'] = updated.get('description')
     
     return updated
 
 @api_router.delete("/reminders/{reminder_id}")
 def delete_reminder(reminder_id: int, current_user: dict = Depends(get_current_user)):
+    """Delete an action/reminder"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM reminders WHERE id = %s", (reminder_id,))
+        cursor.execute("DELETE FROM actions WHERE id = %s AND user_id = %s", (reminder_id, current_user['id']))
         conn.commit()
         
         if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Reminder not found")
+            raise HTTPException(status_code=404, detail="Action/Reminder not found")
     
-    return {"message": "Reminder deleted successfully"}
+    return {"message": "Action/Reminder deleted successfully"}
 
 # ============= Dashboard Routes =============
 @api_router.get("/dashboard/stats", response_model=DashboardStats)

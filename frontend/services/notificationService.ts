@@ -39,12 +39,18 @@ const getDeviceOffsetFromIST = (): number => {
 
 /**
  * Convert IST date/time components to a local Date for notification scheduling
+ * This creates a Date object that represents the given IST time in the device's local timezone
+ * 
+ * Example: If IST is 18:30 and device is in UTC:
+ * - IST 18:30 = UTC 13:00
+ * - So we need to create a Date that shows 13:00 in UTC device time
+ * 
  * @param year - Year in IST
  * @param month - Month (1-12) in IST
  * @param day - Day in IST
  * @param hour - Hour (0-23) in IST
  * @param minute - Minute in IST
- * @returns Date object in local device time
+ * @returns Date object in local device time that corresponds to the IST input
  */
 const istToLocalDate = (
   year: number,
@@ -53,19 +59,19 @@ const istToLocalDate = (
   hour: number,
   minute: number
 ): Date => {
-  // Create a date assuming IST values
-  // First, create the date as if it's local time
-  const localDate = new Date(year, month - 1, day, hour, minute, 0);
+  // First, create a UTC timestamp for this IST time
+  // IST is UTC+5:30, so we need to subtract 5:30 to get UTC
+  // Create the date as if it were UTC, then adjust
   
-  // Calculate the offset between IST and device timezone
-  const offsetMinutes = getDeviceOffsetFromIST();
+  // Create a date in UTC that represents the IST time
+  // IST time X:XX is UTC time X-5:30
+  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  // Subtract IST offset to get true UTC
+  const trueUTCTime = utcDate.getTime() - IST_OFFSET_MINUTES * 60 * 1000;
   
-  // Adjust the time by subtracting the offset
-  // If device is behind IST (e.g., UTC), we subtract the difference
-  // If device is ahead of IST (e.g., UTC+8), we add the difference
-  const adjustedTime = new Date(localDate.getTime() - offsetMinutes * 60 * 1000);
-  
-  return adjustedTime;
+  // Now create a local Date from this UTC timestamp
+  // This will automatically be in the device's local timezone
+  return new Date(trueUTCTime);
 };
 
 export const notificationService = {
