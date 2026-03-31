@@ -26,52 +26,45 @@ export interface ScheduledNotification {
 }
 
 /**
- * Get the current device timezone offset from IST in minutes
- * This is used to correctly schedule notifications at the right local time
+ * Calculate seconds from now until the given IST time
+ * This is the most reliable way to schedule notifications
  */
-const getDeviceOffsetFromIST = (): number => {
-  // Device's UTC offset in minutes (negative for UTC+)
-  const deviceOffsetMinutes = new Date().getTimezoneOffset() * -1;
-  // IST is UTC+330 minutes
-  // Difference = IST - Device
-  return IST_OFFSET_MINUTES - deviceOffsetMinutes;
-};
-
-/**
- * Convert IST date/time components to a local Date for notification scheduling
- * This creates a Date object that represents the given IST time in the device's local timezone
- * 
- * Example: If IST is 18:30 and device is in UTC:
- * - IST 18:30 = UTC 13:00
- * - So we need to create a Date that shows 13:00 in UTC device time
- * 
- * @param year - Year in IST
- * @param month - Month (1-12) in IST
- * @param day - Day in IST
- * @param hour - Hour (0-23) in IST
- * @param minute - Minute in IST
- * @returns Date object in local device time that corresponds to the IST input
- */
-const istToLocalDate = (
+const getSecondsUntilIST = (
   year: number,
-  month: number,
+  month: number,  // 1-12
   day: number,
-  hour: number,
+  hour: number,   // 0-23 in IST
   minute: number
-): Date => {
-  // First, create a UTC timestamp for this IST time
-  // IST is UTC+5:30, so we need to subtract 5:30 to get UTC
-  // Create the date as if it were UTC, then adjust
+): number => {
+  // Get current time in IST
+  const now = new Date();
+  const nowUTC = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+  const nowIST = new Date(nowUTC + (IST_OFFSET_MINUTES * 60 * 1000));
   
-  // Create a date in UTC that represents the IST time
-  // IST time X:XX is UTC time X-5:30
-  const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  // Subtract IST offset to get true UTC
-  const trueUTCTime = utcDate.getTime() - IST_OFFSET_MINUTES * 60 * 1000;
+  // Create target time in IST (as a simple Date for comparison)
+  // We create both dates as if they're in the same timezone for comparison
+  const targetIST = new Date(year, month - 1, day, hour, minute, 0);
   
-  // Now create a local Date from this UTC timestamp
-  // This will automatically be in the device's local timezone
-  return new Date(trueUTCTime);
+  // Calculate difference in milliseconds
+  const nowISTTimestamp = new Date(
+    nowIST.getFullYear(),
+    nowIST.getMonth(),
+    nowIST.getDate(),
+    nowIST.getHours(),
+    nowIST.getMinutes(),
+    nowIST.getSeconds()
+  ).getTime();
+  
+  const targetISTTimestamp = targetIST.getTime();
+  
+  const diffMs = targetISTTimestamp - nowISTTimestamp;
+  const diffSeconds = Math.floor(diffMs / 1000);
+  
+  console.log(`[Notification] Now IST: ${nowIST.toLocaleString()}`);
+  console.log(`[Notification] Target IST: ${targetIST.toLocaleString()}`);
+  console.log(`[Notification] Seconds until notification: ${diffSeconds}`);
+  
+  return diffSeconds;
 };
 
 export const notificationService = {
@@ -254,12 +247,12 @@ export const notificationService = {
         notifDay = lastDay;
       }
 
-      // Convert IST notification time to local device time
-      const notificationTimeLocal = istToLocalDate(notifYear, notifMonth, notifDay, notifHour, notifMinute);
+      // Calculate seconds from now until the notification time
+      const secondsUntil = getSecondsUntilIST(notifYear, notifMonth, notifDay, notifHour, notifMinute);
 
       // Don't schedule if the notification time is in the past
-      if (notificationTimeLocal <= new Date()) {
-        console.log('Notification time is in the past, skipping');
+      if (secondsUntil <= 0) {
+        console.log(`[Notification] Time is in the past (${secondsUntil}s), skipping`);
         return null;
       }
 
@@ -271,6 +264,14 @@ export const notificationService = {
         ? `Follow-up with ${leadName} in 10 minutes`
         : body || 'You have a reminder in 10 minutes';
 
+      // Format IST time for logging
+      const hour12 = notifHour % 12 || 12;
+      const ampm = notifHour < 12 ? 'AM' : 'PM';
+      const timeStr = `${hour12}:${notifMinute.toString().padStart(2, '0')} ${ampm}`;
+
+      console.log(`[Notification] Scheduling for ${timeStr} IST (in ${secondsUntil} seconds)`);
+
+      // Use seconds trigger - this is more reliable than date trigger
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
           title: notificationTitle,
@@ -281,15 +282,10 @@ export const notificationService = {
           vibrate: [0, 250, 250, 250],
         },
         trigger: {
-          date: notificationTimeLocal,
+          seconds: secondsUntil,
           channelId: Platform.OS === 'android' ? 'reminders' : undefined,
         },
       });
-
-      // Format IST time for logging
-      const hour12 = notifHour % 12 || 12;
-      const ampm = notifHour < 12 ? 'AM' : 'PM';
-      const timeStr = `${hour12}:${notifMinute.toString().padStart(2, '0')} ${ampm}`;
 
       // Store the notification mapping with IST time
       const istTimeStr = `${notifYear}-${notifMonth.toString().padStart(2, '0')}-${notifDay.toString().padStart(2, '0')}T${notifHour.toString().padStart(2, '0')}:${notifMinute.toString().padStart(2, '0')}:00`;
@@ -299,7 +295,7 @@ export const notificationService = {
         istTimeStr
       );
 
-      console.log(`Scheduled notification ${notificationId} for reminder ${reminderId} at ${timeStr} IST`);
+      console.log(`[Notification] Scheduled ${notificationId} for reminder ${reminderId} at ${timeStr} IST (in ${Math.round(secondsUntil/60)} mins)`);
       return notificationId;
     } catch (error) {
       console.error('Error scheduling notification:', error);
