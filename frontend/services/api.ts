@@ -1,4 +1,5 @@
 import { cacheService } from './cacheService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -6,10 +7,24 @@ let authToken: string | null = null;
 let isOfflineMode = false;
 
 export const setAuthToken = (token: string | null) => {
+  console.log('setAuthToken called with:', token ? 'token present' : 'null');
   authToken = token;
 };
 
 export const getAuthToken = () => authToken;
+
+// Initialize token from storage on app start
+export const initializeAuthToken = async () => {
+  try {
+    const storedToken = await AsyncStorage.getItem('token');
+    if (storedToken) {
+      authToken = storedToken;
+      console.log('Auth token initialized from storage');
+    }
+  } catch (error) {
+    console.error('Failed to initialize auth token:', error);
+  }
+};
 
 export const setOfflineMode = (offline: boolean) => {
   isOfflineMode = offline;
@@ -17,10 +32,13 @@ export const setOfflineMode = (offline: boolean) => {
 
 export const getOfflineMode = () => isOfflineMode;
 
-const getHeaders = () => ({
-  'Content-Type': 'application/json',
-  ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-});
+const getHeaders = () => {
+  console.log('getHeaders - authToken present:', !!authToken);
+  return {
+    'Content-Type': 'application/json',
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  };
+};
 
 // Helper function to fetch with offline fallback
 const fetchWithCache = async <T>(

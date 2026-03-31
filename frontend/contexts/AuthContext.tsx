@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setAuthToken } from '../services/api';
+import { setAuthToken, initializeAuthToken } from '../services/api';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -56,7 +56,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadStoredAuth();
+    // Initialize API token first, then load stored auth
+    initializeAuthToken().then(() => {
+      loadStoredAuth();
+    });
   }, []);
 
   const loadStoredAuth = async () => {
