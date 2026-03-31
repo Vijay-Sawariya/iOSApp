@@ -370,4 +370,67 @@ export const api = {
     if (!response.ok) throw new Error('Failed to create followup');
     return response.json();
   },
+
+  // Tentative Pricing APIs
+  getAllPricing: async () => {
+    const response = await fetch(`${API_URL}/api/pricing`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch pricing');
+    return response.json();
+  },
+
+  getPricingDetail: async (pricingId: number) => {
+    const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch pricing details');
+    return response.json();
+  },
+
+  createPricing: async (data: {
+    location_id: number;
+    circle: string;
+    plot_size: number;
+    price_per_sq_yard: string;
+    min_price: number;
+    max_price: number;
+    tentative_price?: number;
+    floors: { floor_label: string; tentative_floor_price: string }[];
+  }) => {
+    const response = await fetch(`${API_URL}/api/pricing`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to create pricing');
+    return response.json();
+  },
+
+  updatePricing: async (pricingId: number, data: any) => {
+    const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to update pricing');
+    return response.json();
+  },
+
+  deletePricing: async (pricingId: number) => {
+    const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete pricing');
+    return response.json();
+  },
+
+  getAllLocations: async () => {
+    const response = await fetch(`${API_URL}/api/locations/all`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch locations');
+    return response.json();
+  },
 };

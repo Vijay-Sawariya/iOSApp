@@ -1249,6 +1249,201 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         pending_reminders=pending_reminders
     )
 
+# ============= Tentative Pricing Routes =============
+class PlotPricingCreate(BaseModel):
+    location_id: int
+    circle: str
+    plot_size: int
+    price_per_sq_yard: str
+    min_price: float
+    max_price: float
+    tentative_price: Optional[float] = None
+    floors: List[dict] = []  # [{floor_label: str, tentative_floor_price: str}]
+
+@api_router.get("/pricing")
+def get_all_pricing(current_user: dict = Depends(get_current_user)):
+    """Get all tentative pricing grouped by location"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Get all plot pricing with location info
+        cursor.execute("""
+            SELECT pp.*, l.name as location_name, l.colony_category, l.`Circle Rate` as location_circle_rate
+            FROM plot_pricing pp
+            JOIN locations l ON pp.location_id = l.id
+            ORDER BY l.name ASC, pp.plot_size ASC
+        """)
+        plot_pricings = cursor.fetchall()
+        
+        # Get all floor pricing
+        cursor.execute("""
+            SELECT pf.* FROM plot_floor_pricing pf
+            ORDER BY pf.plot_pricing_id ASC
+        """)
+        floor_pricings = cursor.fetchall()
+        
+        # Group floor pricing by plot_pricing_id
+        floors_by_plot = {}
+        for fp in floor_pricings:
+            plot_id = fp['plot_pricing_id']
+            if plot_id not in floors_by_plot:
+                floors_by_plot[plot_id] = []
+            floors_by_plot[plot_id].append({
+                'id': fp['id'],
+                'floor_label': fp['floor_label'],
+                'tentative_floor_price': fp['tentative_floor_price']
+            })
+        
+        # Group by location
+        grouped = {}
+        for pp in plot_pricings:
+            loc_name = pp['location_name']
+            if loc_name not in grouped:
+                grouped[loc_name] = {
+                    'location_id': pp['location_id'],
+                    'location_name': loc_name,
+                    'colony_category': pp['colony_category'],
+                    'circle_rate': pp['location_circle_rate'] or pp['circle'],
+                    'plots': []
+                }
+            
+            grouped[loc_name]['plots'].append({
+                'id': pp['id'],
+                'plot_size': pp['plot_size'],
+                'price_per_sq_yard': pp['price_per_sq_yard'],
+                'min_price': float(pp['min_price']) if pp['min_price'] else 0,
+                'max_price': float(pp['max_price']) if pp['max_price'] else 0,
+                'tentative_price': float(pp['tentative_price']) if pp['tentative_price'] else None,
+                'floors': floors_by_plot.get(pp['id'], [])
+            })
+        
+        return list(grouped.values())
+
+@api_router.get("/pricing/{pricing_id}")
+def get_pricing_detail(pricing_id: int, current_user: dict = Depends(get_current_user)):
+    """Get details for a specific plot pricing"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT pp.*, l.name as location_name, l.colony_category, l.`Circle Rate` as location_circle_rate
+            FROM plot_pricing pp
+            JOIN locations l ON pp.location_id = l.id
+            WHERE pp.id = %s
+        """, (pricing_id,))
+        pricing = cursor.fetchone()
+        
+        if not pricing:
+            raise HTTPException(status_code=404, detail="Pricing not found")
+        
+        # Get floor pricing
+        cursor.execute("""
+            SELECT * FROM plot_floor_pricing WHERE plot_pricing_id = %s
+        """, (pricing_id,))
+        floors = cursor.fetchall()
+        
+        result = dict(pricing)
+        result['floors'] = [dict(f) for f in floors]
+        return result
+
+@api_router.post("/pricing")
+def create_pricing(pricing: PlotPricingCreate, current_user: dict = Depends(get_current_user)):
+    """Create new plot pricing with floor prices"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Insert plot pricing
+        cursor.execute("""
+            INSERT INTO plot_pricing (location_id, circle, plot_size, price_per_sq_yard, min_price, max_price, tentative_price, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+        """, (pricing.location_id, pricing.circle, pricing.plot_size, pricing.price_per_sq_yard, 
+              pricing.min_price, pricing.max_price, pricing.tentative_price))
+        conn.commit()
+        
+        plot_pricing_id = cursor.lastrowid
+        
+        # Insert floor pricing
+        for floor in pricing.floors:
+            if floor.get('floor_label') and floor.get('tentative_floor_price'):
+                cursor.execute("""
+                    INSERT INTO plot_floor_pricing (plot_pricing_id, floor_label, tentative_floor_price, created_at, updated_at)
+                    VALUES (%s, %s, %s, NOW(), NOW())
+                """, (plot_pricing_id, floor['floor_label'], floor['tentative_floor_price']))
+        
+        conn.commit()
+        
+        return {"id": plot_pricing_id, "message": "Pricing created successfully"}
+
+@api_router.put("/pricing/{pricing_id}")
+def update_pricing(pricing_id: int, pricing_data: dict, current_user: dict = Depends(get_current_user)):
+    """Update plot pricing"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Update plot pricing
+        update_fields = []
+        values = []
+        allowed_fields = ['location_id', 'circle', 'plot_size', 'price_per_sq_yard', 'min_price', 'max_price', 'tentative_price']
+        
+        for field in allowed_fields:
+            if field in pricing_data:
+                update_fields.append(f"{field} = %s")
+                values.append(pricing_data[field])
+        
+        if update_fields:
+            update_fields.append("updated_at = NOW()")
+            values.append(pricing_id)
+            query = f"UPDATE plot_pricing SET {', '.join(update_fields)} WHERE id = %s"
+            cursor.execute(query, values)
+        
+        # Update floor pricing if provided
+        if 'floors' in pricing_data:
+            # Delete existing floors
+            cursor.execute("DELETE FROM plot_floor_pricing WHERE plot_pricing_id = %s", (pricing_id,))
+            
+            # Insert new floors
+            for floor in pricing_data['floors']:
+                if floor.get('floor_label') and floor.get('tentative_floor_price'):
+                    cursor.execute("""
+                        INSERT INTO plot_floor_pricing (plot_pricing_id, floor_label, tentative_floor_price, created_at, updated_at)
+                        VALUES (%s, %s, %s, NOW(), NOW())
+                    """, (pricing_id, floor['floor_label'], floor['tentative_floor_price']))
+        
+        conn.commit()
+        
+        return {"message": "Pricing updated successfully"}
+
+@api_router.delete("/pricing/{pricing_id}")
+def delete_pricing(pricing_id: int, current_user: dict = Depends(get_current_user)):
+    """Delete plot pricing and its floor prices"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Delete floor pricing first
+        cursor.execute("DELETE FROM plot_floor_pricing WHERE plot_pricing_id = %s", (pricing_id,))
+        
+        # Delete plot pricing
+        cursor.execute("DELETE FROM plot_pricing WHERE id = %s", (pricing_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Pricing not found")
+        
+        return {"message": "Pricing deleted successfully"}
+
+@api_router.get("/locations/all")
+def get_all_locations(current_user: dict = Depends(get_current_user)):
+    """Get all locations with circle rates"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, name, colony_category, `Circle Rate` as circle_rate
+            FROM locations
+            ORDER BY name ASC
+        """)
+        locations = cursor.fetchall()
+        return [dict(l) for l in locations]
+
 # Include router
 app.include_router(api_router)
 

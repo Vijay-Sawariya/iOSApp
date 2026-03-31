@@ -74,6 +74,16 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="pricing"
+        options={{
+          title: 'Pricing',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calculator" size={size} color={color} />
+          ),
+        }}
+      />
       {/* Hide the old leads tab */}
       <Tabs.Screen
         name="leads"
