@@ -61,6 +61,7 @@ export default function ClientLeadsScreen() {
   const [showFloorPicker, setShowFloorPicker] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
   const [floorSearch, setFloorSearch] = useState('');
+  const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
 
   // Memoized filtered lists for modals
   const filteredLocations = useMemo(() => 
@@ -106,9 +107,15 @@ export default function ClientLeadsScreen() {
     temp: string | null, 
     sort: 'name' | 'date' | null,
     locations: string[] = selectedLocations,
-    floors: string[] = selectedFloors
+    floors: string[] = selectedFloors,
+    statTile: string = selectedStatTile
   ) => {
     let filtered = [...data];
+
+    // Stat tile filter (from clicking the count tiles)
+    if (statTile && statTile !== 'total') {
+      filtered = filtered.filter((lead) => lead.lead_type === statTile);
+    }
     
     if (search) {
       const normalizedSearch = normalizeSearchText(search);
@@ -169,17 +176,22 @@ export default function ClientLeadsScreen() {
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    applyFilters(leads, text, temperatureFilter, sortBy);
+    applyFilters(leads, text, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile);
   };
 
   const handleTemperatureFilter = (temp: string | null) => {
     setTemperatureFilter(temp);
-    applyFilters(leads, searchQuery, temp, sortBy);
+    applyFilters(leads, searchQuery, temp, sortBy, selectedLocations, selectedFloors, selectedStatTile);
   };
 
   const handleSort = (sort: 'name' | 'date' | null) => {
     setSortBy(sort);
-    applyFilters(leads, searchQuery, temperatureFilter, sort);
+    applyFilters(leads, searchQuery, temperatureFilter, sort, selectedLocations, selectedFloors, selectedStatTile);
+  };
+
+  const handleStatTileClick = (tile: string) => {
+    setSelectedStatTile(tile);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, tile);
   };
 
   const toggleLocation = (loc: string) => {
@@ -195,11 +207,11 @@ export default function ClientLeadsScreen() {
   };
 
   const handleApplyLocationFloorFilters = () => {
-    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile);
   };
 
   const hasActiveFilters = () => {
-    return temperatureFilter !== null || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0;
+    return temperatureFilter !== null || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
   };
 
   const clearAllFilters = () => {
@@ -208,7 +220,8 @@ export default function ClientLeadsScreen() {
     setSelectedLocations([]);
     setSelectedFloors([]);
     setSearchQuery('');
-    applyFilters(leads, '', null, null, [], []);
+    setSelectedStatTile('total');
+    applyFilters(leads, '', null, null, [], [], 'total');
   };
 
   const getTemperatureColor = (temp: string | null) => {
@@ -425,24 +438,36 @@ export default function ClientLeadsScreen() {
 
       {/* White Content Area */}
       <View style={styles.contentArea}>
-        {/* Stats Bar */}
+        {/* Stats Bar - Clickable Tiles */}
         <View style={styles.statsBar}>
-          <View style={[styles.statItem, styles.statItemActive]}>
-            <Text style={[styles.statNumber, styles.statNumberActive]}>{stats.total}</Text>
-            <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.buyers}</Text>
-            <Text style={styles.statLabel}>Buyers</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.tenants}</Text>
-            <Text style={styles.statLabel}>Tenants</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{stats.agents}</Text>
-            <Text style={styles.statLabel}>Agents</Text>
-          </View>
+          <TouchableOpacity 
+            style={[styles.statItem, selectedStatTile === 'total' && styles.statItemActive]}
+            onPress={() => handleStatTileClick('total')}
+          >
+            <Text style={[styles.statNumber, selectedStatTile === 'total' && styles.statNumberActive]}>{stats.total}</Text>
+            <Text style={[styles.statLabel, selectedStatTile === 'total' && styles.statLabelActive]}>Total</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.statItem, selectedStatTile === 'buyer' && styles.statItemActive]}
+            onPress={() => handleStatTileClick('buyer')}
+          >
+            <Text style={[styles.statNumber, selectedStatTile === 'buyer' && styles.statNumberActive]}>{stats.buyers}</Text>
+            <Text style={[styles.statLabel, selectedStatTile === 'buyer' && styles.statLabelActive]}>Buyers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.statItem, selectedStatTile === 'tenant' && styles.statItemActive]}
+            onPress={() => handleStatTileClick('tenant')}
+          >
+            <Text style={[styles.statNumber, selectedStatTile === 'tenant' && styles.statNumberActive]}>{stats.tenants}</Text>
+            <Text style={[styles.statLabel, selectedStatTile === 'tenant' && styles.statLabelActive]}>Tenants</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.statItem, selectedStatTile === 'agent' && styles.statItemActive]}
+            onPress={() => handleStatTileClick('agent')}
+          >
+            <Text style={[styles.statNumber, selectedStatTile === 'agent' && styles.statNumberActive]}>{stats.agents}</Text>
+            <Text style={[styles.statLabel, selectedStatTile === 'agent' && styles.statLabelActive]}>Agents</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Search Bar */}

@@ -59,6 +59,8 @@ export default function InventoryLeadsScreen() {
   const [budgetMin, setBudgetMin] = useState('');
   const [budgetMax, setBudgetMax] = useState('');
   const [addressFilter, setAddressFilter] = useState('');
+  const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
+  const [addressFilter, setAddressFilter] = useState('');
   
   // Modal states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -132,8 +134,14 @@ export default function InventoryLeadsScreen() {
     bMin: string = budgetMin,
     bMax: string = budgetMax,
     addrFilter: string = addressFilter,
+    statTile: string = selectedStatTile,
   ) => {
     let filtered = [...data];
+    
+    // Stat tile filter (from clicking the count tiles)
+    if (statTile && statTile !== 'total') {
+      filtered = filtered.filter((lead) => lead.lead_type === statTile);
+    }
     
     // Search filter
     if (search) {
@@ -310,15 +318,21 @@ export default function InventoryLeadsScreen() {
     setSelectedFacings(newFacings);
   };
 
+  const handleStatTileClick = (tile: string) => {
+    setSelectedStatTile(tile);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, tile);
+  };
+
   const handleApplyFilters = () => {
-    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile);
   };
 
   const hasActiveFilters = () => {
     return selectedLocations.length > 0 || selectedFloors.length > 0 || 
            selectedStatuses.length > 0 || selectedFacings.length > 0 ||
            typeFilter !== '' || areaMin !== '' || areaMax !== '' ||
-           budgetMin !== '' || budgetMax !== '' || addressFilter !== '';
+           budgetMin !== '' || budgetMax !== '' || addressFilter !== '' ||
+           selectedStatTile !== 'total';
   };
 
   const clearAllFilters = () => {
@@ -333,7 +347,8 @@ export default function InventoryLeadsScreen() {
     setBudgetMax('');
     setAddressFilter('');
     setSearchQuery('');
-    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '');
+    setSelectedStatTile('total');
+    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total');
   };
 
   const openMapUrl = (url: string) => {
@@ -605,24 +620,36 @@ export default function InventoryLeadsScreen() {
           }
           ListHeaderComponent={
             <>
-              {/* Stats Bar */}
+              {/* Stats Bar - Clickable Tiles */}
               <View style={styles.statsBar}>
-                <View style={[styles.statItem, styles.statItemActive]}>
-                  <Text style={[styles.statNumber, styles.statNumberActive]}>{stats.total}</Text>
-                  <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{stats.sellers}</Text>
-                  <Text style={styles.statLabel}>Sellers</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{stats.landlords}</Text>
-                  <Text style={styles.statLabel}>Landlords</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{stats.builders}</Text>
-                  <Text style={styles.statLabel}>Builders</Text>
-                </View>
+                <TouchableOpacity 
+                  style={[styles.statItem, selectedStatTile === 'total' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('total')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'total' && styles.statNumberActive]}>{stats.total}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'total' && styles.statLabelActive]}>Total</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.statItem, selectedStatTile === 'seller' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('seller')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'seller' && styles.statNumberActive]}>{stats.sellers}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'seller' && styles.statLabelActive]}>Sellers</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.statItem, selectedStatTile === 'landlord' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('landlord')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'landlord' && styles.statNumberActive]}>{stats.landlords}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'landlord' && styles.statLabelActive]}>Landlords</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.statItem, selectedStatTile === 'builder' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('builder')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'builder' && styles.statNumberActive]}>{stats.builders}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'builder' && styles.statLabelActive]}>Builders</Text>
+                </TouchableOpacity>
               </View>
 
               {/* Search Bar */}
@@ -659,6 +686,32 @@ export default function InventoryLeadsScreen() {
               {/* Filter Panel */}
               {showFilters && (
                 <View style={styles.filterContainer}>
+                  {/* Address Filter - First */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Address:</Text>
+                    <View style={styles.addressInputContainer}>
+                      <Ionicons name="location-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={styles.addressInput}
+                        placeholder="Search by address..."
+                        placeholderTextColor="#9CA3AF"
+                        value={addressFilter}
+                        onChangeText={(text) => {
+                          setAddressFilter(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                      />
+                      {addressFilter.length > 0 && (
+                        <TouchableOpacity onPress={() => {
+                          setAddressFilter('');
+                          handleApplyFilters();
+                        }}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
                   {/* Location Selector */}
                   <View style={styles.filterSection}>
                     <Text style={styles.filterLabel}>Location:</Text>
@@ -840,32 +893,6 @@ export default function InventoryLeadsScreen() {
                         onBlur={handleApplyFilters}
                         keyboardType="numeric"
                       />
-                    </View>
-                  </View>
-
-                  {/* Address Filter */}
-                  <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>Address:</Text>
-                    <View style={styles.addressInputContainer}>
-                      <Ionicons name="location-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-                      <TextInput
-                        style={styles.addressInput}
-                        placeholder="Search by address..."
-                        placeholderTextColor="#9CA3AF"
-                        value={addressFilter}
-                        onChangeText={(text) => {
-                          setAddressFilter(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                      />
-                      {addressFilter.length > 0 && (
-                        <TouchableOpacity onPress={() => {
-                          setAddressFilter('');
-                          handleApplyFilters();
-                        }}>
-                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-                        </TouchableOpacity>
-                      )}
                     </View>
                   </View>
 
