@@ -58,6 +58,7 @@ export default function InventoryLeadsScreen() {
   const [areaMax, setAreaMax] = useState('');
   const [budgetMin, setBudgetMin] = useState('');
   const [budgetMax, setBudgetMax] = useState('');
+  const [addressFilter, setAddressFilter] = useState('');
   
   // Modal states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -130,6 +131,7 @@ export default function InventoryLeadsScreen() {
     aMax: string = areaMax,
     bMin: string = budgetMin,
     bMax: string = budgetMax,
+    addrFilter: string = addressFilter,
   ) => {
     let filtered = [...data];
     
@@ -142,6 +144,14 @@ export default function InventoryLeadsScreen() {
           normalizeSearchText(lead.phone || '').includes(normalizedSearch) ||
           normalizeSearchText(lead.location || '').includes(normalizedSearch) ||
           normalizeSearchText(lead.address || '').includes(normalizedSearch)
+      );
+    }
+
+    // Address filter (dedicated filter field)
+    if (addrFilter) {
+      const normalizedAddr = normalizeSearchText(addrFilter);
+      filtered = filtered.filter((lead) =>
+        normalizeSearchText(lead.address || '').includes(normalizedAddr)
       );
     }
 
@@ -301,14 +311,14 @@ export default function InventoryLeadsScreen() {
   };
 
   const handleApplyFilters = () => {
-    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter);
   };
 
   const hasActiveFilters = () => {
     return selectedLocations.length > 0 || selectedFloors.length > 0 || 
            selectedStatuses.length > 0 || selectedFacings.length > 0 ||
            typeFilter !== '' || areaMin !== '' || areaMax !== '' ||
-           budgetMin !== '' || budgetMax !== '';
+           budgetMin !== '' || budgetMax !== '' || addressFilter !== '';
   };
 
   const clearAllFilters = () => {
@@ -321,8 +331,9 @@ export default function InventoryLeadsScreen() {
     setAreaMax('');
     setBudgetMin('');
     setBudgetMax('');
+    setAddressFilter('');
     setSearchQuery('');
-    applyFilters(leads, '', [], [], [], [], '', '', '', '', '');
+    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '');
   };
 
   const openMapUrl = (url: string) => {
@@ -829,6 +840,32 @@ export default function InventoryLeadsScreen() {
                         onBlur={handleApplyFilters}
                         keyboardType="numeric"
                       />
+                    </View>
+                  </View>
+
+                  {/* Address Filter */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Address:</Text>
+                    <View style={styles.addressInputContainer}>
+                      <Ionicons name="location-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={styles.addressInput}
+                        placeholder="Search by address..."
+                        placeholderTextColor="#9CA3AF"
+                        value={addressFilter}
+                        onChangeText={(text) => {
+                          setAddressFilter(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                      />
+                      {addressFilter.length > 0 && (
+                        <TouchableOpacity onPress={() => {
+                          setAddressFilter('');
+                          handleApplyFilters();
+                        }}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
 
@@ -1432,5 +1469,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  addressInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+  },
+  addressInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1F2937',
+    paddingVertical: 0,
   },
 });
