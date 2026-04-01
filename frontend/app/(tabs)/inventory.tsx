@@ -60,7 +60,6 @@ export default function InventoryLeadsScreen() {
   const [budgetMax, setBudgetMax] = useState('');
   const [addressFilter, setAddressFilter] = useState('');
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
-  const [addressFilter, setAddressFilter] = useState('');
   
   // Modal states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
