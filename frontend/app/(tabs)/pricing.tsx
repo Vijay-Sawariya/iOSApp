@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../services/api';
+import { LOCATIONS, LOCATION_COUNT } from '../../constants/leadOptions';
 
 interface FloorPrice {
   id?: number;
@@ -574,6 +575,15 @@ export default function PricingScreen() {
         </View>
       </View>
 
+      {/* Result Count */}
+      {searchQuery && (
+        <View style={styles.resultCountContainer}>
+          <Text style={styles.resultCountText}>
+            Showing {filteredData.length} of {pricingData.length} locations
+          </Text>
+        </View>
+      )}
+
       {/* List */}
       <FlatList
         data={filteredData}
@@ -1046,5 +1056,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     marginTop: 2,
+  },
+  resultCountContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+  },
+  resultCountText: {
+    fontSize: 14,
+    color: '#1E40AF',
+    fontWeight: '500',
   },
 });

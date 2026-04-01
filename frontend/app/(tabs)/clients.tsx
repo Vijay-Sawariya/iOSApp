@@ -462,6 +462,20 @@ export default function ClientLeadsScreen() {
           )}
         </View>
 
+        {/* Result Count */}
+        {(searchQuery || hasActiveFilters()) && (
+          <View style={styles.resultCountContainer}>
+            <Text style={styles.resultCountText}>
+              Showing {filteredLeads.length} of {leads.length} results
+            </Text>
+            {hasActiveFilters() && (
+              <TouchableOpacity onPress={clearAllFilters} style={styles.clearFiltersBtn}>
+                <Text style={styles.clearFiltersText}>Clear Filters</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Filter Panel */}
         {showFilters && (
           <View style={styles.filterContainer}>
@@ -1134,5 +1148,32 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 8,
+  },
+  resultCountContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+  },
+  resultCountText: {
+    fontSize: 14,
+    color: '#1E40AF',
+    fontWeight: '500',
+  },
+  clearFiltersBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: '#3B82F6',
+    borderRadius: 4,
+  },
+  clearFiltersText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });
