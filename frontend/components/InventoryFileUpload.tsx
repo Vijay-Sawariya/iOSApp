@@ -100,9 +100,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
     const response = await fetch(`${GODADDY_BASE_URL}/mobile_upload.php`, {
       method: 'POST',
       body: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      // Note: Don't set Content-Type header - let fetch set it automatically with boundary
     });
     
     const data = await response.json();

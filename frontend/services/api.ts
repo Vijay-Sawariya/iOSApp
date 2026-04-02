@@ -62,12 +62,23 @@ const fetchWithCache = async <T>(
     // Online - fetch from API
     const response = await fetch(url, { headers: getHeaders() });
     if (!response.ok) {
-      // If API fails, try cache
+      // Check for auth errors
+      if (response.status === 401 || response.status === 403) {
+        // Try to get error message from response
+        let errorMsg = 'Authentication error. Please log in again.';
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.detail || errorMsg;
+        } catch {}
+        throw new Error(errorMsg);
+      }
+      
+      // If API fails for other reasons, try cache
       const cached = await cacheGetter();
       if (cached) {
         return cached;
       }
-      throw new Error('Failed to fetch data');
+      throw new Error(`API request failed with status ${response.status}`);
     }
     
     const data = await response.json();

@@ -807,13 +807,13 @@ def delete_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
 @api_router.get("/builders", response_model=List[BuilderResponse])
 def get_builders(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 500,
     current_user: dict = Depends(get_current_user)
 ):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT * FROM builders ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            "SELECT * FROM builders ORDER BY builder_name ASC LIMIT %s OFFSET %s",
             (limit, skip)
         )
         builders = cursor.fetchall()
