@@ -11,23 +11,22 @@ import {
   ActivityIndicator,
   Platform,
   Linking,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { api } from '../services/api';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+// GoDaddy API Configuration - Same as used in existing PHP web app
+const GODADDY_BASE_URL = 'https://sagarhomelms.com';
+const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
 
 interface FileItem {
-  id: number;
-  lead_id: number;
-  file_name: string;
-  file_type: 'image' | 'pdf';
-  content_type: string;
-  file_size: number;
-  file_url: string;
-  created_at: string;
+  id?: number;
+  filename: string;
+  url: string;
+  type: 'image' | 'floorplan';
+  size?: number;
 }
 
 interface InventoryFileUploadProps {
@@ -40,13 +39,14 @@ const MAX_IMAGES = 12;
 const MAX_PDFS = 4;
 
 export default function InventoryFileUpload({ leadId, onFilesChange, compact = false }: InventoryFileUploadProps) {
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [images, setImages] = useState<FileItem[]>([]);
+  const [floorplans, setFloorplans] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<FileItem | null>(null);
 
-  const imageCount = files.filter(f => f.file_type === 'image').length;
-  const pdfCount = files.filter(f => f.file_type === 'pdf').length;
+  const imageCount = images.length;
+  const pdfCount = floorplans.length;
 
   useEffect(() => {
     loadFiles();
@@ -60,8 +60,14 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
 
   const loadFiles = async () => {
     try {
-      const result = await api.getInventoryFiles(leadId);
-      setFiles(result);
+      const response = await fetch(
+        `${GODADDY_BASE_URL}/mobile_get_files.php?lead_id=${leadId}&api_key=${GODADDY_API_KEY}`
+      );
+      const data = await response.json();
+      if (data.success) {
+        setImages(data.data.images || []);
+        setFloorplans(data.data.floorplans || []);
+      }
     } catch (error) {
       console.error('Failed to load files:', error);
     } finally {
@@ -78,6 +84,32 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
       }
     }
     return true;
+  };
+
+  const uploadFile = async (uri: string, filename: string, type: 'image' | 'floorplan') => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: Platform.OS === 'ios' ? uri.replace('file://', '') : uri,
+      type: type === 'floorplan' ? 'application/pdf' : 'image/jpeg',
+      name: filename,
+    } as any);
+    formData.append('lead_id', String(leadId));
+    formData.append('type', type);
+    formData.append('api_key', GODADDY_API_KEY);
+
+    const response = await fetch(`${GODADDY_BASE_URL}/mobile_upload.php`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.message || 'Upload failed');
+    }
+    return data;
   };
 
   const handlePickImage = async () => {
@@ -100,18 +132,15 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
       if (!result.canceled && result.assets) {
         setUploading(true);
         for (const asset of result.assets) {
-          await uploadFile({
-            uri: asset.uri,
-            name: asset.fileName || `image_${Date.now()}.jpg`,
-            type: asset.mimeType || 'image/jpeg',
-          });
+          const filename = asset.fileName || `image_${Date.now()}.jpg`;
+          await uploadFile(asset.uri, filename, 'image');
         }
         await loadFiles();
         Alert.alert('Success', 'Images uploaded successfully!');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Image pick error:', error);
-      Alert.alert('Error', 'Failed to pick images');
+      Alert.alert('Error', error.message || 'Failed to upload images');
     } finally {
       setUploading(false);
     }
@@ -137,17 +166,14 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
       if (!result.canceled && result.assets[0]) {
         setUploading(true);
         const asset = result.assets[0];
-        await uploadFile({
-          uri: asset.uri,
-          name: `photo_${Date.now()}.jpg`,
-          type: 'image/jpeg',
-        });
+        const filename = `photo_${Date.now()}.jpg`;
+        await uploadFile(asset.uri, filename, 'image');
         await loadFiles();
         Alert.alert('Success', 'Photo uploaded successfully!');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Camera error:', error);
-      Alert.alert('Error', 'Failed to take photo');
+      Alert.alert('Error', error.message || 'Failed to take photo');
     } finally {
       setUploading(false);
     }
@@ -171,60 +197,17 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
         const filesToUpload = result.assets.slice(0, remainingSlots);
         
         for (const asset of filesToUpload) {
-          await uploadFile({
-            uri: asset.uri,
-            name: asset.name,
-            type: 'application/pdf',
-          });
+          await uploadFile(asset.uri, asset.name, 'floorplan');
         }
         await loadFiles();
         Alert.alert('Success', 'PDF files uploaded successfully!');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Document pick error:', error);
-      Alert.alert('Error', 'Failed to pick PDF files');
+      Alert.alert('Error', error.message || 'Failed to upload PDF files');
     } finally {
       setUploading(false);
     }
-  };
-
-  const uploadFile = async (file: { uri: string; name: string; type: string }) => {
-    try {
-      await api.uploadInventoryFile(leadId, file);
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      Alert.alert('Upload Failed', error.message || 'Failed to upload file');
-      throw error;
-    }
-  };
-
-  const handleDeleteFile = (file: FileItem) => {
-    Alert.alert(
-      'Delete File',
-      `Are you sure you want to delete "${file.file_name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.deleteInventoryFile(file.id);
-              await loadFiles();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete file');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const getFullImageUrl = (fileUrl: string) => {
-    if (fileUrl.startsWith('http')) {
-      return fileUrl;
-    }
-    return `${API_URL}${fileUrl}`;
   };
 
   const handleViewImage = (file: FileItem) => {
@@ -232,9 +215,8 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
   };
 
   const handleOpenPDF = async (file: FileItem) => {
-    const url = getFullImageUrl(file.file_url);
     try {
-      await Linking.openURL(url);
+      await Linking.openURL(file.url);
     } catch (error) {
       Alert.alert('Error', 'Could not open PDF file');
     }
@@ -274,9 +256,9 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Files & Documents</Text>
+        <Text style={styles.title}>{'Files & Documents'}</Text>
         <Text style={styles.subtitle}>
-          {imageCount}/{MAX_IMAGES} images, {pdfCount}/{MAX_PDFS} PDFs
+          {`${imageCount}/${MAX_IMAGES} images, ${pdfCount}/${MAX_PDFS} PDFs`}
         </Text>
       </View>
 
@@ -289,7 +271,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
         >
           <Ionicons name="camera" size={22} color={imageCount >= MAX_IMAGES ? '#9CA3AF' : '#3B82F6'} />
           <Text style={[styles.uploadButtonText, imageCount >= MAX_IMAGES && styles.uploadButtonTextDisabled]}>
-            Camera
+            {'Camera'}
           </Text>
         </TouchableOpacity>
 
@@ -300,7 +282,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
         >
           <Ionicons name="images" size={22} color={imageCount >= MAX_IMAGES ? '#9CA3AF' : '#3B82F6'} />
           <Text style={[styles.uploadButtonText, imageCount >= MAX_IMAGES && styles.uploadButtonTextDisabled]}>
-            Gallery
+            {'Gallery'}
           </Text>
         </TouchableOpacity>
 
@@ -311,7 +293,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
         >
           <Ionicons name="document" size={22} color={pdfCount >= MAX_PDFS ? '#9CA3AF' : '#EF4444'} />
           <Text style={[styles.uploadButtonText, pdfCount >= MAX_PDFS && styles.uploadButtonTextDisabled]}>
-            PDF
+            {'PDF'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -319,59 +301,50 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
       {uploading && (
         <View style={styles.uploadingIndicator}>
           <ActivityIndicator color="#3B82F6" />
-          <Text style={styles.uploadingText}>Uploading...</Text>
+          <Text style={styles.uploadingText}>{'Uploading...'}</Text>
         </View>
       )}
 
       {loading ? (
         <ActivityIndicator style={styles.loader} color="#3B82F6" />
-      ) : files.length === 0 ? (
+      ) : (images.length === 0 && floorplans.length === 0) ? (
         <View style={styles.emptyState}>
           <Ionicons name="cloud-upload-outline" size={48} color="#D1D5DB" />
-          <Text style={styles.emptyText}>No files uploaded yet</Text>
-          <Text style={styles.emptySubtext}>Tap the buttons above to add images or PDFs</Text>
+          <Text style={styles.emptyText}>{'No files uploaded yet'}</Text>
+          <Text style={styles.emptySubtext}>{'Tap the buttons above to add images or PDFs'}</Text>
         </View>
       ) : (
         <>
           {/* Images Section */}
           {imageCount > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Images ({imageCount})</Text>
-              <FlatList
-                data={files.filter(f => f.file_type === 'image')}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={({ item }) => (
+              <Text style={styles.sectionTitle}>{`Images (${imageCount})`}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {images.map((item, index) => (
                   <TouchableOpacity
+                    key={index}
                     style={styles.imageThumb}
                     onPress={() => handleViewImage(item)}
                   >
                     <Image
-                      source={{ uri: getFullImageUrl(item.file_url) }}
+                      source={{ uri: item.url }}
                       style={styles.imagePreview}
                       resizeMode="cover"
                     />
-                    <Text style={styles.fileName} numberOfLines={1}>{item.file_name}</Text>
-                    <TouchableOpacity
-                      style={styles.deleteBtn}
-                      onPress={() => handleDeleteFile(item)}
-                    >
-                      <Ionicons name="close-circle" size={20} color="#EF4444" />
-                    </TouchableOpacity>
+                    <Text style={styles.fileName} numberOfLines={1}>{item.filename || 'Image'}</Text>
                   </TouchableOpacity>
-                )}
-              />
+                ))}
+              </ScrollView>
             </View>
           )}
 
           {/* PDFs Section */}
           {pdfCount > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>PDFs ({pdfCount})</Text>
-              {files.filter(f => f.file_type === 'pdf').map((file) => (
+              <Text style={styles.sectionTitle}>{`Floor Plans (${pdfCount})`}</Text>
+              {floorplans.map((file, index) => (
                 <TouchableOpacity 
-                  key={file.id} 
+                  key={index} 
                   style={styles.pdfItem}
                   onPress={() => handleOpenPDF(file)}
                 >
@@ -379,17 +352,14 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
                     <Ionicons name="document-text" size={24} color="#EF4444" />
                   </View>
                   <View style={styles.pdfInfo}>
-                    <Text style={styles.pdfName} numberOfLines={1}>{file.file_name}</Text>
-                    <Text style={styles.pdfSize}>
-                      {(file.file_size / 1024).toFixed(1)} KB
-                    </Text>
+                    <Text style={styles.pdfName} numberOfLines={1}>{file.filename || 'Floor Plan'}</Text>
+                    {file.size ? (
+                      <Text style={styles.pdfSize}>
+                        {`${Math.round((file.size || 0) / 1024)} KB`}
+                      </Text>
+                    ) : null}
                   </View>
-                  <TouchableOpacity
-                    style={styles.pdfDeleteBtn}
-                    onPress={() => handleDeleteFile(file)}
-                  >
-                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                  </TouchableOpacity>
+                  <Ionicons name="open-outline" size={20} color="#6B7280" />
                 </TouchableOpacity>
               ))}
             </View>
@@ -403,7 +373,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} numberOfLines={1}>
-                {selectedImage?.file_name}
+                {selectedImage?.filename || 'Image'}
               </Text>
               <TouchableOpacity onPress={() => setSelectedImage(null)}>
                 <Ionicons name="close" size={28} color="#1F2937" />
@@ -411,7 +381,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
             </View>
             {selectedImage && (
               <Image
-                source={{ uri: getFullImageUrl(selectedImage.file_url) }}
+                source={{ uri: selectedImage.url }}
                 style={styles.fullImage}
                 resizeMode="contain"
               />
@@ -527,13 +497,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  deleteBtn: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-  },
   pdfItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -563,9 +526,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 2,
-  },
-  pdfDeleteBtn: {
-    padding: 8,
   },
   // Compact styles
   compactContainer: {
@@ -614,11 +574,6 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     flex: 1,
     marginRight: 16,
-  },
-  modalLoading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   fullImage: {
     flex: 1,

@@ -25,6 +25,7 @@ import { MultiSelectFloor } from '../../../components/forms/MultiSelectFloor';
 import { BuilderDropdown } from '../../../components/forms/BuilderDropdown';
 import { FormInput } from '../../../components/forms/FormInput';
 import { RadioButtonGroup } from '../../../components/forms/RadioButtonGroup';
+import InventoryFileUpload from '../../../components/InventoryFileUpload';
 
 // Import constants
 import {
@@ -667,7 +668,7 @@ export default function EditLeadScreen() {
 
         {/* Amenities */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Amenities</Text>
+          <Text style={styles.sectionTitle}>{'Additional Amenities'}</Text>
           
           {AMENITIES.map((amenity) => (
             <View key={amenity.key} style={styles.amenityRow}>
@@ -681,6 +682,13 @@ export default function EditLeadScreen() {
             </View>
           ))}
         </View>
+
+        {/* File Uploads Section - Only for Inventory Leads */}
+        {isInventory && id && (
+          <View style={styles.section}>
+            <InventoryFileUpload leadId={parseInt(id)} />
+          </View>
+        )}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
