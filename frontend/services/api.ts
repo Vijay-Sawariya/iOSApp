@@ -433,4 +433,65 @@ export const api = {
     if (!response.ok) throw new Error('Failed to fetch locations');
     return response.json();
   },
+
+  // ============= Inventory File Upload APIs =============
+  uploadInventoryFile: async (leadId: number, file: {
+    uri: string;
+    name: string;
+    type: string;
+  }) => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as any);
+
+    const response = await fetch(`${API_URL}/api/inventory/${leadId}/files`, {
+      method: 'POST',
+      headers: {
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        'Content-Type': 'multipart/form-data',
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to upload file');
+    }
+    return response.json();
+  },
+
+  getInventoryFiles: async (leadId: number) => {
+    const response = await fetch(`${API_URL}/api/inventory/${leadId}/files`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch files');
+    return response.json();
+  },
+
+  getInventoryFile: async (fileId: number) => {
+    const response = await fetch(`${API_URL}/api/inventory/files/${fileId}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch file');
+    return response.json();
+  },
+
+  deleteInventoryFile: async (fileId: number) => {
+    const response = await fetch(`${API_URL}/api/inventory/files/${fileId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to delete file');
+    return response.json();
+  },
+
+  getInventoryFilesCount: async (leadId: number) => {
+    const response = await fetch(`${API_URL}/api/inventory/${leadId}/files/count`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch file count');
+    return response.json();
+  },
 };

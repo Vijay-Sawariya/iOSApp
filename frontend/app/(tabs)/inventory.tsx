@@ -16,6 +16,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import InventoryFileUpload from '../../components/InventoryFileUpload';
 import {
   Lead,
   FloorPricing,
@@ -519,6 +520,11 @@ export default function InventoryLeadsScreen() {
             <Ionicons name="trash-outline" size={18} color="#EF4444" />
             <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
           </TouchableOpacity>
+        </View>
+        
+        {/* File Upload Row */}
+        <View style={styles.fileUploadRow}>
+          <InventoryFileUpload leadId={item.id} compact />
         </View>
       </View>
     );
@@ -1511,5 +1517,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
     paddingVertical: 0,
+  },
+  fileUploadRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 8,
   },
 });

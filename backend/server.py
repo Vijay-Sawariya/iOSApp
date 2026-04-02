@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, File, UploadFile, Form, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -14,6 +14,7 @@ import pymysql
 from pymysql.cursors import DictCursor
 from contextlib import contextmanager
 import re
+import base64
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -1248,6 +1249,203 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         today_reminders=today_reminders,
         pending_reminders=pending_reminders
     )
+
+# ============= Inventory File Upload Routes =============
+MAX_IMAGES = 12
+MAX_PDFS = 4
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']
+ALLOWED_PDF_TYPES = ['application/pdf']
+
+@api_router.post("/inventory/{lead_id}/files")
+async def upload_inventory_file(
+    lead_id: int,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload an image or PDF file for an inventory"""
+    # Validate file type
+    content_type = file.content_type or ''
+    
+    if content_type in ALLOWED_IMAGE_TYPES:
+        file_type = 'image'
+    elif content_type in ALLOWED_PDF_TYPES:
+        file_type = 'pdf'
+    else:
+        raise HTTPException(status_code=400, detail=f"File type not allowed. Allowed: images (JPEG, PNG, GIF, WebP, HEIC) and PDF")
+    
+    # Read file content
+    file_content = await file.read()
+    file_size = len(file_content)
+    
+    # Validate file size
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail=f"File too large. Maximum size: 10MB")
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Check if lead exists and is an inventory type
+        cursor.execute("SELECT id, lead_type FROM leads WHERE id = %s", (lead_id,))
+        lead = cursor.fetchone()
+        if not lead:
+            raise HTTPException(status_code=404, detail="Inventory not found")
+        
+        # Count existing files
+        cursor.execute(
+            "SELECT file_type, COUNT(*) as count FROM inventory_files WHERE lead_id = %s AND is_deleted = 0 GROUP BY file_type",
+            (lead_id,)
+        )
+        file_counts = {row['file_type']: row['count'] for row in cursor.fetchall()}
+        
+        image_count = file_counts.get('image', 0)
+        pdf_count = file_counts.get('pdf', 0)
+        
+        if file_type == 'image' and image_count >= MAX_IMAGES:
+            raise HTTPException(status_code=400, detail=f"Maximum {MAX_IMAGES} images allowed per inventory")
+        
+        if file_type == 'pdf' and pdf_count >= MAX_PDFS:
+            raise HTTPException(status_code=400, detail=f"Maximum {MAX_PDFS} PDF files allowed per inventory")
+        
+        # Insert file record
+        cursor.execute(
+            """INSERT INTO inventory_files (lead_id, file_name, file_type, content_type, file_size, file_data, uploaded_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (lead_id, file.filename, file_type, content_type, file_size, file_content, current_user['id'])
+        )
+        conn.commit()
+        file_id = cursor.lastrowid
+        
+    return {
+        "id": file_id,
+        "lead_id": lead_id,
+        "file_name": file.filename,
+        "file_type": file_type,
+        "content_type": content_type,
+        "file_size": file_size,
+        "message": "File uploaded successfully"
+    }
+
+@api_router.get("/inventory/{lead_id}/files")
+def get_inventory_files(lead_id: int, current_user: dict = Depends(get_current_user)):
+    """Get list of files for an inventory (without file data)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT id, lead_id, file_name, file_type, content_type, file_size, created_at
+               FROM inventory_files
+               WHERE lead_id = %s AND is_deleted = 0
+               ORDER BY file_type, created_at DESC""",
+            (lead_id,)
+        )
+        files = cursor.fetchall()
+        
+        # Format the response
+        result = []
+        for f in files:
+            result.append({
+                'id': f['id'],
+                'lead_id': f['lead_id'],
+                'file_name': f['file_name'],
+                'file_type': f['file_type'],
+                'content_type': f['content_type'],
+                'file_size': f['file_size'],
+                'created_at': f['created_at'].isoformat() if f['created_at'] else None
+            })
+        
+    return result
+
+@api_router.get("/inventory/files/{file_id}")
+def get_inventory_file(file_id: int, current_user: dict = Depends(get_current_user)):
+    """Get a specific file's content"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM inventory_files WHERE id = %s AND is_deleted = 0",
+            (file_id,)
+        )
+        file_record = cursor.fetchone()
+        
+        if not file_record:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Return file as base64 for frontend display
+        file_data = file_record['file_data']
+        if file_data:
+            base64_data = base64.b64encode(file_data).decode('utf-8')
+        else:
+            base64_data = None
+        
+    return {
+        'id': file_record['id'],
+        'lead_id': file_record['lead_id'],
+        'file_name': file_record['file_name'],
+        'file_type': file_record['file_type'],
+        'content_type': file_record['content_type'],
+        'file_size': file_record['file_size'],
+        'data': base64_data
+    }
+
+@api_router.get("/inventory/files/{file_id}/download")
+def download_inventory_file(file_id: int, current_user: dict = Depends(get_current_user)):
+    """Download a file (returns raw bytes)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT file_data, content_type, file_name FROM inventory_files WHERE id = %s AND is_deleted = 0",
+            (file_id,)
+        )
+        file_record = cursor.fetchone()
+        
+        if not file_record:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+    return Response(
+        content=file_record['file_data'],
+        media_type=file_record['content_type'],
+        headers={
+            "Content-Disposition": f"attachment; filename={file_record['file_name']}"
+        }
+    )
+
+@api_router.delete("/inventory/files/{file_id}")
+def delete_inventory_file(file_id: int, current_user: dict = Depends(get_current_user)):
+    """Soft delete a file"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE inventory_files SET is_deleted = 1 WHERE id = %s",
+            (file_id,)
+        )
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="File not found")
+    
+    return {"message": "File deleted successfully"}
+
+@api_router.get("/inventory/{lead_id}/files/count")
+def get_inventory_files_count(lead_id: int, current_user: dict = Depends(get_current_user)):
+    """Get count of files for an inventory"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT file_type, COUNT(*) as count 
+               FROM inventory_files 
+               WHERE lead_id = %s AND is_deleted = 0 
+               GROUP BY file_type""",
+            (lead_id,)
+        )
+        counts = {row['file_type']: row['count'] for row in cursor.fetchall()}
+        
+    return {
+        'images': counts.get('image', 0),
+        'pdfs': counts.get('pdf', 0),
+        'total': counts.get('image', 0) + counts.get('pdf', 0),
+        'max_images': MAX_IMAGES,
+        'max_pdfs': MAX_PDFS
+    }
 
 # ============= Tentative Pricing Routes =============
 class PlotPricingCreate(BaseModel):
