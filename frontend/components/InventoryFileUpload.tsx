@@ -10,11 +10,14 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { api } from '../services/api';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface FileItem {
   id: number;
@@ -23,8 +26,8 @@ interface FileItem {
   file_type: 'image' | 'pdf';
   content_type: string;
   file_size: number;
+  file_url: string;
   created_at: string;
-  data?: string;
 }
 
 interface InventoryFileUploadProps {
@@ -41,8 +44,6 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<FileItem | null>(null);
-  const [imageData, setImageData] = useState<string | null>(null);
-  const [loadingImage, setLoadingImage] = useState(false);
 
   const imageCount = files.filter(f => f.file_type === 'image').length;
   const pdfCount = files.filter(f => f.file_type === 'pdf').length;
@@ -219,17 +220,23 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
     );
   };
 
-  const handleViewImage = async (file: FileItem) => {
+  const getFullImageUrl = (fileUrl: string) => {
+    if (fileUrl.startsWith('http')) {
+      return fileUrl;
+    }
+    return `${API_URL}${fileUrl}`;
+  };
+
+  const handleViewImage = (file: FileItem) => {
     setSelectedImage(file);
-    setLoadingImage(true);
+  };
+
+  const handleOpenPDF = async (file: FileItem) => {
+    const url = getFullImageUrl(file.file_url);
     try {
-      const result = await api.getInventoryFile(file.id);
-      setImageData(result.data);
+      await Linking.openURL(url);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load image');
-      setSelectedImage(null);
-    } finally {
-      setLoadingImage(false);
+      Alert.alert('Error', 'Could not open PDF file');
     }
   };
 
@@ -340,9 +347,11 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
                     style={styles.imageThumb}
                     onPress={() => handleViewImage(item)}
                   >
-                    <View style={styles.imagePreview}>
-                      <Ionicons name="image" size={32} color="#3B82F6" />
-                    </View>
+                    <Image
+                      source={{ uri: getFullImageUrl(item.file_url) }}
+                      style={styles.imagePreview}
+                      resizeMode="cover"
+                    />
                     <Text style={styles.fileName} numberOfLines={1}>{item.file_name}</Text>
                     <TouchableOpacity
                       style={styles.deleteBtn}
@@ -361,7 +370,11 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>PDFs ({pdfCount})</Text>
               {files.filter(f => f.file_type === 'pdf').map((file) => (
-                <View key={file.id} style={styles.pdfItem}>
+                <TouchableOpacity 
+                  key={file.id} 
+                  style={styles.pdfItem}
+                  onPress={() => handleOpenPDF(file)}
+                >
                   <View style={styles.pdfIcon}>
                     <Ionicons name="document-text" size={24} color="#EF4444" />
                   </View>
@@ -377,7 +390,7 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
                   >
                     <Ionicons name="trash-outline" size={20} color="#EF4444" />
                   </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -392,21 +405,17 @@ export default function InventoryFileUpload({ leadId, onFilesChange, compact = f
               <Text style={styles.modalTitle} numberOfLines={1}>
                 {selectedImage?.file_name}
               </Text>
-              <TouchableOpacity onPress={() => { setSelectedImage(null); setImageData(null); }}>
+              <TouchableOpacity onPress={() => setSelectedImage(null)}>
                 <Ionicons name="close" size={28} color="#1F2937" />
               </TouchableOpacity>
             </View>
-            {loadingImage ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color="#3B82F6" />
-              </View>
-            ) : imageData ? (
+            {selectedImage && (
               <Image
-                source={{ uri: `data:${selectedImage?.content_type};base64,${imageData}` }}
+                source={{ uri: getFullImageUrl(selectedImage.file_url) }}
                 style={styles.fullImage}
                 resizeMode="contain"
               />
-            ) : null}
+            )}
           </View>
         </View>
       </Modal>

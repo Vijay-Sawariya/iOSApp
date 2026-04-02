@@ -1258,6 +1258,13 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']
 ALLOWED_PDF_TYPES = ['application/pdf']
 
+# File upload directory - stored on server
+UPLOAD_DIR = Path("/app/backend/uploads/inventory")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Base URL for accessing files
+UPLOAD_BASE_URL = "/api/uploads/inventory"
+
 @api_router.post("/inventory/{lead_id}/files")
 async def upload_inventory_file(
     lead_id: int,
@@ -1286,7 +1293,7 @@ async def upload_inventory_file(
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Check if lead exists and is an inventory type
+        # Check if lead exists
         cursor.execute("SELECT id, lead_type FROM leads WHERE id = %s", (lead_id,))
         lead = cursor.fetchone()
         if not lead:
@@ -1308,11 +1315,28 @@ async def upload_inventory_file(
         if file_type == 'pdf' and pdf_count >= MAX_PDFS:
             raise HTTPException(status_code=400, detail=f"Maximum {MAX_PDFS} PDF files allowed per inventory")
         
+        # Generate unique filename
+        import uuid
+        file_ext = Path(file.filename).suffix or ('.jpg' if file_type == 'image' else '.pdf')
+        unique_filename = f"{lead_id}_{uuid.uuid4().hex}{file_ext}"
+        
+        # Create lead-specific directory
+        lead_dir = UPLOAD_DIR / str(lead_id)
+        lead_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save file to disk
+        file_path = lead_dir / unique_filename
+        with open(file_path, 'wb') as f:
+            f.write(file_content)
+        
+        # Generate file URL
+        file_url = f"{UPLOAD_BASE_URL}/{lead_id}/{unique_filename}"
+        
         # Insert file record
         cursor.execute(
-            """INSERT INTO inventory_files (lead_id, file_name, file_type, content_type, file_size, file_data, uploaded_by)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-            (lead_id, file.filename, file_type, content_type, file_size, file_content, current_user['id'])
+            """INSERT INTO inventory_files (lead_id, file_name, file_type, content_type, file_size, file_path, file_url, uploaded_by)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (lead_id, file.filename, file_type, content_type, file_size, str(file_path), file_url, current_user['id'])
         )
         conn.commit()
         file_id = cursor.lastrowid
@@ -1324,16 +1348,17 @@ async def upload_inventory_file(
         "file_type": file_type,
         "content_type": content_type,
         "file_size": file_size,
+        "file_url": file_url,
         "message": "File uploaded successfully"
     }
 
 @api_router.get("/inventory/{lead_id}/files")
 def get_inventory_files(lead_id: int, current_user: dict = Depends(get_current_user)):
-    """Get list of files for an inventory (without file data)"""
+    """Get list of files for an inventory"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT id, lead_id, file_name, file_type, content_type, file_size, created_at
+            """SELECT id, lead_id, file_name, file_type, content_type, file_size, file_url, created_at
                FROM inventory_files
                WHERE lead_id = %s AND is_deleted = 0
                ORDER BY file_type, created_at DESC""",
@@ -1351,61 +1376,35 @@ def get_inventory_files(lead_id: int, current_user: dict = Depends(get_current_u
                 'file_type': f['file_type'],
                 'content_type': f['content_type'],
                 'file_size': f['file_size'],
+                'file_url': f['file_url'],
                 'created_at': f['created_at'].isoformat() if f['created_at'] else None
             })
         
     return result
 
-@api_router.get("/inventory/files/{file_id}")
-def get_inventory_file(file_id: int, current_user: dict = Depends(get_current_user)):
-    """Get a specific file's content"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM inventory_files WHERE id = %s AND is_deleted = 0",
-            (file_id,)
-        )
-        file_record = cursor.fetchone()
-        
-        if not file_record:
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        # Return file as base64 for frontend display
-        file_data = file_record['file_data']
-        if file_data:
-            base64_data = base64.b64encode(file_data).decode('utf-8')
-        else:
-            base64_data = None
-        
-    return {
-        'id': file_record['id'],
-        'lead_id': file_record['lead_id'],
-        'file_name': file_record['file_name'],
-        'file_type': file_record['file_type'],
-        'content_type': file_record['content_type'],
-        'file_size': file_record['file_size'],
-        'data': base64_data
-    }
-
-@api_router.get("/inventory/files/{file_id}/download")
-def download_inventory_file(file_id: int, current_user: dict = Depends(get_current_user)):
-    """Download a file (returns raw bytes)"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT file_data, content_type, file_name FROM inventory_files WHERE id = %s AND is_deleted = 0",
-            (file_id,)
-        )
-        file_record = cursor.fetchone()
-        
-        if not file_record:
-            raise HTTPException(status_code=404, detail="File not found")
-        
+@api_router.get("/uploads/inventory/{lead_id}/{filename}")
+def serve_inventory_file(lead_id: int, filename: str):
+    """Serve uploaded file"""
+    file_path = UPLOAD_DIR / str(lead_id) / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Determine content type
+    import mimetypes
+    content_type, _ = mimetypes.guess_type(str(file_path))
+    if not content_type:
+        content_type = 'application/octet-stream'
+    
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    
     return Response(
-        content=file_record['file_data'],
-        media_type=file_record['content_type'],
+        content=content,
+        media_type=content_type,
         headers={
-            "Content-Disposition": f"attachment; filename={file_record['file_name']}"
+            "Content-Disposition": f"inline; filename={filename}",
+            "Cache-Control": "public, max-age=86400"
         }
     )
 
@@ -1414,6 +1413,11 @@ def delete_inventory_file(file_id: int, current_user: dict = Depends(get_current
     """Soft delete a file"""
     with get_db() as conn:
         cursor = conn.cursor()
+        
+        # Get file path before deleting
+        cursor.execute("SELECT file_path FROM inventory_files WHERE id = %s", (file_id,))
+        file_record = cursor.fetchone()
+        
         cursor.execute(
             "UPDATE inventory_files SET is_deleted = 1 WHERE id = %s",
             (file_id,)
@@ -1422,6 +1426,15 @@ def delete_inventory_file(file_id: int, current_user: dict = Depends(get_current
         
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="File not found")
+        
+        # Optionally delete file from disk
+        if file_record and file_record['file_path']:
+            try:
+                file_path = Path(file_record['file_path'])
+                if file_path.exists():
+                    file_path.unlink()
+            except:
+                pass  # Ignore file deletion errors
     
     return {"message": "File deleted successfully"}
 
