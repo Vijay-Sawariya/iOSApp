@@ -109,15 +109,34 @@ export default function InventoryLeadsScreen() {
     try {
       const data = await offlineApi.getInventoryLeads();
       setLeads(data);
-      applyFilters(data, searchQuery);
+      // Apply filters with current state values
+      applyFilters(
+        data, 
+        searchQuery,
+        selectedLocations,
+        selectedFloors,
+        selectedStatuses,
+        selectedFacings,
+        typeFilter,
+        areaMin,
+        areaMax,
+        budgetMin,
+        budgetMax,
+        addressFilter,
+        selectedStatTile
+      );
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
     }
   };
 
+  // Use a ref to track if we should reload on focus
+  const loadLeadsRef = React.useRef(loadLeads);
+  loadLeadsRef.current = loadLeads;
+
   useFocusEffect(
     useCallback(() => {
-      loadLeads();
+      loadLeadsRef.current();
     }, [])
   );
 

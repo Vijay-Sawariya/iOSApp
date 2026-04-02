@@ -89,15 +89,19 @@ export default function ClientLeadsScreen() {
     try {
       const data = await offlineApi.getClientLeads();
       setLeads(data);
-      applyFilters(data, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors);
+      applyFilters(data, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile);
     } catch (error) {
       console.error('Failed to load client leads:', error);
     }
   };
 
+  // Use a ref to track if we should reload on focus
+  const loadLeadsRef = React.useRef(loadLeads);
+  loadLeadsRef.current = loadLeads;
+
   useFocusEffect(
     useCallback(() => {
-      loadLeads();
+      loadLeadsRef.current();
     }, [])
   );
 
