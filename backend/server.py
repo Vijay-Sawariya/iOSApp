@@ -795,6 +795,11 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
 def delete_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
+        
+        # Delete related floor pricing first
+        cursor.execute("DELETE FROM inventory_floor_pricing WHERE lead_id = %s", (lead_id,))
+        
+        # Delete the lead
         cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
         conn.commit()
         

@@ -420,6 +420,17 @@ export default function InventoryLeadsScreen() {
     const floorPricing = formatFloorPricing(item.floor_pricing, item.unit);
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
+    // Parse amenities from required_amenities field or individual amenity fields
+    const amenitiesList: string[] = [];
+    if ((item as any).park === '1' || (item as any).park === 1) amenitiesList.push('Park');
+    if ((item as any).corner === '1' || (item as any).corner === 1) amenitiesList.push('Corner');
+    if ((item as any).gated_community === '1' || (item as any).gated_community === 1) amenitiesList.push('Gated');
+    if ((item as any).sample_flat === '1' || (item as any).sample_flat === 1) amenitiesList.push('Sample Flat');
+    if ((item as any).main_road === '1' || (item as any).main_road === 1) amenitiesList.push('Main Road');
+    if ((item as any).parking === '1' || (item as any).parking === 1) amenitiesList.push('Parking');
+    if ((item as any).lift === '1' || (item as any).lift === 1 || item.lift === 'Yes') amenitiesList.push('Lift');
+    if ((item as any).stilt === '1' || (item as any).stilt === 1) amenitiesList.push('Stilt');
+
     return (
       <View style={styles.leadCard}>
         <TouchableOpacity
@@ -474,11 +485,18 @@ export default function InventoryLeadsScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Tags Row */}
+          {/* Tags Row - Removed property_type, added floor and facing */}
           <View style={styles.tagsRow}>
-            {item.property_type && (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{item.property_type}</Text>
+            {item.floor && (
+              <View style={[styles.tag, styles.floorTag]}>
+                <Ionicons name="layers-outline" size={12} color="#6366F1" />
+                <Text style={[styles.tagText, { color: '#6366F1', marginLeft: 3 }]}>{item.floor}</Text>
+              </View>
+            )}
+            {item.building_facing && (
+              <View style={[styles.tag, styles.facingTag]}>
+                <Ionicons name="compass-outline" size={12} color="#0891B2" />
+                <Text style={[styles.tagText, { color: '#0891B2', marginLeft: 3 }]}>{item.building_facing}</Text>
               </View>
             )}
             {item.bhk && (
@@ -499,16 +517,19 @@ export default function InventoryLeadsScreen() {
           </View>
 
           {/* Amenities Row */}
-          {(item as any).required_amenities && (
-            <Text style={styles.amenitiesText} numberOfLines={1}>
-              {(item as any).required_amenities}
-            </Text>
+          {amenitiesList.length > 0 && (
+            <View style={styles.amenitiesRow}>
+              <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+              <Text style={styles.amenitiesText} numberOfLines={1}>
+                {amenitiesList.join(' • ')}
+              </Text>
+            </View>
           )}
 
           {/* Floor Pricing Row */}
           {floorPricing && (
             <View style={styles.budgetRow}>
-              <Ionicons name="eye" size={16} color="#10B981" />
+              <Ionicons name="cash-outline" size={16} color="#10B981" />
               <Text style={styles.budgetText}>{floorPricing}</Text>
             </View>
           )}
@@ -1354,10 +1375,10 @@ const styles = StyleSheet.create({
     color: '#16A34A',
   },
   amenitiesText: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontStyle: 'italic',
-    marginBottom: 4,
+    fontSize: 12,
+    color: '#059669',
+    marginLeft: 6,
+    fontWeight: '500',
   },
   budgetRow: {
     flexDirection: 'row',
@@ -1369,6 +1390,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#10B981',
     marginLeft: 8,
+  },
+  floorTag: {
+    backgroundColor: '#EEF2FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  facingTag: {
+    backgroundColor: '#ECFEFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  amenitiesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   actionsRow: {
     flexDirection: 'row',
