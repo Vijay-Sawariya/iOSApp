@@ -292,10 +292,11 @@ export default function ClientLeadsScreen() {
         onPress: async () => {
           try {
             await offlineApi.deleteLead(String(id));
-            loadLeads();
+            loadLeadsRef.current();
             Alert.alert('Success', 'Lead deleted successfully');
-          } catch (error) {
-            Alert.alert('Error', 'Failed to delete lead');
+          } catch (error: any) {
+            console.error('Delete error:', error);
+            Alert.alert('Error', error.message || 'Failed to delete lead');
           }
         },
       },

@@ -793,20 +793,36 @@ def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_
 
 @api_router.delete("/leads/{lead_id}")
 def delete_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        cursor = conn.cursor()
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Delete related floor pricing first
+            try:
+                cursor.execute("DELETE FROM inventory_floor_pricing WHERE lead_id = %s", (lead_id,))
+            except Exception as e:
+                logging.warning(f"Could not delete floor pricing: {e}")
+            
+            # Delete related actions/followups
+            try:
+                cursor.execute("DELETE FROM actions WHERE lead_id = %s", (lead_id,))
+            except Exception as e:
+                logging.warning(f"Could not delete actions: {e}")
+            
+            # Delete the lead
+            cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
+            affected = cursor.rowcount
+            conn.commit()
+            
+            if affected == 0:
+                raise HTTPException(status_code=404, detail="Lead not found")
         
-        # Delete related floor pricing first
-        cursor.execute("DELETE FROM inventory_floor_pricing WHERE lead_id = %s", (lead_id,))
-        
-        # Delete the lead
-        cursor.execute("DELETE FROM leads WHERE id = %s", (lead_id,))
-        conn.commit()
-        
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Lead not found")
-    
-    return {"message": "Lead deleted successfully"}
+        return {"message": "Lead deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting lead {lead_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete lead: {str(e)}")
 
 # ============= Builder Routes =============
 @api_router.get("/builders", response_model=List[BuilderResponse])

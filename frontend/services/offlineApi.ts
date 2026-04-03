@@ -206,7 +206,16 @@ class OfflineApiService {
       method: 'DELETE',
       headers: this.getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete lead');
+    
+    if (!response.ok) {
+      let errorMsg = 'Failed to delete lead';
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.detail || errorMsg;
+      } catch {}
+      throw new Error(errorMsg);
+    }
+    
     return response.json();
   }
 
