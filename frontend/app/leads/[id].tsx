@@ -508,7 +508,17 @@ export default function LeadDetailScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
+      {/* Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBackButton}>
+          <Ionicons name="arrow-back" size={24} color="#1F2937" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{'Lead Details'}</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+      
+      <ScrollView style={styles.scrollContent}>
       {/* Header */}
       <View style={styles.headerCard}>
         <View style={styles.headerRow}>
@@ -923,6 +933,7 @@ export default function LeadDetailScreen() {
 
       {/* Spacing at bottom */}
       <View style={styles.bottomSpacing} />
+      </ScrollView>
 
       {/* Log Conversation Modal */}
       <Modal
@@ -1016,7 +1027,7 @@ export default function LeadDetailScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -1024,6 +1035,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerBackButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  scrollContent: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
