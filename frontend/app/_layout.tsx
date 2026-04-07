@@ -32,13 +32,14 @@ function RootLayoutContent() {
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="leads/add" options={{ headerShown: true, title: 'Add Lead' }} />
-        <Stack.Screen name="leads/[id]" options={{ headerShown: true, title: 'Lead Details' }} />
-        <Stack.Screen name="leads/edit/[id]" options={{ headerShown: true, title: 'Edit Lead' }} />
-        <Stack.Screen name="builders/add" options={{ headerShown: true, title: 'Add Builder' }} />
-        <Stack.Screen name="builders/[id]" options={{ headerShown: true, title: 'Builder Details' }} />
-        <Stack.Screen name="builders/edit/[id]" options={{ headerShown: true, title: 'Edit Builder' }} />
-        <Stack.Screen name="reminders/add" options={{ headerShown: true, title: 'Add Reminder' }} />
+        <Stack.Screen name="leads/add" />
+        <Stack.Screen name="leads/[id]" />
+        <Stack.Screen name="leads/edit/[id]" />
+        <Stack.Screen name="builders/add" />
+        <Stack.Screen name="builders/[id]" />
+        <Stack.Screen name="builders/edit/[id]" />
+        <Stack.Screen name="reminders/add" />
+        <Stack.Screen name="reminders/edit/[id]" />
       </Stack>
     </View>
   );
