@@ -13,7 +13,10 @@ export const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'] as const;
 export type LeadTemperature = typeof LEAD_TEMPERATURES[number];
 
 export const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'] as const;
-export const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold'] as const;
+export const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold', 'Available', 'Already Rented'] as const;
+
+// How Old options (in years)
+export const HOW_OLD_OPTIONS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '10+', '15+', '20+'] as const;
 
 export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'] as const;
 

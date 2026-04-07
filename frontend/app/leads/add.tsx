@@ -42,6 +42,7 @@ import {
   LIFT_OPTIONS,
   LOCATIONS,
   AMENITIES,
+  HOW_OLD_OPTIONS,
   FloorPrice,
   isInventoryType,
   isClientType,
@@ -97,6 +98,11 @@ export default function AddLeadScreen() {
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
+  
+  // New Inventory fields
+  const [possessionMonth, setPossessionMonth] = useState('');
+  const [possessionYear, setPossessionYear] = useState('');
+  const [howOld, setHowOld] = useState('');
   
   // Additional Amenities (boolean toggles)
   const [amenities, setAmenities] = useState({
@@ -259,6 +265,13 @@ export default function AddLeadScreen() {
         leadData.building_facing = facing;
         leadData.Property_locationUrl = googleMapUrl.trim();
         leadData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
+        
+        // Possession On - combine month and year
+        if (possessionMonth && possessionYear) {
+          leadData.possession_on = `${possessionMonth} ${possessionYear}`;
+        }
+        leadData.how_old = howOld || null;
+        
         if (builderId) {
           leadData.builder_id = parseInt(builderId);
         }
@@ -569,6 +582,41 @@ export default function AddLeadScreen() {
             onSelect={setLift}
           />
 
+          {/* Possession On and How Old - Only for Inventory */}
+          {isInventory && (
+            <>
+              <Text style={styles.label}>Possession On</Text>
+              <View style={styles.possessionRow}>
+                <View style={styles.possessionField}>
+                  <CustomDropdown
+                    label=""
+                    value={possessionMonth}
+                    options={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']}
+                    onSelect={setPossessionMonth}
+                    placeholder="Month"
+                  />
+                </View>
+                <View style={styles.possessionField}>
+                  <CustomDropdown
+                    label=""
+                    value={possessionYear}
+                    options={Array.from({ length: 15 }, (_, i) => String(2020 + i))}
+                    onSelect={setPossessionYear}
+                    placeholder="Year"
+                  />
+                </View>
+              </View>
+
+              <CustomDropdown
+                label="How Old (Years)"
+                value={howOld}
+                options={[...HOW_OLD_OPTIONS]}
+                onSelect={setHowOld}
+                placeholder="Select age of property"
+              />
+            </>
+          )}
+
           {/* Builder for Inventory leads only (non-builder lead types) */}
           {isInventory && !isBuilderType && builders.length > 0 && (
             <BuilderDropdown
@@ -724,6 +772,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   budgetField: {
+    flex: 1,
+  },
+  possessionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  possessionField: {
     flex: 1,
   },
   floorPriceRow: {

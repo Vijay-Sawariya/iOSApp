@@ -43,6 +43,7 @@ import {
   LIFT_OPTIONS,
   LOCATIONS,
   AMENITIES,
+  HOW_OLD_OPTIONS,
   FloorPrice,
   isInventoryType,
   isClientType,
@@ -96,6 +97,11 @@ export default function EditLeadScreen() {
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState('');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
+  
+  // New Inventory fields
+  const [possessionMonth, setPossessionMonth] = useState('');
+  const [possessionYear, setPossessionYear] = useState('');
+  const [howOld, setHowOld] = useState('');
   
   // Additional Amenities (boolean toggles)
   const [amenities, setAmenities] = useState({
@@ -170,6 +176,19 @@ export default function EditLeadScreen() {
       setLift(data.lift_available || '');
       setNotes(data.notes || '');
       setGoogleMapUrl(data.Property_locationUrl || '');
+      
+      // Possession On and How Old (for inventory)
+      if (data.possession_on) {
+        const parts = data.possession_on.split(' ');
+        if (parts.length >= 2) {
+          setPossessionMonth(parts[0]);
+          setPossessionYear(parts[1]);
+        } else if (parts.length === 1) {
+          // Might be just year
+          setPossessionYear(parts[0]);
+        }
+      }
+      setHowOld(data.how_old?.toString() || '');
       
       // Amenities - check both individual fields and required_amenities
       const requiredAmenities = (data.required_amenities || '').toLowerCase();
@@ -324,6 +343,13 @@ export default function EditLeadScreen() {
         updateData.building_facing = facing;
         updateData.Property_locationUrl = googleMapUrl.trim();
         updateData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
+        
+        // Possession On - combine month and year
+        if (possessionMonth && possessionYear) {
+          updateData.possession_on = `${possessionMonth} ${possessionYear}`;
+        }
+        updateData.how_old = howOld || null;
+        
         if (builderId) {
           updateData.builder_id = parseInt(builderId);
         }
@@ -643,6 +669,41 @@ export default function EditLeadScreen() {
             onSelect={setLift}
           />
 
+          {/* Possession On and How Old - Only for Inventory */}
+          {isInventory && (
+            <>
+              <Text style={styles.label}>{'Possession On'}</Text>
+              <View style={styles.possessionRow}>
+                <View style={styles.possessionField}>
+                  <CustomDropdown
+                    label=""
+                    value={possessionMonth}
+                    options={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']}
+                    onSelect={setPossessionMonth}
+                    placeholder="Month"
+                  />
+                </View>
+                <View style={styles.possessionField}>
+                  <CustomDropdown
+                    label=""
+                    value={possessionYear}
+                    options={Array.from({ length: 15 }, (_, i) => String(2020 + i))}
+                    onSelect={setPossessionYear}
+                    placeholder="Year"
+                  />
+                </View>
+              </View>
+
+              <CustomDropdown
+                label="How Old (Years)"
+                value={howOld}
+                options={[...HOW_OLD_OPTIONS]}
+                onSelect={setHowOld}
+                placeholder="Select age of property"
+              />
+            </>
+          )}
+
           {/* Builder for non-builder lead types */}
           {isInventory && !isBuilderType && builders.length > 0 && (
             <BuilderDropdown
@@ -816,6 +877,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   budgetField: {
+    flex: 1,
+  },
+  possessionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  possessionField: {
     flex: 1,
   },
   floorPriceRow: {
