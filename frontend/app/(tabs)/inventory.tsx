@@ -60,6 +60,8 @@ export default function InventoryLeadsScreen() {
   const [budgetMin, setBudgetMin] = useState('');
   const [budgetMax, setBudgetMax] = useState('');
   const [addressFilter, setAddressFilter] = useState('');
+  const [phoneFilter, setPhoneFilter] = useState('');
+  const [budgetSearch, setBudgetSearch] = useState(''); // Single budget field for +/- 10% search
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
   
   // Modal states
@@ -123,7 +125,9 @@ export default function InventoryLeadsScreen() {
         budgetMin,
         budgetMax,
         addressFilter,
-        selectedStatTile
+        selectedStatTile,
+        phoneFilter,
+        budgetSearch
       );
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
@@ -154,6 +158,8 @@ export default function InventoryLeadsScreen() {
     bMax: string = budgetMax,
     addrFilter: string = addressFilter,
     statTile: string = selectedStatTile,
+    phone: string = phoneFilter,
+    budgetSrch: string = budgetSearch,
   ) => {
     let filtered = [...data];
     
@@ -172,6 +178,15 @@ export default function InventoryLeadsScreen() {
           normalizeSearchText(lead.location || '').includes(normalizedSearch) ||
           normalizeSearchText(lead.address || '').includes(normalizedSearch)
       );
+    }
+
+    // Phone filter (dedicated filter field)
+    if (phone) {
+      const normalizedPhone = phone.replace(/[^0-9]/g, '');
+      filtered = filtered.filter((lead) => {
+        const leadPhone = (lead.phone || '').replace(/[^0-9]/g, '');
+        return leadPhone.includes(normalizedPhone);
+      });
     }
 
     // Address filter (dedicated filter field)
@@ -246,12 +261,27 @@ export default function InventoryLeadsScreen() {
     }
 
     // Budget filter based on floor_pricing
-    // Logic: 
-    // - If no floor is selected: search min/max price among ALL available floors
-    // - If floor is selected: search only for those specific floors' prices
-    if (bMin || bMax) {
-      const budgetMinVal = bMin ? parseFloat(bMin) : 0;
-      const budgetMaxVal = bMax ? parseFloat(bMax) : Infinity;
+    // If budgetSearch is provided, search with +/- 10% range
+    // If budgetMin/budgetMax are provided, use exact range
+    if (budgetSrch || bMin || bMax) {
+      let budgetMinVal: number;
+      let budgetMaxVal: number;
+      
+      if (budgetSrch) {
+        // Single budget value with +/- 10% range
+        const searchBudget = parseFloat(budgetSrch);
+        if (!isNaN(searchBudget)) {
+          budgetMinVal = searchBudget * 0.9; // -10%
+          budgetMaxVal = searchBudget * 1.1; // +10%
+        } else {
+          budgetMinVal = 0;
+          budgetMaxVal = Infinity;
+        }
+      } else {
+        // Explicit min/max range
+        budgetMinVal = bMin ? parseFloat(bMin) : 0;
+        budgetMaxVal = bMax ? parseFloat(bMax) : Infinity;
+      }
       
       filtered = filtered.filter((lead) => {
         // Get floor pricing array
@@ -343,7 +373,7 @@ export default function InventoryLeadsScreen() {
   };
 
   const handleApplyFilters = () => {
-    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch);
   };
 
   const hasActiveFilters = () => {
@@ -351,6 +381,7 @@ export default function InventoryLeadsScreen() {
            selectedStatuses.length > 0 || selectedFacings.length > 0 ||
            typeFilter !== '' || areaMin !== '' || areaMax !== '' ||
            budgetMin !== '' || budgetMax !== '' || addressFilter !== '' ||
+           phoneFilter !== '' || budgetSearch !== '' ||
            selectedStatTile !== 'total';
   };
 
@@ -365,9 +396,11 @@ export default function InventoryLeadsScreen() {
     setBudgetMin('');
     setBudgetMax('');
     setAddressFilter('');
+    setPhoneFilter('');
+    setBudgetSearch('');
     setSearchQuery('');
     setSelectedStatTile('total');
-    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total');
+    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total', '', '');
   };
 
   const openMapUrl = (url: string) => {
@@ -732,9 +765,63 @@ export default function InventoryLeadsScreen() {
               {/* Filter Panel */}
               {showFilters && (
                 <View style={styles.filterContainer}>
-                  {/* Address Filter - First */}
+                  {/* Phone Filter */}
                   <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>Address:</Text>
+                    <Text style={styles.filterLabel}>{'Phone:'}</Text>
+                    <View style={styles.addressInputContainer}>
+                      <Ionicons name="call-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={styles.addressInput}
+                        placeholder="Search by phone..."
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="phone-pad"
+                        value={phoneFilter}
+                        onChangeText={(text) => {
+                          setPhoneFilter(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                      />
+                      {phoneFilter.length > 0 && (
+                        <TouchableOpacity onPress={() => {
+                          setPhoneFilter('');
+                          handleApplyFilters();
+                        }}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Budget Search (+/- 10%) */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>{'Budget (±10%):'}</Text>
+                    <View style={styles.addressInputContainer}>
+                      <Ionicons name="cash-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={styles.addressInput}
+                        placeholder="e.g. 5000000 (searches 4.5M-5.5M)"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="numeric"
+                        value={budgetSearch}
+                        onChangeText={(text) => {
+                          setBudgetSearch(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                      />
+                      {budgetSearch.length > 0 && (
+                        <TouchableOpacity onPress={() => {
+                          setBudgetSearch('');
+                          handleApplyFilters();
+                        }}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Address Filter */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>{'Address:'}</Text>
                     <View style={styles.addressInputContainer}>
                       <Ionicons name="location-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
                       <TextInput

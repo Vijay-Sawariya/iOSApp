@@ -62,6 +62,8 @@ export default function ClientLeadsScreen() {
   const [locationSearch, setLocationSearch] = useState('');
   const [floorSearch, setFloorSearch] = useState('');
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
+  const [phoneFilter, setPhoneFilter] = useState('');
+  const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
 
   // Memoized filtered lists for modals
   const filteredLocations = useMemo(() => 
@@ -89,7 +91,7 @@ export default function ClientLeadsScreen() {
     try {
       const data = await offlineApi.getClientLeads();
       setLeads(data);
-      applyFilters(data, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile);
+      applyFilters(data, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch);
     } catch (error) {
       console.error('Failed to load client leads:', error);
     }
@@ -112,7 +114,9 @@ export default function ClientLeadsScreen() {
     sort: 'name' | 'date' | null,
     locations: string[] = selectedLocations,
     floors: string[] = selectedFloors,
-    statTile: string = selectedStatTile
+    statTile: string = selectedStatTile,
+    phone: string = phoneFilter,
+    budgetSrch: string = budgetSearch
   ) => {
     let filtered = [...data];
 
@@ -129,6 +133,32 @@ export default function ClientLeadsScreen() {
           normalizeSearchText(lead.phone || '').includes(normalizedSearch) ||
           normalizeSearchText(lead.location || '').includes(normalizedSearch)
       );
+    }
+
+    // Phone filter (dedicated filter field)
+    if (phone) {
+      const normalizedPhone = phone.replace(/[^0-9]/g, '');
+      filtered = filtered.filter((lead) => {
+        const leadPhone = (lead.phone || '').replace(/[^0-9]/g, '');
+        return leadPhone.includes(normalizedPhone);
+      });
+    }
+
+    // Budget search with +/- 10% range (for clients, use budget_min/budget_max)
+    if (budgetSrch) {
+      const searchBudget = parseFloat(budgetSrch);
+      if (!isNaN(searchBudget)) {
+        const budgetMinVal = searchBudget * 0.9; // -10%
+        const budgetMaxVal = searchBudget * 1.1; // +10%
+        
+        filtered = filtered.filter((lead) => {
+          const leadBudgetMin = lead.budget_min || 0;
+          const leadBudgetMax = lead.budget_max || Infinity;
+          
+          // Check if lead's budget range overlaps with search range
+          return leadBudgetMax >= budgetMinVal && leadBudgetMin <= budgetMaxVal;
+        });
+      }
     }
 
     if (temp) {
@@ -509,9 +539,63 @@ export default function ClientLeadsScreen() {
         {/* Filter Panel */}
         {showFilters && (
           <View style={styles.filterContainer}>
+            {/* Phone Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>{'Phone:'}</Text>
+              <View style={styles.phoneInputContainer}>
+                <Ionicons name="call-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="Search by phone..."
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="phone-pad"
+                  value={phoneFilter}
+                  onChangeText={(text) => {
+                    setPhoneFilter(text);
+                  }}
+                  onBlur={() => applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch)}
+                />
+                {phoneFilter.length > 0 && (
+                  <TouchableOpacity onPress={() => {
+                    setPhoneFilter('');
+                    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, '', budgetSearch);
+                  }}>
+                    <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Budget Search (+/- 10%) */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>{'Budget (±10%):'}</Text>
+              <View style={styles.phoneInputContainer}>
+                <Ionicons name="cash-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="e.g. 5000000 (searches 4.5M-5.5M)"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                  value={budgetSearch}
+                  onChangeText={(text) => {
+                    setBudgetSearch(text);
+                  }}
+                  onBlur={() => applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch)}
+                />
+                {budgetSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => {
+                    setBudgetSearch('');
+                    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, '');
+                  }}>
+                    <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
             {/* Location Selector */}
             <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Location:</Text>
+              <Text style={styles.filterLabel}>{'Location:'}</Text>
               <TouchableOpacity
                 style={styles.selectorButton}
                 onPress={() => setShowLocationPicker(true)}
@@ -1058,6 +1142,21 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: '#9CA3AF',
+  },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1F2937',
   },
   selectedTags: {
     flexDirection: 'row',
