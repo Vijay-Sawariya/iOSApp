@@ -765,57 +765,53 @@ export default function InventoryLeadsScreen() {
               {/* Filter Panel */}
               {showFilters && (
                 <View style={styles.filterContainer}>
-                  {/* Phone Filter */}
-                  <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>{'Phone:'}</Text>
-                    <View style={styles.addressInputContainer}>
-                      <Ionicons name="call-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-                      <TextInput
-                        style={styles.addressInput}
-                        placeholder="Search by phone..."
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="phone-pad"
-                        value={phoneFilter}
-                        onChangeText={(text) => {
-                          setPhoneFilter(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                      />
-                      {phoneFilter.length > 0 && (
-                        <TouchableOpacity onPress={() => {
-                          setPhoneFilter('');
-                          handleApplyFilters();
-                        }}>
-                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-                        </TouchableOpacity>
-                      )}
+                  {/* Phone and Budget in same row */}
+                  <View style={styles.filterRow}>
+                    <View style={styles.filterHalf}>
+                      <Text style={styles.filterLabel}>{'Phone:'}</Text>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="call-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="Search phone..."
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="phone-pad"
+                          value={phoneFilter}
+                          onChangeText={setPhoneFilter}
+                          onBlur={handleApplyFilters}
+                        />
+                        {phoneFilter.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setPhoneFilter('');
+                            handleApplyFilters();
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
-                  </View>
-
-                  {/* Budget Search (+/- 10%) */}
-                  <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>{'Budget (±10%):'}</Text>
-                    <View style={styles.addressInputContainer}>
-                      <Ionicons name="cash-outline" size={18} color="#6B7280" style={{ marginRight: 8 }} />
-                      <TextInput
-                        style={styles.addressInput}
-                        placeholder="e.g. 5000000 (searches 4.5M-5.5M)"
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="numeric"
-                        value={budgetSearch}
-                        onChangeText={(text) => {
-                          setBudgetSearch(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                      />
-                      {budgetSearch.length > 0 && (
-                        <TouchableOpacity onPress={() => {
-                          setBudgetSearch('');
-                          handleApplyFilters();
-                        }}>
-                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-                        </TouchableOpacity>
-                      )}
+                    <View style={styles.filterHalf}>
+                      <Text style={styles.filterLabel}>{'Budget (±10%):'}</Text>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="cash-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="e.g. 5000000"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          value={budgetSearch}
+                          onChangeText={setBudgetSearch}
+                          onBlur={handleApplyFilters}
+                        />
+                        {budgetSearch.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setBudgetSearch('');
+                            handleApplyFilters();
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   </View>
 
@@ -1254,15 +1250,41 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    maxHeight: 400,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  filterHalf: {
+    flex: 1,
+  },
+  compactInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  compactInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1F2937',
+    padding: 0,
   },
   filterSection: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   filterLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   filterOptions: {
     flexDirection: 'row',

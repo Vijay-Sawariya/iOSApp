@@ -103,6 +103,7 @@ export const LOCATIONS = [
   "Panchsheel Enclave",
   "Panchsheel Park",
   "Pashmi Marg",
+  "Prithviraj Road",
   "Rajdoot Marg",
   "Safdarjung Enclave",
   "Saket",
@@ -121,6 +122,11 @@ export const LOCATIONS = [
   "Vasant Kunj",
   "Vasant Vihar",
   "West End",
+  "Mayfair Garden",
+  "Golf Link",
+  "Amrita Shergill Marg",
+  "APJ Abdul Kalam Road",
+  "Aurangzeb Lane",
 ] as const;
 
 // Total location count
