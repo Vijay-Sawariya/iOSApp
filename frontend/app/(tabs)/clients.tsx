@@ -371,12 +371,25 @@ export default function ClientLeadsScreen() {
             </View>
           </View>
 
-          {/* Phone Row */}
+          {/* Phone Row - Clickable to Call */}
           {item.phone && (
-            <View style={styles.infoRow}>
-              <Ionicons name="call" size={14} color="#6B7280" />
-              <Text style={styles.infoText}>{item.phone}</Text>
-            </View>
+            <TouchableOpacity 
+              style={styles.infoRow}
+              onPress={() => Linking.openURL(`tel:${item.phone}`)}
+            >
+              <Ionicons name="call" size={14} color="#3B82F6" />
+              <Text style={[styles.infoText, styles.linkText]}>{item.phone}</Text>
+              <TouchableOpacity 
+                style={styles.whatsappButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
+                  Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                }}
+              >
+                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+              </TouchableOpacity>
+            </TouchableOpacity>
           )}
 
           {/* Location Row */}
@@ -1004,6 +1017,13 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginLeft: 8,
     flex: 1,
+  },
+  linkText: {
+    color: '#3B82F6',
+  },
+  whatsappButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   tagsRow: {
     flexDirection: 'row',
