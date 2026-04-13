@@ -659,12 +659,23 @@ export default function LeadDetailScreen() {
                   <Text style={styles.matchedPropertyType}>{` (${getTypeLabel(prop.property_type)})`}</Text>
                 </View>
                 <View style={styles.matchedPropertyActions}>
-                  {prop.created_by_phone ? (
+                  {prop.property_phone ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
-                      onPress={() => Linking.openURL(`tel:${prop.created_by_phone}`)}
+                      onPress={() => Linking.openURL(`tel:${prop.property_phone}`)}
                     >
                       <Ionicons name="call" size={18} color="#22C55E" />
+                    </TouchableOpacity>
+                  ) : null}
+                  {prop.property_phone ? (
+                    <TouchableOpacity 
+                      style={styles.actionIcon}
+                      onPress={() => {
+                        const cleanPhone = (prop.property_phone || '').replace(/[^0-9]/g, '');
+                        Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                      }}
+                    >
+                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                     </TouchableOpacity>
                   ) : null}
                   {prop.property_map_url ? (
@@ -679,11 +690,11 @@ export default function LeadDetailScreen() {
               </View>
               
               {/* Phone with Gen By */}
-              {(prop.created_by_fullname || prop.created_by_phone) ? (
+              {(prop.property_phone || prop.created_by_fullname) ? (
                 <View style={styles.matchedPropertyInfoRow}>
                   <Ionicons name="call-outline" size={16} color="#22C55E" />
                   <Text style={styles.matchedPropertyInfoText}>
-                    {safeStr(prop.created_by_phone)}
+                    {safeStr(prop.property_phone)}
                     {prop.created_by_fullname ? (
                       <Text style={styles.genByText}>{`  (Gen By: ${safeStr(prop.created_by_fullname)})`}</Text>
                     ) : null}
