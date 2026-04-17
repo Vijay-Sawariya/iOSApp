@@ -465,11 +465,10 @@ export default function InventoryLeadsScreen() {
     // Check if user can view sensitive data for this lead
     const canViewData = canViewSensitiveData(user?.role, user?.id, item.created_by);
     
-    // Determine what to display for phone and address
+    // Determine what to display for phone and address (location is always visible)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
-    const displayAddress = canViewData 
-      ? [item.address, item.location].filter(Boolean).join(', ')
-      : maskAddress(item.address, item.location);
+    const maskedAddress = canViewData ? item.address : (item.address ? '**********' : null);
+    const displayAddressLocation = [maskedAddress, item.location].filter(Boolean).join(', ');
 
     // Parse amenities from required_amenities field or individual amenity fields
     const amenitiesList: string[] = [];
@@ -542,7 +541,7 @@ export default function InventoryLeadsScreen() {
                 style={[styles.infoText, canViewData && hasMapUrl && styles.linkText]} 
                 numberOfLines={2}
               >
-                {displayAddress}
+                {displayAddressLocation}
               </Text>
               {canViewData && hasMapUrl && (
                 <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
