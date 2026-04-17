@@ -12,6 +12,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -878,20 +879,71 @@ export default function InventoryLeadsScreen() {
                     </View>
                   </View>
 
-                  {/* Location Selector */}
+                  {/* Location Selector with Inline Search */}
                   <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>Location:</Text>
-                    <TouchableOpacity
-                      style={styles.selectorButton}
-                      onPress={() => setShowLocationPicker(true)}
-                    >
-                      <Text style={[styles.selectorText, selectedLocations.length === 0 && styles.placeholderText]}>
-                        {selectedLocations.length > 0 
-                          ? `${selectedLocations.length} selected` 
-                          : 'Select locations'}
-                      </Text>
-                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
-                    </TouchableOpacity>
+                    <Text style={styles.filterLabel}>{'Location:'}</Text>
+                    <View style={styles.locationSearchContainer}>
+                      <Ionicons name="location-outline" size={18} color="#6B7280" />
+                      <TextInput
+                        style={styles.locationSearchInput}
+                        placeholder="Type to search locations..."
+                        placeholderTextColor="#9CA3AF"
+                        value={locationSearch}
+                        onChangeText={setLocationSearch}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {locationSearch.length > 0 && (
+                        <TouchableOpacity onPress={() => setLocationSearch('')}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity 
+                        style={styles.locationPickerBtn}
+                        onPress={() => setShowLocationPicker(true)}
+                      >
+                        <Ionicons name="list" size={18} color="#3B82F6" />
+                      </TouchableOpacity>
+                    </View>
+                    
+                    {/* Inline filtered locations dropdown */}
+                    {locationSearch.length > 0 && filteredLocations.length > 0 && (
+                      <View style={styles.locationDropdown}>
+                        <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled>
+                          {filteredLocations.slice(0, 6).map((loc) => (
+                            <TouchableOpacity
+                              key={loc}
+                              style={[
+                                styles.locationDropdownItem,
+                                selectedLocations.includes(loc) && styles.locationDropdownItemSelected
+                              ]}
+                              onPress={() => {
+                                toggleLocation(loc);
+                                setLocationSearch('');
+                                handleApplyFilters();
+                              }}
+                            >
+                              <Text style={styles.locationDropdownText}>{loc}</Text>
+                              {selectedLocations.includes(loc) && (
+                                <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                          {filteredLocations.length > 6 && (
+                            <TouchableOpacity 
+                              style={styles.locationDropdownMore}
+                              onPress={() => setShowLocationPicker(true)}
+                            >
+                              <Text style={styles.locationDropdownMoreText}>
+                                {`+${filteredLocations.length - 6} more - tap to see all`}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </ScrollView>
+                      </View>
+                    )}
+                    
+                    {/* Selected locations tags */}
                     {selectedLocations.length > 0 && (
                       <View style={styles.selectedTags}>
                         {selectedLocations.map(loc => (
@@ -1361,6 +1413,68 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     color: '#9CA3AF',
+  },
+  locationSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  locationSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1F2937',
+    padding: 0,
+  },
+  locationPickerBtn: {
+    padding: 4,
+  },
+  locationDropdown: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 220,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  locationDropdownScroll: {
+    maxHeight: 220,
+  },
+  locationDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  locationDropdownItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  locationDropdownText: {
+    fontSize: 15,
+    color: '#1F2937',
+  },
+  locationDropdownMore: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F9FAFB',
+  },
+  locationDropdownMoreText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    textAlign: 'center',
   },
   selectedTags: {
     flexDirection: 'row',

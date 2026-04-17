@@ -635,20 +635,71 @@ www.sagarhome.com`;
               </View>
             </View>
 
-            {/* Location Selector */}
+            {/* Location Selector with Inline Search */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>{'Location:'}</Text>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setShowLocationPicker(true)}
-              >
-                <Text style={[styles.selectorText, selectedLocations.length === 0 && styles.placeholderText]}>
-                  {selectedLocations.length > 0 
-                    ? `${selectedLocations.length} selected` 
-                    : 'Select locations'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
+              <View style={styles.locationSearchContainer}>
+                <Ionicons name="location-outline" size={18} color="#6B7280" />
+                <TextInput
+                  style={styles.locationSearchInput}
+                  placeholder="Type to search locations..."
+                  placeholderTextColor="#9CA3AF"
+                  value={locationSearch}
+                  onChangeText={setLocationSearch}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {locationSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setLocationSearch('')}>
+                    <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity 
+                  style={styles.locationPickerBtn}
+                  onPress={() => setShowLocationPicker(true)}
+                >
+                  <Ionicons name="list" size={18} color="#3B82F6" />
+                </TouchableOpacity>
+              </View>
+              
+              {/* Inline filtered locations dropdown */}
+              {locationSearch.length > 0 && filteredLocations.length > 0 && (
+                <View style={styles.locationDropdown}>
+                  <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled>
+                    {filteredLocations.slice(0, 6).map((loc) => (
+                      <TouchableOpacity
+                        key={loc}
+                        style={[
+                          styles.locationDropdownItem,
+                          selectedLocations.includes(loc) && styles.locationDropdownItemSelected
+                        ]}
+                        onPress={() => {
+                          toggleLocation(loc);
+                          setLocationSearch('');
+                          handleApplyLocationFloorFilters();
+                        }}
+                      >
+                        <Text style={styles.locationDropdownText}>{loc}</Text>
+                        {selectedLocations.includes(loc) && (
+                          <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                    {filteredLocations.length > 6 && (
+                      <TouchableOpacity 
+                        style={styles.locationDropdownMore}
+                        onPress={() => setShowLocationPicker(true)}
+                      >
+                        <Text style={styles.locationDropdownMoreText}>
+                          {`+${filteredLocations.length - 6} more - tap to see all`}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+              
+              {/* Selected locations tags */}
               {selectedLocations.length > 0 && (
                 <View style={styles.selectedTags}>
                   {selectedLocations.map(loc => (
