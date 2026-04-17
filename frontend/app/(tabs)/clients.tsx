@@ -10,11 +10,13 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { LOCATIONS, FLOORS, normalizeSearchText } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -53,6 +55,7 @@ export default function ClientLeadsScreen() {
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const { isOnline } = useOffline();
+  const { user } = useAuth();
   
   // Location/Floor filter states
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -64,6 +67,34 @@ export default function ClientLeadsScreen() {
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
+
+  // Get time-based greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  // Share WhatsApp message (matching PHP ShareMessage function)
+  const handleWhatsAppShare = (phoneNumber: string) => {
+    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+    const greeting = getGreeting();
+    const senderName = user?.full_name || 'Team';
+    
+    const message = `*Hi Sir, ${greeting}*
+
+Have you already finalised a property or still exploring?
+I've got some excellent new options available. Please let me know if there have been any changes in your requirements or budget, so I can share the most relevant choices with you.
+
+Warm Regards
+${senderName}
+Sagar Home Developers`;
+
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/91${cleanPhone}?text=${encodedMessage}`;
+    Linking.openURL(whatsappUrl);
+  };
 
   // Memoized filtered lists for modals
   const filteredLocations = useMemo(() => 
@@ -383,8 +414,7 @@ export default function ClientLeadsScreen() {
                 style={styles.whatsappButton}
                 onPress={(e) => {
                   e.stopPropagation();
-                  const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
-                  Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                  handleWhatsAppShare(item.phone || '');
                 }}
               >
                 <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
