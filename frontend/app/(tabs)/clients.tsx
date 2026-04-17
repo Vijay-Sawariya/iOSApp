@@ -383,9 +383,8 @@ www.sagarhome.com`;
     // Check if user can view sensitive data for this lead
     const canViewData = canViewSensitiveData(user?.role, user?.id, item.created_by);
     
-    // Determine what to display for phone and location
+    // Determine what to display for phone (location is visible to everyone)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
-    const displayLocation = canViewData ? item.location : (item.location ? '**********' : null);
     
     return (
       <View style={styles.leadCard}>
@@ -441,7 +440,7 @@ www.sagarhome.com`;
           {item.location && (
             <View style={styles.infoRow}>
               <Ionicons name="location" size={14} color="#6B7280" />
-              <Text style={styles.infoText} numberOfLines={2}>{displayLocation}</Text>
+              <Text style={styles.infoText} numberOfLines={2}>{item.location}</Text>
             </View>
           )}
 

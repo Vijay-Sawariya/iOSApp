@@ -525,10 +525,9 @@ export default function LeadDetailScreen() {
   // Check if user can view sensitive data for this lead
   const canViewData = canViewSensitiveData(user?.role, user?.id, lead?.created_by);
   
-  // Get display values for sensitive fields
+  // Get display values for sensitive fields (location is visible to everyone)
   const displayPhone = canViewData ? lead?.phone : maskPhone(lead?.phone);
   const displayAddress = canViewData ? lead?.address : (lead?.address ? '**********' : null);
-  const displayLocation = canViewData ? lead?.location : (lead?.location ? '**********' : null);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -607,7 +606,7 @@ export default function LeadDetailScreen() {
         <Text style={styles.sectionTitle}>{'Contact Information'}</Text>
         {renderDetailRow('call', 'Phone', displayPhone)}
         {renderDetailRow('mail', 'Email', lead.email)}
-        {renderDetailRow('location', 'Location', displayLocation)}
+        {renderDetailRow('location', 'Location', lead.location)}
         {renderDetailRow('home', 'Address', displayAddress)}
       </View>
 
@@ -676,7 +675,13 @@ export default function LeadDetailScreen() {
       {isClientLead() && lead.matched_properties && lead.matched_properties.length > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
-          {lead.matched_properties.map((prop: any, index: number) => (
+          {lead.matched_properties.map((prop: any, index: number) => {
+            // Check if user can view sensitive data for this matched property
+            const canViewPropertyData = canViewSensitiveData(user?.role, user?.id, prop.property_created_by || prop.created_by);
+            const displayPropertyPhone = canViewPropertyData ? prop.property_phone : (prop.property_phone ? '**********' : null);
+            const displayPropertyAddress = canViewPropertyData ? prop.property_address : (prop.property_address ? '**********' : null);
+            
+            return (
             <View key={index} style={styles.matchedPropertyCard}>
               {/* Property Header with Action Icons */}
               <View style={styles.matchedPropertyHeader}>
@@ -685,7 +690,8 @@ export default function LeadDetailScreen() {
                   <Text style={styles.matchedPropertyType}>{` (${getTypeLabel(prop.property_type)})`}</Text>
                 </View>
                 <View style={styles.matchedPropertyActions}>
-                  {prop.property_phone ? (
+                  {/* Only show Call/WhatsApp icons if user can view data */}
+                  {prop.property_phone && canViewPropertyData ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
                       onPress={() => Linking.openURL(`tel:${prop.property_phone}`)}
@@ -693,7 +699,7 @@ export default function LeadDetailScreen() {
                       <Ionicons name="call" size={18} color="#22C55E" />
                     </TouchableOpacity>
                   ) : null}
-                  {prop.property_phone ? (
+                  {prop.property_phone && canViewPropertyData ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
                       onPress={() => {
@@ -715,12 +721,12 @@ export default function LeadDetailScreen() {
                 </View>
               </View>
               
-              {/* Phone with Gen By */}
+              {/* Phone with Gen By - Masked if no permission */}
               {(prop.property_phone || prop.created_by_fullname) ? (
                 <View style={styles.matchedPropertyInfoRow}>
-                  <Ionicons name="call-outline" size={16} color="#22C55E" />
+                  <Ionicons name="call-outline" size={16} color={canViewPropertyData ? "#22C55E" : "#9CA3AF"} />
                   <Text style={styles.matchedPropertyInfoText}>
-                    {safeStr(prop.property_phone)}
+                    {displayPropertyPhone || ''}
                     {prop.created_by_fullname ? (
                       <Text style={styles.genByText}>{`  (Gen By: ${safeStr(prop.created_by_fullname)})`}</Text>
                     ) : null}
@@ -728,12 +734,12 @@ export default function LeadDetailScreen() {
                 </View>
               ) : null}
               
-              {/* Property Details Row - Address | Location | Floor | BHK | Size */}
+              {/* Property Details Row - Address (masked) | Location (visible) | Floor | BHK | Size */}
               <View style={styles.matchedPropertyInfoRow}>
                 <Ionicons name="home-outline" size={16} color="#6B7280" />
                 <Text style={styles.matchedPropertyInfoText}>
                   {[
-                    prop.property_address,
+                    displayPropertyAddress,
                     prop.property_location,
                     prop.property_floor,
                     prop.property_bhk,
@@ -770,7 +776,8 @@ export default function LeadDetailScreen() {
                 </View>
               ) : null}
             </View>
-          ))}
+            );
+          })}
         </View>
       ) : isClientLead() ? (
         <View style={styles.section}>
