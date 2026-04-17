@@ -473,6 +473,27 @@ def get_client_leads(
     
     return leads
 
+@api_router.get("/leads/{lead_id}/preferred-inventory")
+def get_preferred_inventory_ids(
+    lead_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get list of preferred/matched inventory IDs for a client lead"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Get all matching_lead_id from preferred_leads for this client
+        cursor.execute(
+            """SELECT matching_lead_id 
+               FROM preferred_leads 
+               WHERE lead_id = %s AND matching_lead_id IS NOT NULL""",
+            (lead_id,)
+        )
+        rows = cursor.fetchall()
+    
+    # Return list of inventory IDs
+    inventory_ids = [row['matching_lead_id'] for row in rows]
+    return {"client_id": lead_id, "preferred_inventory_ids": inventory_ids}
+
 @api_router.get("/leads/inventory")
 def get_inventory_leads(
     skip: int = 0,

@@ -35,6 +35,7 @@ import {
   maskPhone,
   maskAddress,
 } from '../../constants/leadOptions';
+import { api } from '../../services/api';
 
 // Filter arrays
 const LOCATION_OPTIONS = [...LOCATIONS];
@@ -77,6 +78,7 @@ export default function InventoryLeadsScreen() {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [preferredInventoryIds, setPreferredInventoryIds] = useState<number[]>([]);
   
   // Modal states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -161,7 +163,8 @@ export default function InventoryLeadsScreen() {
         selectedStatTile,
         phoneFilter,
         budgetSearch,
-        selectedClient
+        selectedClient,
+        preferredInventoryIds
       );
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
@@ -196,78 +199,17 @@ export default function InventoryLeadsScreen() {
     phone: string = phoneFilter,
     budgetSrch: string = budgetSearch,
     client: any = selectedClient,
+    preferredIds: number[] = preferredInventoryIds,
   ) => {
     let filtered = [...data];
     
-    // Client/Buyer matching filter - If a client is selected, filter inventory to match their requirements
-    if (client) {
-      filtered = filtered.filter((inventory) => {
-        let matches = true;
-        
-        // Location match - client's preferred location should match inventory location
-        if (client.location && inventory.location) {
-          const clientLocations = client.location.split(',').map((l: string) => l.trim().toLowerCase());
-          const inventoryLocations = inventory.location.split(',').map((l: string) => l.trim().toLowerCase());
-          const locationMatch = clientLocations.some((cLoc: string) => 
-            inventoryLocations.some((iLoc: string) => 
-              iLoc.includes(cLoc) || cLoc.includes(iLoc)
-            )
-          );
-          if (!locationMatch) matches = false;
-        }
-        
-        // Budget match - inventory price should be within client's budget range (+/- 10%)
-        if (matches && (client.budget_min || client.budget_max)) {
-          const clientBudgetMin = parseFloat(client.budget_min || '0');
-          const clientBudgetMax = parseFloat(client.budget_max || '999999999');
-          
-          // Get inventory's floor pricing or budget
-          let inventoryPrice = 0;
-          if (inventory.floor_pricing && inventory.floor_pricing.length > 0) {
-            // Use the minimum floor price
-            inventoryPrice = Math.min(...inventory.floor_pricing.map((fp: any) => parseFloat(fp.floor_amount || '0')));
-          } else if (inventory.budget_min) {
-            inventoryPrice = parseFloat(inventory.budget_min);
-          }
-          
-          if (inventoryPrice > 0) {
-            // Allow 10% buffer
-            const minWithBuffer = clientBudgetMin * 0.9;
-            const maxWithBuffer = clientBudgetMax * 1.1;
-            if (inventoryPrice < minWithBuffer || inventoryPrice > maxWithBuffer) {
-              matches = false;
-            }
-          }
-        }
-        
-        // Property type match
-        if (matches && client.property_type && inventory.property_type) {
-          if (client.property_type.toLowerCase() !== inventory.property_type.toLowerCase()) {
-            matches = false;
-          }
-        }
-        
-        // BHK match
-        if (matches && client.bhk && inventory.bhk) {
-          if (!inventory.bhk.toLowerCase().includes(client.bhk.toLowerCase())) {
-            matches = false;
-          }
-        }
-        
-        // Floor preference match
-        if (matches && client.floor && inventory.floor) {
-          const clientFloors = client.floor.split(',').map((f: string) => f.trim().toLowerCase());
-          const inventoryFloors = inventory.floor.split(',').map((f: string) => f.trim().toLowerCase());
-          const floorMatch = clientFloors.some((cFloor: string) => 
-            inventoryFloors.some((iFloor: string) => 
-              iFloor.includes(cFloor) || cFloor.includes(iFloor)
-            )
-          );
-          if (!floorMatch) matches = false;
-        }
-        
-        return matches;
-      });
+    // Client/Buyer matching filter - If a client is selected, filter inventory to only show preferred/matched properties
+    if (client && preferredIds.length > 0) {
+      // Filter to only show inventory that's in the preferred list for this client
+      filtered = filtered.filter((inventory) => preferredIds.includes(inventory.id));
+    } else if (client && preferredIds.length === 0) {
+      // Client selected but no preferred inventory - show empty list
+      filtered = [];
     }
     
     // Stat tile filter (from clicking the count tiles)
@@ -443,7 +385,7 @@ export default function InventoryLeadsScreen() {
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    applyFilters(leads, text);
+    applyFilters(leads, text, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
   };
 
   const toggleLocation = (loc: string) => {
@@ -476,11 +418,11 @@ export default function InventoryLeadsScreen() {
 
   const handleStatTileClick = (tile: string) => {
     setSelectedStatTile(tile);
-    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, tile);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, tile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
   };
 
   const handleApplyFilters = () => {
-    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
   };
 
   const hasActiveFilters = () => {
@@ -509,7 +451,8 @@ export default function InventoryLeadsScreen() {
     setSelectedStatTile('total');
     setSelectedClient(null);
     setClientSearch('');
-    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total', '', '', null);
+    setPreferredInventoryIds([]);
+    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total', '', '', null, []);
   };
 
   const openMapUrl = (url: string) => {
@@ -950,7 +893,8 @@ export default function InventoryLeadsScreen() {
                             setSelectedClient(null);
                             setClientSearch('');
                             setShowClientDropdown(false);
-                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, null);
+                            setPreferredInventoryIds([]);
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, null, []);
                           }}>
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
@@ -964,11 +908,20 @@ export default function InventoryLeadsScreen() {
                               <TouchableOpacity
                                 key={client.id}
                                 style={styles.clientDropdownItem}
-                                onPress={() => {
+                                onPress={async () => {
                                   setSelectedClient(client);
                                   setClientSearch('');
                                   setShowClientDropdown(false);
-                                  applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, client);
+                                  // Fetch preferred inventory IDs for this client
+                                  try {
+                                    const ids = await api.getPreferredInventoryIds(client.id);
+                                    setPreferredInventoryIds(ids);
+                                    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, client, ids);
+                                  } catch (error) {
+                                    console.error('Failed to fetch preferred inventory:', error);
+                                    setPreferredInventoryIds([]);
+                                    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, client, []);
+                                  }
                                 }}
                               >
                                 <View style={styles.clientDropdownItemContent}>
@@ -993,10 +946,12 @@ export default function InventoryLeadsScreen() {
                           <Ionicons name="person" size={14} color="#3B82F6" />
                           <Text style={styles.selectedClientText}>
                             {selectedClient.name} ({selectedClient.lead_type === 'buyer' ? 'Buyer' : 'Tenant'})
+                            {preferredInventoryIds.length > 0 ? ` - ${preferredInventoryIds.length} properties` : ' - No saved properties'}
                           </Text>
                           <TouchableOpacity onPress={() => {
                             setSelectedClient(null);
-                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, null);
+                            setPreferredInventoryIds([]);
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, null, []);
                           }}>
                             <Ionicons name="close-circle" size={16} color="#3B82F6" />
                           </TouchableOpacity>
@@ -1127,7 +1082,7 @@ export default function InventoryLeadsScreen() {
                                 setSelectedLocations(newLocations);
                                 setLocationSearch('');
                                 // Apply filters directly with the updated locations
-                                applyFilters(leads, searchQuery, newLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch);
+                                applyFilters(leads, searchQuery, newLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                               }}
                             >
                               <Text style={styles.locationDropdownText}>{loc}</Text>

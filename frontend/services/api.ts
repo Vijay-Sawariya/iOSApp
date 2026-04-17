@@ -154,6 +154,15 @@ export const api = {
     );
   },
 
+  getPreferredInventoryIds: async (clientId: number): Promise<number[]> => {
+    const response = await fetch(`${API_URL}/api/leads/${clientId}/preferred-inventory`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to get preferred inventory');
+    const data = await response.json();
+    return data.preferred_inventory_ids || [];
+  },
+
   createLead: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
