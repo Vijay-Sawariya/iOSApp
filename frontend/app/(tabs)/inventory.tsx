@@ -930,7 +930,7 @@ export default function InventoryLeadsScreen() {
                                     {[
                                       client.lead_type === 'buyer' ? 'Buyer' : 'Tenant',
                                       client.location,
-                                      client.budget_max ? `₹${(client.budget_max / 100000).toFixed(0)}L` : null
+                                      client.budget_max ? `₹${client.budget_max} Cr` : null
                                     ].filter(Boolean).join(' • ')}
                                   </Text>
                                 </View>
