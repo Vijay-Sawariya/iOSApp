@@ -909,8 +909,8 @@ export default function InventoryLeadsScreen() {
                     {/* Inline filtered locations dropdown */}
                     {locationSearch.length > 0 && filteredLocations.length > 0 && (
                       <View style={styles.locationDropdown}>
-                        <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled>
-                          {filteredLocations.slice(0, 6).map((loc) => (
+                        <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                          {filteredLocations.slice(0, 8).map((loc) => (
                             <TouchableOpacity
                               key={loc}
                               style={[
@@ -918,9 +918,14 @@ export default function InventoryLeadsScreen() {
                                 selectedLocations.includes(loc) && styles.locationDropdownItemSelected
                               ]}
                               onPress={() => {
-                                toggleLocation(loc);
+                                // Calculate new locations first, then apply filters with the new state directly
+                                const newLocations = selectedLocations.includes(loc)
+                                  ? selectedLocations.filter(l => l !== loc)
+                                  : [...selectedLocations, loc];
+                                setSelectedLocations(newLocations);
                                 setLocationSearch('');
-                                handleApplyFilters();
+                                // Apply filters directly with the updated locations
+                                applyFilters(leads, searchQuery, newLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch);
                               }}
                             >
                               <Text style={styles.locationDropdownText}>{loc}</Text>
@@ -929,13 +934,13 @@ export default function InventoryLeadsScreen() {
                               )}
                             </TouchableOpacity>
                           ))}
-                          {filteredLocations.length > 6 && (
+                          {filteredLocations.length > 8 && (
                             <TouchableOpacity 
                               style={styles.locationDropdownMore}
                               onPress={() => setShowLocationPicker(true)}
                             >
                               <Text style={styles.locationDropdownMoreText}>
-                                {`+${filteredLocations.length - 6} more - tap to see all`}
+                                {`+${filteredLocations.length - 8} more - tap to see all`}
                               </Text>
                             </TouchableOpacity>
                           )}
