@@ -10,6 +10,8 @@ import {
   Alert,
   Modal,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -629,7 +631,10 @@ export default function InventoryLeadsScreen() {
     onSearchChange: (text: string) => void
   ) => (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView 
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.pickerModal}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{title}</Text>
@@ -645,11 +650,25 @@ export default function InventoryLeadsScreen() {
               placeholderTextColor="#9CA3AF"
               value={searchValue}
               onChangeText={onSearchChange}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
+            {searchValue.length > 0 && (
+              <TouchableOpacity onPress={() => onSearchChange('')}>
+                <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
           </View>
+          {/* Show count of filtered results */}
+          {searchValue.length > 0 && (
+            <Text style={styles.searchResultCount}>
+              {data.length} {data.length === 1 ? 'result' : 'results'} found
+            </Text>
+          )}
           <FlatList
             data={data}
             keyExtractor={(item) => item}
+            keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.modalItem, selectedItems.includes(item) && styles.modalItemSelected]}
@@ -665,6 +684,11 @@ export default function InventoryLeadsScreen() {
             initialNumToRender={20}
             maxToRenderPerBatch={20}
             windowSize={10}
+            ListEmptyComponent={
+              <View style={styles.emptySearchResult}>
+                <Text style={styles.emptySearchText}>No results found</Text>
+              </View>
+            }
           />
           <TouchableOpacity
             style={styles.modalDoneBtn}
@@ -676,7 +700,7 @@ export default function InventoryLeadsScreen() {
             <Text style={styles.modalDoneBtnText}>Done ({selectedItems.length} selected)</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1614,8 +1638,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1F2937',
   },
+  searchResultCount: {
+    fontSize: 13,
+    color: '#6B7280',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  emptySearchResult: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptySearchText: {
+    fontSize: 15,
+    color: '#9CA3AF',
+  },
   modalList: {
-    maxHeight: 400,
+    flex: 1,
+    maxHeight: 350,
   },
   modalItem: {
     flexDirection: 'row',

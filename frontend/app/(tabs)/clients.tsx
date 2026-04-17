@@ -11,6 +11,8 @@ import {
   Modal,
   ScrollView,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -762,10 +764,13 @@ www.sagarhome.com`;
         animationType="slide"
         onRequestClose={() => setShowLocationPicker(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Locations</Text>
+              <Text style={styles.modalTitle}>{'Select Locations'}</Text>
               <TouchableOpacity onPress={() => setShowLocationPicker(false)}>
                 <Ionicons name="close" size={24} color="#1F2937" />
               </TouchableOpacity>
@@ -778,11 +783,24 @@ www.sagarhome.com`;
                 placeholderTextColor="#9CA3AF"
                 value={locationSearch}
                 onChangeText={setLocationSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
               />
+              {locationSearch.length > 0 && (
+                <TouchableOpacity onPress={() => setLocationSearch('')}>
+                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
             </View>
+            {locationSearch.length > 0 && (
+              <Text style={styles.searchResultCount}>
+                {filteredLocations.length} {filteredLocations.length === 1 ? 'result' : 'results'} found
+              </Text>
+            )}
             <FlatList
               data={filteredLocations}
               keyExtractor={(item) => item}
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.modalItem, selectedLocations.includes(item) && styles.modalItemSelected]}
@@ -798,6 +816,11 @@ www.sagarhome.com`;
               initialNumToRender={20}
               maxToRenderPerBatch={20}
               windowSize={10}
+              ListEmptyComponent={
+                <View style={styles.emptySearchResult}>
+                  <Text style={styles.emptySearchText}>{'No results found'}</Text>
+                </View>
+              }
             />
             <TouchableOpacity
               style={styles.modalDoneBtn}
@@ -806,10 +829,10 @@ www.sagarhome.com`;
                 handleApplyLocationFloorFilters();
               }}
             >
-              <Text style={styles.modalDoneBtnText}>Done ({selectedLocations.length} selected)</Text>
+              <Text style={styles.modalDoneBtnText}>{`Done (${selectedLocations.length} selected)`}</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Floor Picker Modal */}
@@ -1305,8 +1328,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1F2937',
   },
+  searchResultCount: {
+    fontSize: 13,
+    color: '#6B7280',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  emptySearchResult: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptySearchText: {
+    fontSize: 15,
+    color: '#9CA3AF',
+  },
   modalList: {
-    maxHeight: 400,
+    flex: 1,
+    maxHeight: 350,
   },
   modalItem: {
     flexDirection: 'row',
