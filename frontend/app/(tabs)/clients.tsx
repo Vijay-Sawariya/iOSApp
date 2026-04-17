@@ -478,7 +478,7 @@ www.sagarhome.com`;
           )}
         </TouchableOpacity>
 
-        {/* Action Buttons Row */}
+        {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionButton}
@@ -487,22 +487,26 @@ www.sagarhome.com`;
             <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
             <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
           </TouchableOpacity>
-          <View style={styles.actionDivider} />
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => router.push(`/leads/edit/${item.id}` as any)}
-          >
-            <Ionicons name="create-outline" size={18} color="#3B82F6" />
-            <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
-          </TouchableOpacity>
-          <View style={styles.actionDivider} />
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleDelete(item.id, item.name)}
-          >
-            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-            <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
-          </TouchableOpacity>
+          {canViewData && (
+            <>
+              <View style={styles.actionDivider} />
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => router.push(`/leads/edit/${item.id}` as any)}
+              >
+                <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
+              </TouchableOpacity>
+              <View style={styles.actionDivider} />
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleDelete(item.id, item.name)}
+              >
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
     );

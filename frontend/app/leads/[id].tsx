@@ -559,19 +559,23 @@ export default function LeadDetailScreen() {
             </View>
           </View>
           
-          {/* Header Action Icons */}
+          {/* Header Action Icons - Only show edit/delete if user can view data */}
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerIconButton} onPress={handleEdit}>
-              <Ionicons name="create-outline" size={22} color="#3B82F6" />
-            </TouchableOpacity>
+            {canViewData ? (
+              <TouchableOpacity style={styles.headerIconButton} onPress={handleEdit}>
+                <Ionicons name="create-outline" size={22} color="#3B82F6" />
+              </TouchableOpacity>
+            ) : null}
             {isInventoryLead() ? (
               <TouchableOpacity style={styles.headerIconButton} onPress={handleCopyDetails}>
                 <Ionicons name="copy-outline" size={22} color="#10B981" />
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity style={styles.headerIconButton} onPress={handleDelete}>
-              <Ionicons name="trash-outline" size={22} color="#EF4444" />
-            </TouchableOpacity>
+            {canViewData ? (
+              <TouchableOpacity style={styles.headerIconButton} onPress={handleDelete}>
+                <Ionicons name="trash-outline" size={22} color="#EF4444" />
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
 
