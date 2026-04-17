@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { api } from '../../../services/api';
+import { useAuth } from '../../../contexts/AuthContext';
+import { canViewSensitiveData, maskPhone, maskAddress } from '../../../constants/leadOptions';
 import * as Location from 'expo-location';
 
 // Import shared components
@@ -63,6 +65,8 @@ export default function EditLeadScreen() {
   const [saving, setSaving] = useState(false);
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const [builders, setBuilders] = useState<Builder[]>([]);
+  const { user } = useAuth();  // Get current user for permission checks
+  const [originalCreatedBy, setOriginalCreatedBy] = useState<number | null>(null);  // Store original creator
   
   // Basic Info
   const [name, setName] = useState('');
@@ -136,6 +140,9 @@ export default function EditLeadScreen() {
     if (!id) return;
     try {
       const data = await api.getLead(id);
+      
+      // Store original creator for permission checks
+      setOriginalCreatedBy(data.created_by || null);
       
       // Basic Info
       setName(data.name || '');
@@ -377,6 +384,13 @@ export default function EditLeadScreen() {
     );
   }
 
+  // Check if user can view sensitive data for this lead
+  const canViewData = canViewSensitiveData(user?.role, user?.id, originalCreatedBy);
+  
+  // Determine display values for sensitive fields in edit mode
+  const displayPhone = canViewData ? phone : (phone ? '**********' : '');
+  const displayAddress = canViewData ? address : (address ? '**********' : '');
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardAvoidingView 
@@ -441,10 +455,11 @@ export default function EditLeadScreen() {
           />
           <FormInput
             label="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Enter phone number"
+            value={displayPhone}
+            onChangeText={canViewData ? setPhone : undefined}
+            placeholder={canViewData ? "Enter phone number" : "No access"}
             keyboardType="phone-pad"
+            editable={canViewData}
           />
         </View>
 
@@ -495,9 +510,10 @@ export default function EditLeadScreen() {
             <>
               <FormInput
                 label="Address"
-                value={address}
-                onChangeText={setAddress}
-                placeholder="Enter property address"
+                value={displayAddress}
+                onChangeText={canViewData ? setAddress : undefined}
+                placeholder={canViewData ? "Enter property address" : "No access"}
+                editable={canViewData}
               />
 
               <Text style={styles.label}>Google Map URL</Text>

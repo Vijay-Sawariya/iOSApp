@@ -17,6 +17,7 @@ export const FormInput: React.FC<FormInputProps> = ({
   label,
   required = false,
   error,
+  editable = true,
   ...textInputProps
 }) => {
   return (
@@ -24,10 +25,16 @@ export const FormInput: React.FC<FormInputProps> = ({
       <Text style={styles.label}>
         {label}
         {required && <Text style={styles.required}> *</Text>}
+        {!editable && <Text style={styles.locked}> (Locked)</Text>}
       </Text>
       <TextInput
-        style={[styles.input, error && styles.inputError]}
+        style={[
+          styles.input, 
+          error && styles.inputError,
+          !editable && styles.inputDisabled
+        ]}
         placeholderTextColor="#9CA3AF"
+        editable={editable}
         {...textInputProps}
       />
       {error && <Text style={styles.errorText}>{error}</Text>}
@@ -48,6 +55,11 @@ const styles = StyleSheet.create({
   required: {
     color: '#EF4444',
   },
+  locked: {
+    color: '#9CA3AF',
+    fontWeight: '400',
+    fontStyle: 'italic',
+  },
   input: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
@@ -60,6 +72,10 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: '#EF4444',
+  },
+  inputDisabled: {
+    backgroundColor: '#F3F4F6',
+    color: '#9CA3AF',
   },
   errorText: {
     fontSize: 12,

@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
 import {
@@ -30,6 +31,9 @@ import {
   FLOORS,
   INVENTORY_STATUSES,
   FACINGS,
+  canViewSensitiveData,
+  maskPhone,
+  maskAddress,
 } from '../../constants/leadOptions';
 
 // Filter arrays
@@ -51,6 +55,7 @@ export default function InventoryLeadsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const { isOnline } = useOffline();
+  const { user } = useAuth();  // Get current user for permission checks
   
   // Filter states
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -457,6 +462,15 @@ export default function InventoryLeadsScreen() {
     const floorPricing = formatFloorPricing(item.floor_pricing, item.unit);
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
+    // Check if user can view sensitive data for this lead
+    const canViewData = canViewSensitiveData(user?.role, user?.id, item.created_by);
+    
+    // Determine what to display for phone and address
+    const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
+    const displayAddress = canViewData 
+      ? [item.address, item.location].filter(Boolean).join(', ')
+      : maskAddress(item.address, item.location);
+
     // Parse amenities from required_amenities field or individual amenity fields
     const amenitiesList: string[] = [];
     if ((item as any).park === '1' || (item as any).park === 1) amenitiesList.push('Park');
@@ -493,46 +507,49 @@ export default function InventoryLeadsScreen() {
             </View>
           </View>
 
-          {/* Phone Row - Clickable to Call */}
+          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
-            <TouchableOpacity 
-              style={styles.infoRow}
-              onPress={() => Linking.openURL(`tel:${item.phone}`)}
-            >
-              <Ionicons name="call" size={14} color="#3B82F6" />
-              <Text style={[styles.infoText, styles.linkText]}>{item.phone}</Text>
-              <TouchableOpacity 
-                style={styles.whatsappButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
-                  Linking.openURL(`https://wa.me/91${cleanPhone}`);
-                }}
-              >
-                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
-              </TouchableOpacity>
-            </TouchableOpacity>
+            <View style={styles.infoRow}>
+              <Ionicons name="call" size={14} color={canViewData ? "#3B82F6" : "#9CA3AF"} />
+              <Text style={[styles.infoText, canViewData && styles.linkText]}>{displayPhone}</Text>
+              {canViewData && (
+                <>
+                  <TouchableOpacity 
+                    style={styles.whatsappButton}
+                    onPress={() => Linking.openURL(`tel:${item.phone}`)}
+                  >
+                    <Ionicons name="call" size={16} color="#3B82F6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.whatsappButton}
+                    onPress={() => {
+                      const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
+                      Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                    }}
+                  >
+                    <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           )}
 
           {/* Address & Location Row */}
           {(item.address || item.location) && (
-            <TouchableOpacity 
-              style={styles.infoRow}
-              onPress={hasMapUrl ? () => openMapUrl(item.Property_locationUrl!) : undefined}
-              disabled={!hasMapUrl}
-              activeOpacity={hasMapUrl ? 0.7 : 1}
-            >
-              <Ionicons name="location" size={14} color={hasMapUrl ? "#3B82F6" : "#6B7280"} />
+            <View style={styles.infoRow}>
+              <Ionicons name="location" size={14} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
               <Text 
-                style={[styles.infoText, hasMapUrl && styles.linkText]} 
+                style={[styles.infoText, canViewData && hasMapUrl && styles.linkText]} 
                 numberOfLines={2}
               >
-                {[item.address, item.location].filter(Boolean).join(', ')}
+                {displayAddress}
               </Text>
-              {hasMapUrl && (
-                <Ionicons name="open-outline" size={14} color="#3B82F6" style={{ marginLeft: 4 }} />
+              {canViewData && hasMapUrl && (
+                <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
+                  <Ionicons name="open-outline" size={14} color="#3B82F6" style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+            </View>
           )}
 
           {/* Tags Row - Removed property_type, added floor and facing */}

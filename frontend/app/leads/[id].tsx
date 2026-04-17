@@ -22,6 +22,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { offlineApi } from '../../services/offlineApi';
 import { useOffline } from '../../contexts/OfflineContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
 
 // Import shared components and helpers
 import {
@@ -48,6 +50,7 @@ export default function LeadDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { isOnline } = useOffline();
+  const { user } = useAuth();  // Get current user for permission checks
   
   // Followup/Conversation state
   const [followups, setFollowups] = useState<any[]>([]);
@@ -342,18 +345,29 @@ export default function LeadDetailScreen() {
   const handleCopyDetails = async () => {
     if (!lead) return;
     
+    // Check if user can view sensitive data for this lead
+    const userCanViewData = canViewSensitiveData(user?.role, user?.id, lead?.created_by);
+    
     const unit = formatUnit(lead.unit).toUpperCase();
     let details = '';
     
     // Build copy text based on PHP format
     details += `${safeStr(lead.name)}\n`;
-    if (lead.phone) details += `📞 ${safeStr(lead.phone)}\n`;
+    if (lead.phone) {
+      details += userCanViewData 
+        ? `📞 ${safeStr(lead.phone)}\n`
+        : `📞 **********\n`;
+    }
     // Address & Location (inline)
     if (lead.address || lead.location) {
       details += '📍 ';
-      if (lead.address) details += safeStr(lead.address);
-      if (lead.address && lead.location) details += ', ';
-      if (lead.location) details += safeStr(lead.location);
+      if (userCanViewData) {
+        if (lead.address) details += safeStr(lead.address);
+        if (lead.address && lead.location) details += ', ';
+        if (lead.location) details += safeStr(lead.location);
+      } else {
+        details += '**********';
+      }
       details += '\n';
     }
     
@@ -393,8 +407,8 @@ export default function LeadDetailScreen() {
       details += `\n📝 Notes: ${safeStr(lead.notes)}\n`;
     }
     
-    // Google Maps link
-    if (lead.Property_locationUrl) {
+    // Google Maps link - only show if user can view data
+    if (lead.Property_locationUrl && userCanViewData) {
       details += `\n🗺️ Location: ${lead.Property_locationUrl}\n`;
     }
     
@@ -508,6 +522,14 @@ export default function LeadDetailScreen() {
     );
   };
 
+  // Check if user can view sensitive data for this lead
+  const canViewData = canViewSensitiveData(user?.role, user?.id, lead?.created_by);
+  
+  // Get display values for sensitive fields
+  const displayPhone = canViewData ? lead?.phone : maskPhone(lead?.phone);
+  const displayAddress = canViewData ? lead?.address : (lead?.address ? '**********' : null);
+  const displayLocation = canViewData ? lead?.location : (lead?.location ? '**********' : null);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header with Back Button */}
@@ -553,15 +575,15 @@ export default function LeadDetailScreen() {
           </View>
         </View>
 
-        {/* Quick Action Buttons */}
+        {/* Quick Action Buttons - Only show Call/WhatsApp if user can view data */}
         <View style={styles.actionButtons}>
-          {lead.phone ? (
+          {lead.phone && canViewData ? (
             <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
               <Ionicons name="call" size={24} color="#3B82F6" />
               <Text style={styles.actionButtonText}>{'Call'}</Text>
             </TouchableOpacity>
           ) : null}
-          {lead.phone ? (
+          {lead.phone && canViewData ? (
             <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
               <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
               <Text style={styles.actionButtonText}>{'WhatsApp'}</Text>
@@ -579,10 +601,10 @@ export default function LeadDetailScreen() {
       {/* Contact Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{'Contact Information'}</Text>
-        {renderDetailRow('call', 'Phone', lead.phone)}
+        {renderDetailRow('call', 'Phone', displayPhone)}
         {renderDetailRow('mail', 'Email', lead.email)}
-        {renderDetailRow('location', 'Location', lead.location)}
-        {renderDetailRow('home', 'Address', lead.address)}
+        {renderDetailRow('location', 'Location', displayLocation)}
+        {renderDetailRow('home', 'Address', displayAddress)}
       </View>
 
       {/* Property Details */}

@@ -239,9 +239,39 @@ export interface Lead {
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;
+  created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
   Property_locationUrl?: string | null;
 }
+
+// Helper function to check if current user can view sensitive data (phone/address) for a lead
+export const canViewSensitiveData = (
+  userRole: string | undefined,
+  userId: string | number | undefined,
+  leadCreatedBy: number | null | undefined
+): boolean => {
+  // Admin can see everything
+  if (userRole === 'admin') return true;
+  
+  // Non-admin users can only see data for leads they created
+  if (!userId || !leadCreatedBy) return false;
+  
+  // Compare user ID with lead creator ID
+  return String(userId) === String(leadCreatedBy);
+};
+
+// Helper function to mask phone number
+export const maskPhone = (phone: string | null): string => {
+  if (!phone) return '';
+  return '**********';
+};
+
+// Helper function to mask address
+export const maskAddress = (address: string | null, location: string | null): string => {
+  const parts = [address, location].filter(Boolean);
+  if (parts.length === 0) return '';
+  return '**********';
+};
 
 // Builder interface
 export interface Builder {

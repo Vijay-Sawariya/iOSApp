@@ -19,7 +19,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { LOCATIONS, FLOORS, normalizeSearchText } from '../../constants/leadOptions';
+import { LOCATIONS, FLOORS, normalizeSearchText, canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Lead {
@@ -41,6 +41,7 @@ interface Lead {
   bhk: string | null;
   building_facing: string | null;
   created_at?: string | null;
+  created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
 }
 
@@ -379,6 +380,13 @@ www.sagarhome.com`;
     const typeColor = getLeadTypeColor(item.lead_type);
     const isHot = item.lead_temperature === 'Hot';
     
+    // Check if user can view sensitive data for this lead
+    const canViewData = canViewSensitiveData(user?.role, user?.id, item.created_by);
+    
+    // Determine what to display for phone and location
+    const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
+    const displayLocation = canViewData ? item.location : (item.location ? '**********' : null);
+    
     return (
       <View style={styles.leadCard}>
         {/* Main content - tappable to view details */}
@@ -405,31 +413,35 @@ www.sagarhome.com`;
             </View>
           </View>
 
-          {/* Phone Row - Clickable to Call */}
+          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
-            <TouchableOpacity 
-              style={styles.infoRow}
-              onPress={() => Linking.openURL(`tel:${item.phone}`)}
-            >
-              <Ionicons name="call" size={14} color="#3B82F6" />
-              <Text style={[styles.infoText, styles.linkText]}>{item.phone}</Text>
-              <TouchableOpacity 
-                style={styles.whatsappButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleWhatsAppShare(item.phone || '');
-                }}
-              >
-                <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
-              </TouchableOpacity>
-            </TouchableOpacity>
+            <View style={styles.infoRow}>
+              <Ionicons name="call" size={14} color={canViewData ? "#3B82F6" : "#9CA3AF"} />
+              <Text style={[styles.infoText, canViewData && styles.linkText]}>{displayPhone}</Text>
+              {canViewData && (
+                <>
+                  <TouchableOpacity 
+                    style={styles.whatsappButton}
+                    onPress={() => Linking.openURL(`tel:${item.phone}`)}
+                  >
+                    <Ionicons name="call" size={16} color="#3B82F6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.whatsappButton}
+                    onPress={() => handleWhatsAppShare(item.phone || '')}
+                  >
+                    <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           )}
 
           {/* Location Row */}
           {item.location && (
             <View style={styles.infoRow}>
               <Ionicons name="location" size={14} color="#6B7280" />
-              <Text style={styles.infoText} numberOfLines={2}>{item.location}</Text>
+              <Text style={styles.infoText} numberOfLines={2}>{displayLocation}</Text>
             </View>
           )}
 
