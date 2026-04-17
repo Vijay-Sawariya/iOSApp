@@ -1258,12 +1258,11 @@ const styles = StyleSheet.create({
   filterContainer: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 12,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    maxHeight: 400,
   },
   filterRow: {
     flexDirection: 'row',
