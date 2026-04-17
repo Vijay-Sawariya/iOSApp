@@ -72,6 +72,12 @@ export default function InventoryLeadsScreen() {
   const [budgetSearch, setBudgetSearch] = useState(''); // Single budget field for +/- 10% search
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
   
+  // Client/Buyer matching states
+  const [clients, setClients] = useState<any[]>([]);
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  
   // Modal states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [showFloorPicker, setShowFloorPicker] = useState(false);
@@ -107,6 +113,15 @@ export default function InventoryLeadsScreen() {
     ), [facingSearch]
   );
 
+  // Filtered clients list for dropdown
+  const filteredClients = useMemo(() => 
+    clients.filter(client => 
+      (client.name || '').toLowerCase().includes(clientSearch.toLowerCase()) ||
+      (client.phone || '').includes(clientSearch) ||
+      (client.location || '').toLowerCase().includes(clientSearch.toLowerCase())
+    ), [clients, clientSearch]
+  );
+
   // Stats calculations
   const stats = useMemo(() => ({
     total: leads.length,
@@ -114,6 +129,16 @@ export default function InventoryLeadsScreen() {
     landlords: leads.filter(l => l.lead_type === 'landlord').length,
     builders: leads.filter(l => l.lead_type === 'builder').length,
   }), [leads]);
+
+  // Load clients (buyers/tenants) for the dropdown
+  const loadClients = async () => {
+    try {
+      const data = await offlineApi.getClientLeads();
+      setClients(data);
+    } catch (error) {
+      console.error('Failed to load clients:', error);
+    }
+  };
 
   const loadLeads = async () => {
     try {
@@ -135,7 +160,8 @@ export default function InventoryLeadsScreen() {
         addressFilter,
         selectedStatTile,
         phoneFilter,
-        budgetSearch
+        budgetSearch,
+        selectedClient
       );
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
@@ -149,6 +175,7 @@ export default function InventoryLeadsScreen() {
   useFocusEffect(
     useCallback(() => {
       loadLeadsRef.current();
+      loadClients(); // Load clients when screen focuses
     }, [])
   );
 
@@ -168,8 +195,80 @@ export default function InventoryLeadsScreen() {
     statTile: string = selectedStatTile,
     phone: string = phoneFilter,
     budgetSrch: string = budgetSearch,
+    client: any = selectedClient,
   ) => {
     let filtered = [...data];
+    
+    // Client/Buyer matching filter - If a client is selected, filter inventory to match their requirements
+    if (client) {
+      filtered = filtered.filter((inventory) => {
+        let matches = true;
+        
+        // Location match - client's preferred location should match inventory location
+        if (client.location && inventory.location) {
+          const clientLocations = client.location.split(',').map((l: string) => l.trim().toLowerCase());
+          const inventoryLocations = inventory.location.split(',').map((l: string) => l.trim().toLowerCase());
+          const locationMatch = clientLocations.some((cLoc: string) => 
+            inventoryLocations.some((iLoc: string) => 
+              iLoc.includes(cLoc) || cLoc.includes(iLoc)
+            )
+          );
+          if (!locationMatch) matches = false;
+        }
+        
+        // Budget match - inventory price should be within client's budget range (+/- 10%)
+        if (matches && (client.budget_min || client.budget_max)) {
+          const clientBudgetMin = parseFloat(client.budget_min || '0');
+          const clientBudgetMax = parseFloat(client.budget_max || '999999999');
+          
+          // Get inventory's floor pricing or budget
+          let inventoryPrice = 0;
+          if (inventory.floor_pricing && inventory.floor_pricing.length > 0) {
+            // Use the minimum floor price
+            inventoryPrice = Math.min(...inventory.floor_pricing.map((fp: any) => parseFloat(fp.floor_amount || '0')));
+          } else if (inventory.budget_min) {
+            inventoryPrice = parseFloat(inventory.budget_min);
+          }
+          
+          if (inventoryPrice > 0) {
+            // Allow 10% buffer
+            const minWithBuffer = clientBudgetMin * 0.9;
+            const maxWithBuffer = clientBudgetMax * 1.1;
+            if (inventoryPrice < minWithBuffer || inventoryPrice > maxWithBuffer) {
+              matches = false;
+            }
+          }
+        }
+        
+        // Property type match
+        if (matches && client.property_type && inventory.property_type) {
+          if (client.property_type.toLowerCase() !== inventory.property_type.toLowerCase()) {
+            matches = false;
+          }
+        }
+        
+        // BHK match
+        if (matches && client.bhk && inventory.bhk) {
+          if (!inventory.bhk.toLowerCase().includes(client.bhk.toLowerCase())) {
+            matches = false;
+          }
+        }
+        
+        // Floor preference match
+        if (matches && client.floor && inventory.floor) {
+          const clientFloors = client.floor.split(',').map((f: string) => f.trim().toLowerCase());
+          const inventoryFloors = inventory.floor.split(',').map((f: string) => f.trim().toLowerCase());
+          const floorMatch = clientFloors.some((cFloor: string) => 
+            inventoryFloors.some((iFloor: string) => 
+              iFloor.includes(cFloor) || cFloor.includes(iFloor)
+            )
+          );
+          if (!floorMatch) matches = false;
+        }
+        
+        return matches;
+      });
+    }
     
     // Stat tile filter (from clicking the count tiles)
     if (statTile && statTile !== 'total') {
@@ -381,7 +480,7 @@ export default function InventoryLeadsScreen() {
   };
 
   const handleApplyFilters = () => {
-    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch);
+    applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient);
   };
 
   const hasActiveFilters = () => {
@@ -390,7 +489,7 @@ export default function InventoryLeadsScreen() {
            typeFilter !== '' || areaMin !== '' || areaMax !== '' ||
            budgetMin !== '' || budgetMax !== '' || addressFilter !== '' ||
            phoneFilter !== '' || budgetSearch !== '' ||
-           selectedStatTile !== 'total';
+           selectedStatTile !== 'total' || selectedClient !== null;
   };
 
   const clearAllFilters = () => {
@@ -408,7 +507,9 @@ export default function InventoryLeadsScreen() {
     setBudgetSearch('');
     setSearchQuery('');
     setSelectedStatTile('total');
-    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total', '', '');
+    setSelectedClient(null);
+    setClientSearch('');
+    applyFilters(leads, '', [], [], [], [], '', '', '', '', '', '', 'total', '', '', null);
   };
 
   const openMapUrl = (url: string) => {
@@ -823,6 +924,87 @@ export default function InventoryLeadsScreen() {
               {/* Filter Panel */}
               {showFilters && (
                 <View style={styles.filterContainer}>
+                  {/* Match with Buyer/Tenant Dropdown */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>{'Match with Buyer/Tenant:'}</Text>
+                    <View style={styles.clientDropdownContainer}>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="person-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="Search buyer/tenant..."
+                          placeholderTextColor="#9CA3AF"
+                          value={selectedClient ? selectedClient.name : clientSearch}
+                          onChangeText={(text) => {
+                            setClientSearch(text);
+                            setShowClientDropdown(true);
+                            if (selectedClient) {
+                              setSelectedClient(null);
+                              handleApplyFilters();
+                            }
+                          }}
+                          onFocus={() => setShowClientDropdown(true)}
+                        />
+                        {(selectedClient || clientSearch) && (
+                          <TouchableOpacity onPress={() => {
+                            setSelectedClient(null);
+                            setClientSearch('');
+                            setShowClientDropdown(false);
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, null);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      {/* Client dropdown results */}
+                      {showClientDropdown && clientSearch.length > 0 && filteredClients.length > 0 && !selectedClient && (
+                        <View style={styles.clientDropdown}>
+                          <ScrollView style={styles.clientDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {filteredClients.slice(0, 8).map((client) => (
+                              <TouchableOpacity
+                                key={client.id}
+                                style={styles.clientDropdownItem}
+                                onPress={() => {
+                                  setSelectedClient(client);
+                                  setClientSearch('');
+                                  setShowClientDropdown(false);
+                                  applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, client);
+                                }}
+                              >
+                                <View style={styles.clientDropdownItemContent}>
+                                  <Text style={styles.clientDropdownName}>{client.name}</Text>
+                                  <Text style={styles.clientDropdownDetails}>
+                                    {[
+                                      client.lead_type === 'buyer' ? 'Buyer' : 'Tenant',
+                                      client.location,
+                                      client.budget_max ? `₹${(client.budget_max / 100000).toFixed(0)}L` : null
+                                    ].filter(Boolean).join(' • ')}
+                                  </Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                      {/* Selected client tag */}
+                      {selectedClient && (
+                        <View style={styles.selectedClientTag}>
+                          <Ionicons name="person" size={14} color="#3B82F6" />
+                          <Text style={styles.selectedClientText}>
+                            {selectedClient.name} ({selectedClient.lead_type === 'buyer' ? 'Buyer' : 'Tenant'})
+                          </Text>
+                          <TouchableOpacity onPress={() => {
+                            setSelectedClient(null);
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, null);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#3B82F6" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
                   {/* Phone and Budget in same row */}
                   <View style={styles.filterRow}>
                     <View style={styles.filterHalf}>
@@ -1887,5 +2069,66 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     paddingTop: 8,
+  },
+  // Client dropdown styles
+  clientDropdownContainer: {
+    position: 'relative',
+  },
+  clientDropdown: {
+    position: 'absolute',
+    top: 44,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
+  },
+  clientDropdownScroll: {
+    maxHeight: 200,
+  },
+  clientDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  clientDropdownItemContent: {
+    flex: 1,
+  },
+  clientDropdownName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1F2937',
+  },
+  clientDropdownDetails: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  selectedClientTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    gap: 6,
+  },
+  selectedClientText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '500',
   },
 });
