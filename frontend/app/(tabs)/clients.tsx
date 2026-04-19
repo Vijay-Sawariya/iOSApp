@@ -670,12 +670,6 @@ www.sagarhome.com`;
                     <Ionicons name="close-circle" size={18} color="#9CA3AF" />
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity 
-                  style={styles.locationPickerBtn}
-                  onPress={() => setShowLocationPicker(true)}
-                >
-                  <Ionicons name="list" size={18} color="#3B82F6" />
-                </TouchableOpacity>
               </View>
               
               {/* Inline filtered locations dropdown */}

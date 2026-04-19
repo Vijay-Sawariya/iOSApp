@@ -1057,12 +1057,6 @@ export default function InventoryLeadsScreen() {
                           <Ionicons name="close-circle" size={18} color="#9CA3AF" />
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity 
-                        style={styles.locationPickerBtn}
-                        onPress={() => setShowLocationPicker(true)}
-                      >
-                        <Ionicons name="list" size={18} color="#3B82F6" />
-                      </TouchableOpacity>
                     </View>
                     
                     {/* Inline filtered locations dropdown */}
@@ -1274,66 +1268,6 @@ export default function InventoryLeadsScreen() {
                     </View>
                   </View>
 
-                  {/* Area Range */}
-                  <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>Area (Sq Yds):</Text>
-                    <View style={styles.rangeRow}>
-                      <TextInput
-                        style={styles.rangeInput}
-                        placeholder="Min"
-                        placeholderTextColor="#9CA3AF"
-                        value={areaMin}
-                        onChangeText={(text) => {
-                          setAreaMin(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                        keyboardType="numeric"
-                      />
-                      <Text style={styles.rangeSeparator}>-</Text>
-                      <TextInput
-                        style={styles.rangeInput}
-                        placeholder="Max"
-                        placeholderTextColor="#9CA3AF"
-                        value={areaMax}
-                        onChangeText={(text) => {
-                          setAreaMax(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-
-                  {/* Budget Range */}
-                  <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>Budget (CR):</Text>
-                    <View style={styles.rangeRow}>
-                      <TextInput
-                        style={styles.rangeInput}
-                        placeholder="Min"
-                        placeholderTextColor="#9CA3AF"
-                        value={budgetMin}
-                        onChangeText={(text) => {
-                          setBudgetMin(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                        keyboardType="numeric"
-                      />
-                      <Text style={styles.rangeSeparator}>-</Text>
-                      <TextInput
-                        style={styles.rangeInput}
-                        placeholder="Max"
-                        placeholderTextColor="#9CA3AF"
-                        value={budgetMax}
-                        onChangeText={(text) => {
-                          setBudgetMax(text);
-                        }}
-                        onBlur={handleApplyFilters}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-
                   {/* Facing Selector with Inline Dropdown */}
                   <View style={[styles.filterSection, { zIndex: 200 }]}>
                     <Text style={styles.filterLabel}>Facing:</Text>
@@ -1392,6 +1326,66 @@ export default function InventoryLeadsScreen() {
                           </ScrollView>
                         </View>
                       )}
+                    </View>
+                  </View>
+
+                  {/* Area Range */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Area (Sq Yds):</Text>
+                    <View style={styles.rangeRow}>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Min"
+                        placeholderTextColor="#9CA3AF"
+                        value={areaMin}
+                        onChangeText={(text) => {
+                          setAreaMin(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.rangeSeparator}>-</Text>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Max"
+                        placeholderTextColor="#9CA3AF"
+                        value={areaMax}
+                        onChangeText={(text) => {
+                          setAreaMax(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Budget Range */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Budget (CR):</Text>
+                    <View style={styles.rangeRow}>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Min"
+                        placeholderTextColor="#9CA3AF"
+                        value={budgetMin}
+                        onChangeText={(text) => {
+                          setBudgetMin(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
+                      <Text style={styles.rangeSeparator}>-</Text>
+                      <TextInput
+                        style={styles.rangeInput}
+                        placeholder="Max"
+                        placeholderTextColor="#9CA3AF"
+                        value={budgetMax}
+                        onChangeText={(text) => {
+                          setBudgetMax(text);
+                        }}
+                        onBlur={handleApplyFilters}
+                        keyboardType="numeric"
+                      />
                     </View>
                   </View>
                   
