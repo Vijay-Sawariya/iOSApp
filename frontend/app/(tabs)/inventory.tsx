@@ -89,7 +89,9 @@ export default function InventoryLeadsScreen() {
   const [floorSearch, setFloorSearch] = useState('');
   const [statusSearch, setStatusSearch] = useState('');
   const [facingSearch, setFacingSearch] = useState('');
-
+  const [showFloorDropdown, setShowFloorDropdown] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [showFacingDropdown, setShowFacingDropdown] = useState(false);
   // Memoized filtered lists for modals
   const filteredLocations = useMemo(() => 
     LOCATION_OPTIONS.filter(loc => 
@@ -1125,20 +1127,64 @@ export default function InventoryLeadsScreen() {
                     )}
                   </View>
 
-                  {/* Floor Selector */}
+                  {/* Floor Selector with Inline Dropdown */}
                   <View style={styles.filterSection}>
                     <Text style={styles.filterLabel}>Floor:</Text>
-                    <TouchableOpacity
-                      style={styles.selectorButton}
-                      onPress={() => setShowFloorPicker(true)}
-                    >
-                      <Text style={[styles.selectorText, selectedFloors.length === 0 && styles.placeholderText]}>
-                        {selectedFloors.length > 0 
-                          ? `${selectedFloors.length} selected` 
-                          : 'Select floors'}
-                      </Text>
-                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
-                    </TouchableOpacity>
+                    <View style={styles.multiSelectContainer}>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="layers-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="Search floors..."
+                          placeholderTextColor="#9CA3AF"
+                          value={floorSearch}
+                          onChangeText={(text) => {
+                            setFloorSearch(text);
+                            setShowFloorDropdown(true);
+                          }}
+                          onFocus={() => setShowFloorDropdown(true)}
+                        />
+                        {floorSearch.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setFloorSearch('');
+                            setShowFloorDropdown(false);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={() => setShowFloorDropdown(!showFloorDropdown)}>
+                          <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                        </TouchableOpacity>
+                      </View>
+                      {/* Floor dropdown */}
+                      {showFloorDropdown && (
+                        <View style={styles.multiSelectDropdown}>
+                          <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {(floorSearch.length > 0 ? filteredFloors : FLOOR_OPTIONS).slice(0, 10).map((floor) => (
+                              <TouchableOpacity
+                                key={floor}
+                                style={[
+                                  styles.multiSelectDropdownItem,
+                                  selectedFloors.includes(floor) && styles.multiSelectDropdownItemSelected
+                                ]}
+                                onPress={() => {
+                                  const newFloors = selectedFloors.includes(floor)
+                                    ? selectedFloors.filter(f => f !== floor)
+                                    : [...selectedFloors, floor];
+                                  setSelectedFloors(newFloors);
+                                  applyFilters(leads, searchQuery, selectedLocations, newFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
+                                }}
+                              >
+                                <Text style={styles.multiSelectDropdownText}>{floor}</Text>
+                                {selectedFloors.includes(floor) && (
+                                  <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
                     {selectedFloors.length > 0 && (
                       <View style={styles.selectedTags}>
                         {selectedFloors.map(floor => (
@@ -1183,20 +1229,64 @@ export default function InventoryLeadsScreen() {
                     </View>
                   </View>
 
-                  {/* Status Selector */}
+                  {/* Status Selector with Inline Dropdown */}
                   <View style={styles.filterSection}>
                     <Text style={styles.filterLabel}>Status:</Text>
-                    <TouchableOpacity
-                      style={styles.selectorButton}
-                      onPress={() => setShowStatusPicker(true)}
-                    >
-                      <Text style={[styles.selectorText, selectedStatuses.length === 0 && styles.placeholderText]}>
-                        {selectedStatuses.length > 0 
-                          ? `${selectedStatuses.length} selected` 
-                          : 'Select statuses'}
-                      </Text>
-                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
-                    </TouchableOpacity>
+                    <View style={styles.multiSelectContainer}>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="flag-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="Search status..."
+                          placeholderTextColor="#9CA3AF"
+                          value={statusSearch}
+                          onChangeText={(text) => {
+                            setStatusSearch(text);
+                            setShowStatusDropdown(true);
+                          }}
+                          onFocus={() => setShowStatusDropdown(true)}
+                        />
+                        {statusSearch.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setStatusSearch('');
+                            setShowStatusDropdown(false);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={() => setShowStatusDropdown(!showStatusDropdown)}>
+                          <Ionicons name={showStatusDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                        </TouchableOpacity>
+                      </View>
+                      {/* Status dropdown */}
+                      {showStatusDropdown && (
+                        <View style={styles.multiSelectDropdown}>
+                          <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {(statusSearch.length > 0 ? filteredStatuses : STATUS_OPTIONS).map((status) => (
+                              <TouchableOpacity
+                                key={status}
+                                style={[
+                                  styles.multiSelectDropdownItem,
+                                  selectedStatuses.includes(status) && styles.multiSelectDropdownItemSelected
+                                ]}
+                                onPress={() => {
+                                  const newStatuses = selectedStatuses.includes(status)
+                                    ? selectedStatuses.filter(s => s !== status)
+                                    : [...selectedStatuses, status];
+                                  setSelectedStatuses(newStatuses);
+                                  applyFilters(leads, searchQuery, selectedLocations, selectedFloors, newStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
+                                }}
+                              >
+                                <Text style={styles.multiSelectDropdownText}>{status}</Text>
+                                {selectedStatuses.includes(status) && (
+                                  <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
                     {selectedStatuses.length > 0 && (
                       <View style={styles.selectedTags}>
                         {selectedStatuses.map(status => (
@@ -1276,20 +1366,64 @@ export default function InventoryLeadsScreen() {
                     </View>
                   </View>
 
-                  {/* Facing Selector */}
+                  {/* Facing Selector with Inline Dropdown */}
                   <View style={styles.filterSection}>
                     <Text style={styles.filterLabel}>Facing:</Text>
-                    <TouchableOpacity
-                      style={styles.selectorButton}
-                      onPress={() => setShowFacingPicker(true)}
-                    >
-                      <Text style={[styles.selectorText, selectedFacings.length === 0 && styles.placeholderText]}>
-                        {selectedFacings.length > 0 
-                          ? `${selectedFacings.length} selected` 
-                          : 'Select facings'}
-                      </Text>
-                      <Ionicons name="chevron-down" size={20} color="#6B7280" />
-                    </TouchableOpacity>
+                    <View style={styles.multiSelectContainer}>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="compass-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="Search facing..."
+                          placeholderTextColor="#9CA3AF"
+                          value={facingSearch}
+                          onChangeText={(text) => {
+                            setFacingSearch(text);
+                            setShowFacingDropdown(true);
+                          }}
+                          onFocus={() => setShowFacingDropdown(true)}
+                        />
+                        {facingSearch.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setFacingSearch('');
+                            setShowFacingDropdown(false);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={() => setShowFacingDropdown(!showFacingDropdown)}>
+                          <Ionicons name={showFacingDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                        </TouchableOpacity>
+                      </View>
+                      {/* Facing dropdown */}
+                      {showFacingDropdown && (
+                        <View style={styles.multiSelectDropdown}>
+                          <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {(facingSearch.length > 0 ? filteredFacings : FACING_OPTIONS).map((facing) => (
+                              <TouchableOpacity
+                                key={facing}
+                                style={[
+                                  styles.multiSelectDropdownItem,
+                                  selectedFacings.includes(facing) && styles.multiSelectDropdownItemSelected
+                                ]}
+                                onPress={() => {
+                                  const newFacings = selectedFacings.includes(facing)
+                                    ? selectedFacings.filter(f => f !== facing)
+                                    : [...selectedFacings, facing];
+                                  setSelectedFacings(newFacings);
+                                  applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, newFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
+                                }}
+                              >
+                                <Text style={styles.multiSelectDropdownText}>{facing}</Text>
+                                {selectedFacings.includes(facing) && (
+                                  <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
                     {selectedFacings.length > 0 && (
                       <View style={styles.selectedTags}>
                         {selectedFacings.map(facing => (
@@ -2085,5 +2219,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#3B82F6',
     fontWeight: '500',
+  },
+  // Multi-select dropdown styles
+  multiSelectContainer: {
+    position: 'relative',
+    zIndex: 100,
+  },
+  multiSelectDropdown: {
+    position: 'absolute',
+    top: 44,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  multiSelectDropdownScroll: {
+    maxHeight: 180,
+  },
+  multiSelectDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  multiSelectDropdownItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  multiSelectDropdownText: {
+    fontSize: 14,
+    color: '#1F2937',
   },
 });

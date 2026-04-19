@@ -67,6 +67,7 @@ export default function ClientLeadsScreen() {
   const [showFloorPicker, setShowFloorPicker] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
   const [floorSearch, setFloorSearch] = useState('');
+  const [showFloorDropdown, setShowFloorDropdown] = useState(false);
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
@@ -739,20 +740,64 @@ www.sagarhome.com`;
               )}
             </View>
 
-            {/* Floor Selector */}
+            {/* Floor Selector with Inline Dropdown */}
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Floor Preference:</Text>
-              <TouchableOpacity
-                style={styles.selectorButton}
-                onPress={() => setShowFloorPicker(true)}
-              >
-                <Text style={[styles.selectorText, selectedFloors.length === 0 && styles.placeholderText]}>
-                  {selectedFloors.length > 0 
-                    ? `${selectedFloors.length} selected` 
-                    : 'Select floors'}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color="#6B7280" />
-              </TouchableOpacity>
+              <View style={styles.multiSelectContainer}>
+                <View style={styles.compactInputContainer}>
+                  <Ionicons name="layers-outline" size={16} color="#6B7280" />
+                  <TextInput
+                    style={styles.compactInput}
+                    placeholder="Search floors..."
+                    placeholderTextColor="#9CA3AF"
+                    value={floorSearch}
+                    onChangeText={(text) => {
+                      setFloorSearch(text);
+                      setShowFloorDropdown(true);
+                    }}
+                    onFocus={() => setShowFloorDropdown(true)}
+                  />
+                  {floorSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => {
+                      setFloorSearch('');
+                      setShowFloorDropdown(false);
+                    }}>
+                      <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={() => setShowFloorDropdown(!showFloorDropdown)}>
+                    <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+                {/* Floor dropdown */}
+                {showFloorDropdown && (
+                  <View style={styles.multiSelectDropdown}>
+                    <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                      {(floorSearch.length > 0 ? filteredFloors : FLOOR_OPTIONS).slice(0, 10).map((floor) => (
+                        <TouchableOpacity
+                          key={floor}
+                          style={[
+                            styles.multiSelectDropdownItem,
+                            selectedFloors.includes(floor) && styles.multiSelectDropdownItemSelected
+                          ]}
+                          onPress={() => {
+                            const newFloors = selectedFloors.includes(floor)
+                              ? selectedFloors.filter(f => f !== floor)
+                              : [...selectedFloors, floor];
+                            setSelectedFloors(newFloors);
+                            applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, newFloors, selectedStatTile, phoneFilter, budgetSearch);
+                          }}
+                        >
+                          <Text style={styles.multiSelectDropdownText}>{floor}</Text>
+                          {selectedFloors.includes(floor) && (
+                            <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
               {selectedFloors.length > 0 && (
                 <View style={styles.selectedTags}>
                   {selectedFloors.map(floor => (
@@ -1486,5 +1531,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  // Multi-select dropdown styles
+  multiSelectContainer: {
+    position: 'relative',
+    zIndex: 100,
+  },
+  multiSelectDropdown: {
+    position: 'absolute',
+    top: 44,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  multiSelectDropdownScroll: {
+    maxHeight: 180,
+  },
+  multiSelectDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  multiSelectDropdownItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  multiSelectDropdownText: {
+    fontSize: 14,
+    color: '#1F2937',
   },
 });
