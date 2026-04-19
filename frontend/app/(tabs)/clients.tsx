@@ -1342,6 +1342,68 @@ const styles = StyleSheet.create({
   placeholderText: {
     color: '#9CA3AF',
   },
+  locationSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  locationSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1F2937',
+    padding: 0,
+  },
+  locationPickerBtn: {
+    padding: 4,
+  },
+  locationDropdown: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 220,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  locationDropdownScroll: {
+    maxHeight: 220,
+  },
+  locationDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  locationDropdownItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  locationDropdownText: {
+    fontSize: 15,
+    color: '#1F2937',
+  },
+  locationDropdownMore: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F9FAFB',
+  },
+  locationDropdownMoreText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    textAlign: 'center',
+  },
   phoneInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
