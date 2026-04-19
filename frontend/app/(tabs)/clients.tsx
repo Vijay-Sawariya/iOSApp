@@ -744,36 +744,31 @@ www.sagarhome.com`;
             <View style={[styles.filterSection, { zIndex: 400 }]}>
               <Text style={styles.filterLabel}>Floor Preference:</Text>
               <View style={styles.multiSelectContainer}>
-                <View style={styles.compactInputContainer}>
+                <TouchableOpacity 
+                  style={styles.compactInputContainer}
+                  onPress={() => setShowFloorDropdown(!showFloorDropdown)}
+                  activeOpacity={0.7}
+                >
                   <Ionicons name="layers-outline" size={16} color="#6B7280" />
-                  <TextInput
-                    style={styles.compactInput}
-                    placeholder="Search floors..."
-                    placeholderTextColor="#9CA3AF"
-                    value={floorSearch}
-                    onChangeText={(text) => {
-                      setFloorSearch(text);
-                      setShowFloorDropdown(true);
-                    }}
-                    onFocus={() => setShowFloorDropdown(true)}
-                  />
-                  {floorSearch.length > 0 && (
-                    <TouchableOpacity onPress={() => {
-                      setFloorSearch('');
-                      setShowFloorDropdown(false);
+                  <Text style={[styles.compactInputText, selectedFloors.length === 0 && styles.placeholderText]} numberOfLines={1}>
+                    {selectedFloors.length > 0 ? selectedFloors.join(', ') : 'Select floors...'}
+                  </Text>
+                  {selectedFloors.length > 0 && (
+                    <TouchableOpacity onPress={(e) => {
+                      e.stopPropagation();
+                      setSelectedFloors([]);
+                      applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, [], selectedStatTile, phoneFilter, budgetSearch);
                     }}>
                       <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity onPress={() => setShowFloorDropdown(!showFloorDropdown)}>
-                    <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
-                  </TouchableOpacity>
-                </View>
+                  <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                </TouchableOpacity>
                 {/* Floor dropdown */}
                 {showFloorDropdown && (
                   <View style={styles.multiSelectDropdown}>
                     <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                      {(floorSearch.length > 0 ? filteredFloors : FLOOR_OPTIONS).slice(0, 10).map((floor) => (
+                      {FLOOR_OPTIONS.slice(0, 10).map((floor) => (
                         <TouchableOpacity
                           key={floor}
                           style={[
@@ -785,6 +780,7 @@ www.sagarhome.com`;
                               ? selectedFloors.filter(f => f !== floor)
                               : [...selectedFloors, floor];
                             setSelectedFloors(newFloors);
+                            setShowFloorDropdown(false);
                             applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, newFloors, selectedStatTile, phoneFilter, budgetSearch);
                           }}
                         >
@@ -798,23 +794,6 @@ www.sagarhome.com`;
                   </View>
                 )}
               </View>
-              {selectedFloors.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedFloors.map(floor => (
-                    <TouchableOpacity
-                      key={floor}
-                      style={styles.selectedTag}
-                      onPress={() => {
-                        toggleFloor(floor);
-                        handleApplyLocationFloorFilters();
-                      }}
-                    >
-                      <Text style={styles.selectedTagText}>{floor}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
             </View>
 
             <View style={styles.filterSection}>
@@ -1305,6 +1284,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
     padding: 0,
+  },
+  compactInputText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1F2937',
+  },
+  placeholderText: {
+    color: '#9CA3AF',
   },
   filterSection: {
     marginBottom: 12,

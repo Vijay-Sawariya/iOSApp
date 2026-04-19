@@ -1131,41 +1131,30 @@ export default function InventoryLeadsScreen() {
                   <View style={[styles.filterSection, { zIndex: 400 }]}>
                     <Text style={styles.filterLabel}>Floor:</Text>
                     <View style={styles.multiSelectContainer}>
-                      <View style={styles.compactInputContainer}>
+                      <TouchableOpacity 
+                        style={styles.compactInputContainer}
+                        onPress={() => {
+                          setShowFloorDropdown(!showFloorDropdown);
+                          setShowStatusDropdown(false);
+                          setShowFacingDropdown(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
                         <Ionicons name="layers-outline" size={16} color="#6B7280" />
-                        <TextInput
-                          style={styles.compactInput}
-                          placeholder="Search floors..."
-                          placeholderTextColor="#9CA3AF"
-                          value={floorSearch}
-                          onChangeText={(text) => {
-                            setFloorSearch(text);
-                            setShowFloorDropdown(true);
-                            setShowStatusDropdown(false);
-                            setShowFacingDropdown(false);
-                          }}
-                          onFocus={() => {
-                            setShowFloorDropdown(true);
-                            setShowStatusDropdown(false);
-                            setShowFacingDropdown(false);
-                          }}
-                        />
-                        {floorSearch.length > 0 && (
-                          <TouchableOpacity onPress={() => {
-                            setFloorSearch('');
-                            setShowFloorDropdown(false);
+                        <Text style={[styles.compactInputText, selectedFloors.length === 0 && styles.placeholderText]} numberOfLines={1}>
+                          {selectedFloors.length > 0 ? selectedFloors.join(', ') : 'Select floors...'}
+                        </Text>
+                        {selectedFloors.length > 0 && (
+                          <TouchableOpacity onPress={(e) => {
+                            e.stopPropagation();
+                            setSelectedFloors([]);
+                            applyFilters(leads, searchQuery, selectedLocations, [], selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                           }}>
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => {
-                          setShowFloorDropdown(!showFloorDropdown);
-                          setShowStatusDropdown(false);
-                          setShowFacingDropdown(false);
-                        }}>
-                          <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
-                        </TouchableOpacity>
-                      </View>
+                        <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                      </TouchableOpacity>
                       {/* Floor dropdown */}
                       {showFloorDropdown && (
                         <View style={styles.multiSelectDropdown}>
@@ -1182,6 +1171,8 @@ export default function InventoryLeadsScreen() {
                                     ? selectedFloors.filter(f => f !== floor)
                                     : [...selectedFloors, floor];
                                   setSelectedFloors(newFloors);
+                                  setFloorSearch('');
+                                  setShowFloorDropdown(false);
                                   applyFilters(leads, searchQuery, selectedLocations, newFloors, selectedStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                                 }}
                               >
@@ -1195,23 +1186,6 @@ export default function InventoryLeadsScreen() {
                         </View>
                       )}
                     </View>
-                    {selectedFloors.length > 0 && (
-                      <View style={styles.selectedTags}>
-                        {selectedFloors.map(floor => (
-                          <TouchableOpacity
-                            key={floor}
-                            style={styles.selectedTag}
-                            onPress={() => {
-                              toggleFloor(floor);
-                              handleApplyFilters();
-                            }}
-                          >
-                            <Text style={styles.selectedTagText}>{floor}</Text>
-                            <Ionicons name="close" size={14} color="#6B7280" />
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
                   </View>
 
                   {/* Type Filter */}
@@ -1243,41 +1217,30 @@ export default function InventoryLeadsScreen() {
                   <View style={[styles.filterSection, { zIndex: 300 }]}>
                     <Text style={styles.filterLabel}>Status:</Text>
                     <View style={styles.multiSelectContainer}>
-                      <View style={styles.compactInputContainer}>
+                      <TouchableOpacity 
+                        style={styles.compactInputContainer}
+                        onPress={() => {
+                          setShowStatusDropdown(!showStatusDropdown);
+                          setShowFloorDropdown(false);
+                          setShowFacingDropdown(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
                         <Ionicons name="flag-outline" size={16} color="#6B7280" />
-                        <TextInput
-                          style={styles.compactInput}
-                          placeholder="Search status..."
-                          placeholderTextColor="#9CA3AF"
-                          value={statusSearch}
-                          onChangeText={(text) => {
-                            setStatusSearch(text);
-                            setShowStatusDropdown(true);
-                            setShowFloorDropdown(false);
-                            setShowFacingDropdown(false);
-                          }}
-                          onFocus={() => {
-                            setShowStatusDropdown(true);
-                            setShowFloorDropdown(false);
-                            setShowFacingDropdown(false);
-                          }}
-                        />
-                        {statusSearch.length > 0 && (
-                          <TouchableOpacity onPress={() => {
-                            setStatusSearch('');
-                            setShowStatusDropdown(false);
+                        <Text style={[styles.compactInputText, selectedStatuses.length === 0 && styles.placeholderText]} numberOfLines={1}>
+                          {selectedStatuses.length > 0 ? selectedStatuses.join(', ') : 'Select status...'}
+                        </Text>
+                        {selectedStatuses.length > 0 && (
+                          <TouchableOpacity onPress={(e) => {
+                            e.stopPropagation();
+                            setSelectedStatuses([]);
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, [], selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                           }}>
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => {
-                          setShowStatusDropdown(!showStatusDropdown);
-                          setShowFloorDropdown(false);
-                          setShowFacingDropdown(false);
-                        }}>
-                          <Ionicons name={showStatusDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
-                        </TouchableOpacity>
-                      </View>
+                        <Ionicons name={showStatusDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                      </TouchableOpacity>
                       {/* Status dropdown */}
                       {showStatusDropdown && (
                         <View style={styles.multiSelectDropdown}>
@@ -1294,6 +1257,8 @@ export default function InventoryLeadsScreen() {
                                     ? selectedStatuses.filter(s => s !== status)
                                     : [...selectedStatuses, status];
                                   setSelectedStatuses(newStatuses);
+                                  setStatusSearch('');
+                                  setShowStatusDropdown(false);
                                   applyFilters(leads, searchQuery, selectedLocations, selectedFloors, newStatuses, selectedFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                                 }}
                               >
@@ -1307,23 +1272,6 @@ export default function InventoryLeadsScreen() {
                         </View>
                       )}
                     </View>
-                    {selectedStatuses.length > 0 && (
-                      <View style={styles.selectedTags}>
-                        {selectedStatuses.map(status => (
-                          <TouchableOpacity
-                            key={status}
-                            style={styles.selectedTag}
-                            onPress={() => {
-                              toggleStatus(status);
-                              handleApplyFilters();
-                            }}
-                          >
-                            <Text style={styles.selectedTagText}>{status}</Text>
-                            <Ionicons name="close" size={14} color="#6B7280" />
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
                   </View>
 
                   {/* Area Range */}
@@ -1390,41 +1338,30 @@ export default function InventoryLeadsScreen() {
                   <View style={[styles.filterSection, { zIndex: 200 }]}>
                     <Text style={styles.filterLabel}>Facing:</Text>
                     <View style={styles.multiSelectContainer}>
-                      <View style={styles.compactInputContainer}>
+                      <TouchableOpacity 
+                        style={styles.compactInputContainer}
+                        onPress={() => {
+                          setShowFacingDropdown(!showFacingDropdown);
+                          setShowFloorDropdown(false);
+                          setShowStatusDropdown(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
                         <Ionicons name="compass-outline" size={16} color="#6B7280" />
-                        <TextInput
-                          style={styles.compactInput}
-                          placeholder="Search facing..."
-                          placeholderTextColor="#9CA3AF"
-                          value={facingSearch}
-                          onChangeText={(text) => {
-                            setFacingSearch(text);
-                            setShowFacingDropdown(true);
-                            setShowFloorDropdown(false);
-                            setShowStatusDropdown(false);
-                          }}
-                          onFocus={() => {
-                            setShowFacingDropdown(true);
-                            setShowFloorDropdown(false);
-                            setShowStatusDropdown(false);
-                          }}
-                        />
-                        {facingSearch.length > 0 && (
-                          <TouchableOpacity onPress={() => {
-                            setFacingSearch('');
-                            setShowFacingDropdown(false);
+                        <Text style={[styles.compactInputText, selectedFacings.length === 0 && styles.placeholderText]} numberOfLines={1}>
+                          {selectedFacings.length > 0 ? selectedFacings.join(', ') : 'Select facing...'}
+                        </Text>
+                        {selectedFacings.length > 0 && (
+                          <TouchableOpacity onPress={(e) => {
+                            e.stopPropagation();
+                            setSelectedFacings([]);
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, [], typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                           }}>
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => {
-                          setShowFacingDropdown(!showFacingDropdown);
-                          setShowFloorDropdown(false);
-                          setShowStatusDropdown(false);
-                        }}>
-                          <Ionicons name={showFacingDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
-                        </TouchableOpacity>
-                      </View>
+                        <Ionicons name={showFacingDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                      </TouchableOpacity>
                       {/* Facing dropdown */}
                       {showFacingDropdown && (
                         <View style={styles.multiSelectDropdown}>
@@ -1441,6 +1378,8 @@ export default function InventoryLeadsScreen() {
                                     ? selectedFacings.filter(f => f !== facing)
                                     : [...selectedFacings, facing];
                                   setSelectedFacings(newFacings);
+                                  setFacingSearch('');
+                                  setShowFacingDropdown(false);
                                   applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, newFacings, typeFilter, areaMin, areaMax, budgetMin, budgetMax, addressFilter, selectedStatTile, phoneFilter, budgetSearch, selectedClient, preferredInventoryIds);
                                 }}
                               >
@@ -1454,23 +1393,6 @@ export default function InventoryLeadsScreen() {
                         </View>
                       )}
                     </View>
-                    {selectedFacings.length > 0 && (
-                      <View style={styles.selectedTags}>
-                        {selectedFacings.map(facing => (
-                          <TouchableOpacity
-                            key={facing}
-                            style={styles.selectedTag}
-                            onPress={() => {
-                              toggleFacing(facing);
-                              handleApplyFilters();
-                            }}
-                          >
-                            <Text style={styles.selectedTagText}>{facing}</Text>
-                            <Ionicons name="close" size={14} color="#6B7280" />
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
                   </View>
                   
                   {hasActiveFilters() && (
@@ -1690,6 +1612,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
     padding: 0,
+  },
+  compactInputText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1F2937',
   },
   filterSection: {
     marginBottom: 12,
