@@ -870,7 +870,7 @@ export default function InventoryLeadsScreen() {
               {showFilters && (
                 <View style={styles.filterContainer}>
                   {/* Match with Buyer/Tenant Dropdown */}
-                  <View style={styles.filterSection}>
+                  <View style={[styles.filterSection, { zIndex: 600 }]}>
                     <Text style={styles.filterLabel}>{'Match with Buyer/Tenant:'}</Text>
                     <View style={styles.clientDropdownContainer}>
                       <View style={styles.compactInputContainer}>
@@ -1039,7 +1039,7 @@ export default function InventoryLeadsScreen() {
                   </View>
 
                   {/* Location Selector with Inline Search */}
-                  <View style={styles.filterSection}>
+                  <View style={[styles.filterSection, { zIndex: 500 }]}>
                     <Text style={styles.filterLabel}>{'Location:'}</Text>
                     <View style={styles.locationSearchContainer}>
                       <Ionicons name="location-outline" size={18} color="#6B7280" />
@@ -1128,7 +1128,7 @@ export default function InventoryLeadsScreen() {
                   </View>
 
                   {/* Floor Selector with Inline Dropdown */}
-                  <View style={styles.filterSection}>
+                  <View style={[styles.filterSection, { zIndex: 400 }]}>
                     <Text style={styles.filterLabel}>Floor:</Text>
                     <View style={styles.multiSelectContainer}>
                       <View style={styles.compactInputContainer}>
@@ -1141,8 +1141,14 @@ export default function InventoryLeadsScreen() {
                           onChangeText={(text) => {
                             setFloorSearch(text);
                             setShowFloorDropdown(true);
+                            setShowStatusDropdown(false);
+                            setShowFacingDropdown(false);
                           }}
-                          onFocus={() => setShowFloorDropdown(true)}
+                          onFocus={() => {
+                            setShowFloorDropdown(true);
+                            setShowStatusDropdown(false);
+                            setShowFacingDropdown(false);
+                          }}
                         />
                         {floorSearch.length > 0 && (
                           <TouchableOpacity onPress={() => {
@@ -1152,7 +1158,11 @@ export default function InventoryLeadsScreen() {
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => setShowFloorDropdown(!showFloorDropdown)}>
+                        <TouchableOpacity onPress={() => {
+                          setShowFloorDropdown(!showFloorDropdown);
+                          setShowStatusDropdown(false);
+                          setShowFacingDropdown(false);
+                        }}>
                           <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
                         </TouchableOpacity>
                       </View>
@@ -1230,7 +1240,7 @@ export default function InventoryLeadsScreen() {
                   </View>
 
                   {/* Status Selector with Inline Dropdown */}
-                  <View style={styles.filterSection}>
+                  <View style={[styles.filterSection, { zIndex: 300 }]}>
                     <Text style={styles.filterLabel}>Status:</Text>
                     <View style={styles.multiSelectContainer}>
                       <View style={styles.compactInputContainer}>
@@ -1243,8 +1253,14 @@ export default function InventoryLeadsScreen() {
                           onChangeText={(text) => {
                             setStatusSearch(text);
                             setShowStatusDropdown(true);
+                            setShowFloorDropdown(false);
+                            setShowFacingDropdown(false);
                           }}
-                          onFocus={() => setShowStatusDropdown(true)}
+                          onFocus={() => {
+                            setShowStatusDropdown(true);
+                            setShowFloorDropdown(false);
+                            setShowFacingDropdown(false);
+                          }}
                         />
                         {statusSearch.length > 0 && (
                           <TouchableOpacity onPress={() => {
@@ -1254,7 +1270,11 @@ export default function InventoryLeadsScreen() {
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => setShowStatusDropdown(!showStatusDropdown)}>
+                        <TouchableOpacity onPress={() => {
+                          setShowStatusDropdown(!showStatusDropdown);
+                          setShowFloorDropdown(false);
+                          setShowFacingDropdown(false);
+                        }}>
                           <Ionicons name={showStatusDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
                         </TouchableOpacity>
                       </View>
@@ -1367,7 +1387,7 @@ export default function InventoryLeadsScreen() {
                   </View>
 
                   {/* Facing Selector with Inline Dropdown */}
-                  <View style={styles.filterSection}>
+                  <View style={[styles.filterSection, { zIndex: 200 }]}>
                     <Text style={styles.filterLabel}>Facing:</Text>
                     <View style={styles.multiSelectContainer}>
                       <View style={styles.compactInputContainer}>
@@ -1380,8 +1400,14 @@ export default function InventoryLeadsScreen() {
                           onChangeText={(text) => {
                             setFacingSearch(text);
                             setShowFacingDropdown(true);
+                            setShowFloorDropdown(false);
+                            setShowStatusDropdown(false);
                           }}
-                          onFocus={() => setShowFacingDropdown(true)}
+                          onFocus={() => {
+                            setShowFacingDropdown(true);
+                            setShowFloorDropdown(false);
+                            setShowStatusDropdown(false);
+                          }}
                         />
                         {facingSearch.length > 0 && (
                           <TouchableOpacity onPress={() => {
@@ -1391,7 +1417,11 @@ export default function InventoryLeadsScreen() {
                             <Ionicons name="close-circle" size={16} color="#9CA3AF" />
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity onPress={() => setShowFacingDropdown(!showFacingDropdown)}>
+                        <TouchableOpacity onPress={() => {
+                          setShowFacingDropdown(!showFacingDropdown);
+                          setShowFloorDropdown(false);
+                          setShowStatusDropdown(false);
+                        }}>
                           <Ionicons name={showFacingDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
                         </TouchableOpacity>
                       </View>

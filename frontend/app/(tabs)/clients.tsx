@@ -741,7 +741,7 @@ www.sagarhome.com`;
             </View>
 
             {/* Floor Selector with Inline Dropdown */}
-            <View style={styles.filterSection}>
+            <View style={[styles.filterSection, { zIndex: 400 }]}>
               <Text style={styles.filterLabel}>Floor Preference:</Text>
               <View style={styles.multiSelectContainer}>
                 <View style={styles.compactInputContainer}>
