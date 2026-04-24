@@ -30,6 +30,7 @@ interface Lead {
   lead_type: string | null;
   lead_temperature: string | null;
   lead_status: string | null;
+  lead_source: string | null;
   location: string | null;
   floor: string | null;
   area_size: string | null;
@@ -43,6 +44,11 @@ interface Lead {
   created_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
+  // Action/Followup fields
+  next_action_date?: string | null;
+  next_action_time?: string | null;
+  next_action_title?: string | null;
+  next_action_status?: string | null;
 }
 
 // Filter arrays
@@ -376,6 +382,46 @@ www.sagarhome.com`;
     } as any);
   };
 
+  // Helper function to format and check followup status
+  const getFollowupStatus = (item: Lead) => {
+    if (!item.next_action_date) return null;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const actionDate = new Date(item.next_action_date);
+    actionDate.setHours(0, 0, 0, 0);
+    
+    const timeDiff = actionDate.getTime() - today.getTime();
+    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    
+    // Format date
+    const dateStr = actionDate.toLocaleDateString('en-IN', { 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric' 
+    });
+    
+    // Format time if available
+    let timeStr = '';
+    if (item.next_action_time) {
+      const [hours, minutes] = item.next_action_time.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      timeStr = ` ${hour12}:${minutes} ${ampm}`;
+    }
+    
+    if (daysDiff < 0) {
+      return { type: 'missed', label: `Missed Followup: ${dateStr}${timeStr}` };
+    } else if (daysDiff === 0) {
+      return { type: 'today', label: `Due Today: ${dateStr}${timeStr}` };
+    } else if (daysDiff <= 2) {
+      return { type: 'upcoming', label: `Upcoming: ${dateStr}${timeStr}` };
+    }
+    return null;
+  };
+
   const renderLead = ({ item }: { item: Lead }) => {
     const budgetText = formatBudget(item);
     const typeColor = getLeadTypeColor(item.lead_type);
@@ -387,8 +433,35 @@ www.sagarhome.com`;
     // Determine what to display for phone (location is visible to everyone)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
     
+    // Get followup status
+    const followupStatus = getFollowupStatus(item);
+    
     return (
       <View style={styles.leadCard}>
+        {/* Missed/Due Followup Banner */}
+        {followupStatus && (
+          <View style={[
+            styles.followupBanner,
+            followupStatus.type === 'missed' && styles.followupMissed,
+            followupStatus.type === 'today' && styles.followupToday,
+            followupStatus.type === 'upcoming' && styles.followupUpcoming,
+          ]}>
+            <Ionicons 
+              name={followupStatus.type === 'missed' ? "warning" : "alarm"} 
+              size={14} 
+              color={followupStatus.type === 'missed' ? "#DC2626" : followupStatus.type === 'today' ? "#D97706" : "#3B82F6"} 
+            />
+            <Text style={[
+              styles.followupText,
+              followupStatus.type === 'missed' && styles.followupTextMissed,
+              followupStatus.type === 'today' && styles.followupTextToday,
+              followupStatus.type === 'upcoming' && styles.followupTextUpcoming,
+            ]}>
+              {followupStatus.label}
+            </Text>
+          </View>
+        )}
+        
         {/* Main content - tappable to view details */}
         <TouchableOpacity
           style={styles.leadContent}
@@ -398,7 +471,10 @@ www.sagarhome.com`;
           {/* Name and Type Badge Row */}
           <View style={styles.cardHeader}>
             <View style={styles.nameSection}>
-              <Text style={styles.leadName}>{item.name}</Text>
+              <Text style={styles.leadName}>
+                {item.name}
+                {item.lead_source ? ` (${item.lead_source})` : ''}
+              </Text>
               {item.created_by_name && (
                 <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
               )}
@@ -1106,6 +1182,35 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
+  },
+  followupBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  followupMissed: {
+    backgroundColor: '#FEE2E2',
+  },
+  followupToday: {
+    backgroundColor: '#FEF3C7',
+  },
+  followupUpcoming: {
+    backgroundColor: '#DBEAFE',
+  },
+  followupText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  followupTextMissed: {
+    color: '#DC2626',
+  },
+  followupTextToday: {
+    color: '#D97706',
+  },
+  followupTextUpcoming: {
+    color: '#3B82F6',
   },
   leadContent: {
     padding: 16,

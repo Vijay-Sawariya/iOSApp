@@ -322,6 +322,7 @@ class LeadCreate(BaseModel):
     property_type: Optional[str] = None
     lead_temperature: Optional[str] = "Hot"
     lead_status: Optional[str] = "New"
+    lead_source: Optional[str] = None
     notes: Optional[str] = None
     builder_id: Optional[int] = None
     floor: Optional[str] = None
@@ -457,7 +458,7 @@ def get_client_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get CLIENT leads (buyer, tenant) - excludes deleted"""
+    """Get CLIENT leads (buyer, tenant) - excludes deleted, includes next action/followup"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -470,6 +471,37 @@ def get_client_leads(
             (limit, skip)
         )
         leads = cursor.fetchall()
+        
+        # Fetch next pending action/followup for each lead
+        if leads:
+            lead_ids = [lead['id'] for lead in leads]
+            placeholders = ','.join(['%s'] * len(lead_ids))
+            cursor.execute(
+                f"""SELECT lead_id, due_date, due_time, title, status
+                    FROM actions 
+                    WHERE lead_id IN ({placeholders}) 
+                    AND status IN ('Pending', 'Missed', 'Up Coming')
+                    ORDER BY due_date ASC, due_time ASC""",
+                lead_ids
+            )
+            all_actions = cursor.fetchall()
+            
+            # Group actions by lead_id and get the earliest one
+            action_map = {}
+            for a in all_actions:
+                lead_id = a['lead_id']
+                if lead_id not in action_map:
+                    action_map[lead_id] = a
+            
+            # Add next_action to each lead
+            for lead in leads:
+                lead_id = lead['id']
+                if lead_id in action_map:
+                    action = action_map[lead_id]
+                    lead['next_action_date'] = str(action['due_date']) if action['due_date'] else None
+                    lead['next_action_time'] = str(action['due_time']) if action['due_time'] else None
+                    lead['next_action_title'] = action['title']
+                    lead['next_action_status'] = action['status']
     
     return leads
 
@@ -685,7 +717,7 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
         # Build insert query with all available fields
         fields = ['name', 'phone', 'email', 'lead_type', 'location', 'address', 'bhk', 
                   'budget_min', 'budget_max', 'property_type', 'lead_temperature', 'lead_status', 
-                  'notes', 'floor', 'area_size', 'car_parking_number', 'lift_available', 'unit',
+                  'lead_source', 'notes', 'floor', 'area_size', 'car_parking_number', 'lift_available', 'unit',
                   'Property_locationUrl', 'building_facing', 'possession_on', 'builder_id',
                   'park_facing', 'park_at_rear', 'wide_road', 'peaceful_location', 'main_road', 'corner',
                   'required_amenities', 'created_at', 'created_by']
@@ -703,6 +735,7 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
             'property_type': lead.property_type,
             'lead_temperature': lead.lead_temperature,
             'lead_status': lead.lead_status,
+            'lead_source': getattr(lead, 'lead_source', None),
             'notes': lead.notes,
             'floor': getattr(lead, 'floor', None),
             'area_size': getattr(lead, 'area_size', None),

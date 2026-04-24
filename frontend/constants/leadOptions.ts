@@ -31,6 +31,10 @@ export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwes
 
 export const LIFT_OPTIONS = ['Yes', 'No'] as const;
 
+// Lead Source options
+export const LEAD_SOURCES = ['Agent', 'Instagram', 'Google', 'Facebook', 'Reference', 'Magic Brick'] as const;
+export type LeadSource = typeof LEAD_SOURCES[number];
+
 // Additional amenities from database schema
 export const AMENITIES = [
   { key: 'park_facing', label: 'Park Facing' },

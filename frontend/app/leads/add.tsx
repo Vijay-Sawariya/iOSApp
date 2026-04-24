@@ -44,6 +44,7 @@ import {
   LOCATIONS,
   AMENITIES,
   HOW_OLD_OPTIONS,
+  LEAD_SOURCES,
   FloorPrice,
   isInventoryType,
   isClientType,
@@ -73,6 +74,7 @@ export default function AddLeadScreen() {
   const [leadType, setLeadType] = useState(isClientForm ? 'buyer' : 'seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('Under construction');
+  const [leadSource, setLeadSource] = useState('');
   const [builderId, setBuilderId] = useState('');
   
   // Property Details
@@ -254,11 +256,12 @@ export default function AddLeadScreen() {
       };
 
       if (isClient) {
-        // Client-specific fields: multi-select location/facing, budget, no email/address/map/builder
+        // Client-specific fields: multi-select location/facing, budget, lead source
         leadData.location = selectedLocations.join(', ');
         leadData.building_facing = selectedFacings.join(', ');
         leadData.budget_min = budgetMin ? parseFloat(budgetMin) : null;
         leadData.budget_max = budgetMax ? parseFloat(budgetMax) : null;
+        leadData.lead_source = leadSource || null;
       } else {
         // Inventory-specific fields: single location/facing, floor pricing, address, map, builder
         leadData.location = location;
@@ -376,6 +379,16 @@ export default function AddLeadScreen() {
             options={isInventory ? [...INVENTORY_STATUSES] : [...CLIENT_STATUSES]}
             onSelect={setLeadStatus}
           />
+          {/* Lead Source - Only for Client leads */}
+          {isClient && (
+            <CustomDropdown
+              label="Lead Source"
+              value={leadSource}
+              options={[...LEAD_SOURCES]}
+              onSelect={setLeadSource}
+              placeholder="Select Lead Source"
+            />
+          )}
         </View>
 
         {/* Property Details */}
