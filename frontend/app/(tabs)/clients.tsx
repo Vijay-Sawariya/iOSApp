@@ -19,7 +19,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { LOCATIONS, FLOORS, normalizeSearchText, canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
+import { LOCATIONS, FLOORS, LEAD_SOURCES, normalizeSearchText, canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Lead {
@@ -61,6 +61,7 @@ export default function ClientLeadsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState<string | null>(null);
+  const [leadSourceFilter, setLeadSourceFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const { isOnline } = useOffline();
@@ -158,9 +159,16 @@ www.sagarhome.com`;
     floors: string[] = selectedFloors,
     statTile: string = selectedStatTile,
     phone: string = phoneFilter,
-    budgetSrch: string = budgetSearch
+    budgetSrch: string = budgetSearch,
+    sourceFilter: string | null = leadSourceFilter
   ) => {
     let filtered = [...data];
+
+    // Exclude "Closed/Lost" leads by default (unless specifically filtering by temperature)
+    // Only show Closed/Lost when user explicitly selects it as temperature filter
+    if (temp !== 'Closed/Lost') {
+      filtered = filtered.filter((lead) => lead.lead_status !== 'Closed/Lost' && lead.lead_status !== 'Lost');
+    }
 
     // Stat tile filter (from clicking the count tiles)
     if (statTile && statTile !== 'total') {
@@ -203,8 +211,14 @@ www.sagarhome.com`;
       }
     }
 
-    if (temp) {
+    // Temperature filter (Hot, Warm, Cold, Closed/Lost)
+    if (temp && temp !== 'Closed/Lost') {
       filtered = filtered.filter((lead) => lead.lead_temperature === temp);
+    }
+    
+    // Lead Source filter
+    if (sourceFilter) {
+      filtered = filtered.filter((lead) => lead.lead_source === sourceFilter);
     }
 
     // Filter by selected locations
@@ -257,17 +271,22 @@ www.sagarhome.com`;
 
   const handleTemperatureFilter = (temp: string | null) => {
     setTemperatureFilter(temp);
-    applyFilters(leads, searchQuery, temp, sortBy, selectedLocations, selectedFloors, selectedStatTile);
+    applyFilters(leads, searchQuery, temp, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter);
+  };
+
+  const handleLeadSourceFilter = (source: string | null) => {
+    setLeadSourceFilter(source);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, source);
   };
 
   const handleSort = (sort: 'name' | 'date' | null) => {
     setSortBy(sort);
-    applyFilters(leads, searchQuery, temperatureFilter, sort, selectedLocations, selectedFloors, selectedStatTile);
+    applyFilters(leads, searchQuery, temperatureFilter, sort, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter);
   };
 
   const handleStatTileClick = (tile: string) => {
     setSelectedStatTile(tile);
-    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, tile);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, tile, phoneFilter, budgetSearch, leadSourceFilter);
   };
 
   const toggleLocation = (loc: string) => {
@@ -283,21 +302,22 @@ www.sagarhome.com`;
   };
 
   const handleApplyLocationFloorFilters = () => {
-    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter);
   };
 
   const hasActiveFilters = () => {
-    return temperatureFilter !== null || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
+    return temperatureFilter !== null || leadSourceFilter !== null || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
   };
 
   const clearAllFilters = () => {
     setTemperatureFilter(null);
+    setLeadSourceFilter(null);
     setSortBy(null);
     setSelectedLocations([]);
     setSelectedFloors([]);
     setSearchQuery('');
     setSelectedStatTile('total');
-    applyFilters(leads, '', null, null, [], [], 'total');
+    applyFilters(leads, '', null, null, [], [], 'total', '', '', null);
   };
 
   const getTemperatureColor = (temp: string | null) => {
@@ -305,6 +325,7 @@ www.sagarhome.com`;
       case 'Hot': return '#EF4444';
       case 'Warm': return '#F59E0B';
       case 'Cold': return '#3B82F6';
+      case 'Closed/Lost': return '#6B7280';
       default: return '#6B7280';
     }
   };
@@ -868,7 +889,7 @@ www.sagarhome.com`;
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Temperature:</Text>
               <View style={styles.filterOptions}>
-                {['Hot', 'Warm', 'Cold'].map((temp) => (
+                {['Hot', 'Warm', 'Cold', 'Closed/Lost'].map((temp) => (
                   <TouchableOpacity
                     key={temp}
                     style={[
@@ -885,6 +906,31 @@ www.sagarhome.com`;
                   </TouchableOpacity>
                 ))}
               </View>
+            </View>
+
+            {/* Lead Source Filter */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Lead Source:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterOptionsScroll}>
+                <View style={styles.filterOptions}>
+                  {LEAD_SOURCES.map((source) => (
+                    <TouchableOpacity
+                      key={source}
+                      style={[
+                        styles.filterChip,
+                        leadSourceFilter === source && styles.filterChipActive,
+                        { backgroundColor: leadSourceFilter === source ? '#8B5CF6' : '#F3F4F6' }
+                      ]}
+                      onPress={() => handleLeadSourceFilter(leadSourceFilter === source ? null : source)}
+                    >
+                      <Text style={[
+                        styles.filterChipText,
+                        leadSourceFilter === source && styles.filterChipTextActive
+                      ]}>{source}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
             </View>
             
             {hasActiveFilters() && (
@@ -1393,6 +1439,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
     marginBottom: 6,
+  },
+  filterOptionsScroll: {
+    marginBottom: 4,
   },
   filterOptions: {
     flexDirection: 'row',

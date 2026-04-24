@@ -12,7 +12,7 @@ export const INVENTORY_LEAD_TYPES = ['builder', 'seller', 'landlord', 'agent'] a
 export const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'] as const;
 export type LeadTemperature = typeof LEAD_TEMPERATURES[number];
 
-export const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Lost'] as const;
+export const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Closed/Lost'] as const;
 export const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold', 'Available', 'Already Rented'] as const;
 
 // How Old options (in years)
