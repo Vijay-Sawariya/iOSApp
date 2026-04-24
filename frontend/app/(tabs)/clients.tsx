@@ -386,14 +386,16 @@ www.sagarhome.com`;
   const getFollowupStatus = (item: Lead) => {
     if (!item.next_action_date) return null;
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
+    const now = new Date();
     const actionDate = new Date(item.next_action_date);
-    actionDate.setHours(0, 0, 0, 0);
     
-    const timeDiff = actionDate.getTime() - today.getTime();
-    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+    // If we have time, add it to the action date for precise comparison
+    if (item.next_action_time) {
+      const [hours, minutes] = item.next_action_time.split(':');
+      actionDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    } else {
+      actionDate.setHours(23, 59, 59, 999); // End of day if no time specified
+    }
     
     // Format date
     const dateStr = actionDate.toLocaleDateString('en-IN', { 
@@ -412,14 +414,15 @@ www.sagarhome.com`;
       timeStr = ` ${hour12}:${minutes} ${ampm}`;
     }
     
-    if (daysDiff < 0) {
-      return { type: 'missed', label: `Missed Followup: ${dateStr}${timeStr}` };
-    } else if (daysDiff === 0) {
-      return { type: 'today', label: `Due Today: ${dateStr}${timeStr}` };
-    } else if (daysDiff <= 2) {
+    // Check if date/time has passed AND status is Pending
+    const isPassed = now > actionDate;
+    const isPending = item.next_action_status === 'Pending';
+    
+    if (isPassed && isPending) {
+      return { type: 'missed', label: `Missed: ${dateStr}${timeStr}` };
+    } else {
       return { type: 'upcoming', label: `Upcoming: ${dateStr}${timeStr}` };
     }
-    return null;
   };
 
   const renderLead = ({ item }: { item: Lead }) => {
@@ -442,20 +445,16 @@ www.sagarhome.com`;
         {followupStatus && (
           <View style={[
             styles.followupBanner,
-            followupStatus.type === 'missed' && styles.followupMissed,
-            followupStatus.type === 'today' && styles.followupToday,
-            followupStatus.type === 'upcoming' && styles.followupUpcoming,
+            followupStatus.type === 'missed' ? styles.followupMissed : styles.followupUpcoming,
           ]}>
             <Ionicons 
-              name={followupStatus.type === 'missed' ? "warning" : "alarm"} 
+              name={followupStatus.type === 'missed' ? "warning" : "time-outline"} 
               size={14} 
-              color={followupStatus.type === 'missed' ? "#DC2626" : followupStatus.type === 'today' ? "#D97706" : "#3B82F6"} 
+              color={followupStatus.type === 'missed' ? "#DC2626" : "#059669"} 
             />
             <Text style={[
               styles.followupText,
-              followupStatus.type === 'missed' && styles.followupTextMissed,
-              followupStatus.type === 'today' && styles.followupTextToday,
-              followupStatus.type === 'upcoming' && styles.followupTextUpcoming,
+              followupStatus.type === 'missed' ? styles.followupTextMissed : styles.followupTextUpcoming,
             ]}>
               {followupStatus.label}
             </Text>
@@ -471,10 +470,10 @@ www.sagarhome.com`;
           {/* Name and Type Badge Row */}
           <View style={styles.cardHeader}>
             <View style={styles.nameSection}>
-              <Text style={styles.leadName}>
-                {item.name}
-                {item.lead_source ? ` (${item.lead_source})` : ''}
-              </Text>
+              <Text style={styles.leadName}>{item.name}</Text>
+              {item.lead_source && (
+                <Text style={styles.createdByText}>Source: {item.lead_source}</Text>
+              )}
               {item.created_by_name && (
                 <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
               )}
@@ -1193,11 +1192,8 @@ const styles = StyleSheet.create({
   followupMissed: {
     backgroundColor: '#FEE2E2',
   },
-  followupToday: {
-    backgroundColor: '#FEF3C7',
-  },
   followupUpcoming: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#D1FAE5',
   },
   followupText: {
     fontSize: 12,
@@ -1206,11 +1202,8 @@ const styles = StyleSheet.create({
   followupTextMissed: {
     color: '#DC2626',
   },
-  followupTextToday: {
-    color: '#D97706',
-  },
   followupTextUpcoming: {
-    color: '#3B82F6',
+    color: '#059669',
   },
   leadContent: {
     padding: 16,
