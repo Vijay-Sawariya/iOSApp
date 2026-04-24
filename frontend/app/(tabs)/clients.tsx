@@ -62,6 +62,7 @@ export default function ClientLeadsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState<string | null>(null);
   const [leadSourceFilter, setLeadSourceFilter] = useState<string | null>(null);
+  const [showClosedLost, setShowClosedLost] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const { isOnline } = useOffline();
@@ -160,13 +161,17 @@ www.sagarhome.com`;
     statTile: string = selectedStatTile,
     phone: string = phoneFilter,
     budgetSrch: string = budgetSearch,
-    sourceFilter: string | null = leadSourceFilter
+    sourceFilter: string | null = leadSourceFilter,
+    closedLost: boolean = showClosedLost
   ) => {
     let filtered = [...data];
 
-    // Exclude "Closed/Lost" leads by default (unless specifically filtering by temperature)
-    // Only show Closed/Lost when user explicitly selects it as temperature filter
-    if (temp !== 'Closed/Lost') {
+    // Filter by Closed/Lost status
+    // If showClosedLost is true, show ONLY Closed/Lost leads
+    // If showClosedLost is false (default), hide Closed/Lost leads
+    if (closedLost) {
+      filtered = filtered.filter((lead) => lead.lead_status === 'Closed/Lost' || lead.lead_status === 'Lost');
+    } else {
       filtered = filtered.filter((lead) => lead.lead_status !== 'Closed/Lost' && lead.lead_status !== 'Lost');
     }
 
@@ -211,8 +216,8 @@ www.sagarhome.com`;
       }
     }
 
-    // Temperature filter (Hot, Warm, Cold, Closed/Lost)
-    if (temp && temp !== 'Closed/Lost') {
+    // Temperature filter (Hot, Warm, Cold)
+    if (temp) {
       filtered = filtered.filter((lead) => lead.lead_temperature === temp);
     }
     
@@ -271,22 +276,32 @@ www.sagarhome.com`;
 
   const handleTemperatureFilter = (temp: string | null) => {
     setTemperatureFilter(temp);
-    applyFilters(leads, searchQuery, temp, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter);
+    applyFilters(leads, searchQuery, temp, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter, showClosedLost);
   };
 
   const handleLeadSourceFilter = (source: string | null) => {
     setLeadSourceFilter(source);
-    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, source);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, source, showClosedLost);
+  };
+
+  const handleClosedLostFilter = () => {
+    const newValue = !showClosedLost;
+    setShowClosedLost(newValue);
+    // When toggling Closed/Lost, clear temperature filter since they're mutually exclusive views
+    if (newValue) {
+      setTemperatureFilter(null);
+    }
+    applyFilters(leads, searchQuery, newValue ? null : temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter, newValue);
   };
 
   const handleSort = (sort: 'name' | 'date' | null) => {
     setSortBy(sort);
-    applyFilters(leads, searchQuery, temperatureFilter, sort, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter);
+    applyFilters(leads, searchQuery, temperatureFilter, sort, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter, showClosedLost);
   };
 
   const handleStatTileClick = (tile: string) => {
     setSelectedStatTile(tile);
-    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, tile, phoneFilter, budgetSearch, leadSourceFilter);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, tile, phoneFilter, budgetSearch, leadSourceFilter, showClosedLost);
   };
 
   const toggleLocation = (loc: string) => {
@@ -302,22 +317,23 @@ www.sagarhome.com`;
   };
 
   const handleApplyLocationFloorFilters = () => {
-    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter);
+    applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch, leadSourceFilter, showClosedLost);
   };
 
   const hasActiveFilters = () => {
-    return temperatureFilter !== null || leadSourceFilter !== null || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
+    return temperatureFilter !== null || leadSourceFilter !== null || showClosedLost || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
   };
 
   const clearAllFilters = () => {
     setTemperatureFilter(null);
     setLeadSourceFilter(null);
+    setShowClosedLost(false);
     setSortBy(null);
     setSelectedLocations([]);
     setSelectedFloors([]);
     setSearchQuery('');
     setSelectedStatTile('total');
-    applyFilters(leads, '', null, null, [], [], 'total', '', '', null);
+    applyFilters(leads, '', null, null, [], [], 'total', '', '', null, false);
   };
 
   const getTemperatureColor = (temp: string | null) => {
@@ -325,7 +341,6 @@ www.sagarhome.com`;
       case 'Hot': return '#EF4444';
       case 'Warm': return '#F59E0B';
       case 'Cold': return '#3B82F6';
-      case 'Closed/Lost': return '#6B7280';
       default: return '#6B7280';
     }
   };
@@ -889,7 +904,7 @@ www.sagarhome.com`;
             <View style={styles.filterSection}>
               <Text style={styles.filterLabel}>Temperature:</Text>
               <View style={styles.filterOptions}>
-                {['Hot', 'Warm', 'Cold', 'Closed/Lost'].map((temp) => (
+                {['Hot', 'Warm', 'Cold'].map((temp) => (
                   <TouchableOpacity
                     key={temp}
                     style={[
@@ -905,6 +920,20 @@ www.sagarhome.com`;
                     ]}>{temp}</Text>
                   </TouchableOpacity>
                 ))}
+                {/* Closed/Lost - filters by status, not temperature */}
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    showClosedLost && styles.filterChipActive,
+                    { backgroundColor: showClosedLost ? '#6B7280' : '#F3F4F6' }
+                  ]}
+                  onPress={handleClosedLostFilter}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    showClosedLost && styles.filterChipTextActive
+                  ]}>Closed/Lost</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
