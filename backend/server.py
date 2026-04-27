@@ -15,6 +15,10 @@ from pymysql.cursors import DictCursor
 from contextlib import contextmanager
 import re
 import base64
+import asyncio
+
+# Import for AI features
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -392,6 +396,37 @@ class DashboardStats(BaseModel):
     total_builders: int
     today_reminders: int
     pending_reminders: int
+    # Enhanced stats
+    missed_followups: int = 0
+    upcoming_followups: int = 0
+    leads_this_week: int = 0
+    followups_completed_this_week: int = 0
+    leads_converted_this_week: int = 0
+    # Lead funnel stats
+    new_leads: int = 0
+    contacted_leads: int = 0
+    qualified_leads: int = 0
+    negotiating_leads: int = 0
+    won_leads: int = 0
+
+class AIMatchResult(BaseModel):
+    buyer_id: int
+    buyer_name: str
+    inventory_id: int
+    inventory_name: str
+    location: str
+    match_score: int
+    match_reasons: List[str]
+
+class AIMessageRequest(BaseModel):
+    lead_id: int
+    message_type: str  # first_contact, follow_up, negotiation, closing
+    custom_context: Optional[str] = None
+
+class AIMessageResponse(BaseModel):
+    message: str
+    lead_name: str
+    message_type: str
 
 # ============= Auth Routes =============
 @api_router.post("/auth/register", response_model=UserResponse)
@@ -1304,14 +1339,70 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         cursor.execute("SELECT COUNT(*) as count FROM builders")
         total_builders = cursor.fetchone()['count']
         
-        # Today's reminders
+        # Today's reminders from actions table
         today = datetime.utcnow().date()
-        cursor.execute("SELECT COUNT(*) as count FROM reminders WHERE DATE(reminder_date) = %s", (today,))
+        cursor.execute("SELECT COUNT(*) as count FROM actions WHERE DATE(due_date) = %s AND status IN ('Pending', 'Up Coming')", (today,))
         today_reminders = cursor.fetchone()['count']
         
-        # Pending reminders
-        cursor.execute("SELECT COUNT(*) as count FROM reminders WHERE status = 'pending'")
+        # Pending reminders - all pending actions
+        cursor.execute("SELECT COUNT(*) as count FROM actions WHERE status = 'Pending'")
         pending_reminders = cursor.fetchone()['count']
+        
+        # ===== Enhanced Stats =====
+        
+        # Missed follow-ups (past due date with Pending status)
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM actions 
+            WHERE (due_date < CURDATE() OR (due_date = CURDATE() AND due_time < CURTIME()))
+            AND status = 'Pending'
+        """)
+        missed_followups = cursor.fetchone()['count']
+        
+        # Upcoming follow-ups (today and next 3 days)
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM actions 
+            WHERE due_date >= CURDATE() AND due_date <= DATE_ADD(CURDATE(), INTERVAL 3 DAY)
+            AND status IN ('Pending', 'Up Coming')
+        """)
+        upcoming_followups = cursor.fetchone()['count']
+        
+        # Leads added this week
+        week_start = today - timedelta(days=today.weekday())
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM leads 
+            WHERE DATE(created_at) >= %s AND (is_deleted IS NULL OR is_deleted = 0)
+        """, (week_start,))
+        leads_this_week = cursor.fetchone()['count']
+        
+        # Follow-ups completed this week
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM actions 
+            WHERE DATE(updated_at) >= %s AND status = 'Completed'
+        """, (week_start,))
+        followups_completed_this_week = cursor.fetchone()['count']
+        
+        # Leads converted this week (status changed to Won)
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM leads 
+            WHERE lead_status = 'Won' AND DATE(updated_at) >= %s AND (is_deleted IS NULL OR is_deleted = 0)
+        """, (week_start,))
+        leads_converted_this_week = cursor.fetchone()['count']
+        
+        # Lead funnel stats (for client leads only)
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'New' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
+        new_leads = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'Contacted' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
+        contacted_leads = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'Qualified' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
+        qualified_leads = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'Negotiating' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
+        negotiating_leads = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'Won' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
+        won_leads = cursor.fetchone()['count']
     
     return DashboardStats(
         total_leads=total_leads,
@@ -1322,8 +1413,228 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         cold_leads=cold_leads,
         total_builders=total_builders,
         today_reminders=today_reminders,
-        pending_reminders=pending_reminders
+        pending_reminders=pending_reminders,
+        missed_followups=missed_followups,
+        upcoming_followups=upcoming_followups,
+        leads_this_week=leads_this_week,
+        followups_completed_this_week=followups_completed_this_week,
+        leads_converted_this_week=leads_converted_this_week,
+        new_leads=new_leads,
+        contacted_leads=contacted_leads,
+        qualified_leads=qualified_leads,
+        negotiating_leads=negotiating_leads,
+        won_leads=won_leads
     )
+
+# ============= AI Features Routes =============
+
+# Initialize LLM key
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+
+@api_router.get("/ai/smart-matches", response_model=List[AIMatchResult])
+def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int = 5):
+    """Get AI-powered smart matches between buyers and inventory"""
+    matches = []
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Get active buyers with preferences
+        cursor.execute("""
+            SELECT id, name, location, budget_min, budget_max, floor, bhk, building_facing, property_type
+            FROM leads 
+            WHERE lead_type IN ('buyer', 'tenant') 
+            AND lead_status NOT IN ('Won', 'Closed/Lost', 'Lost')
+            AND (is_deleted IS NULL OR is_deleted = 0)
+            ORDER BY RAND()
+            LIMIT 20
+        """)
+        buyers = cursor.fetchall()
+        
+        # Get available inventory
+        cursor.execute("""
+            SELECT id, name, location, budget_min, budget_max, floor, bhk, building_facing, property_type, area_size
+            FROM leads 
+            WHERE lead_type IN ('seller', 'landlord', 'builder') 
+            AND lead_status NOT IN ('Sold', 'Closed/Lost', 'Lost')
+            AND (is_deleted IS NULL OR is_deleted = 0)
+            LIMIT 100
+        """)
+        inventory = cursor.fetchall()
+        
+        # Simple matching algorithm
+        for buyer in buyers:
+            buyer_locations = set((buyer.get('location') or '').lower().split(','))
+            buyer_locations = {loc.strip() for loc in buyer_locations if loc.strip()}
+            buyer_budget_min = buyer.get('budget_min') or 0
+            buyer_budget_max = buyer.get('budget_max') or float('inf')
+            buyer_floors = set((buyer.get('floor') or '').lower().split(','))
+            buyer_floors = {f.strip() for f in buyer_floors if f.strip()}
+            
+            for inv in inventory:
+                score = 0
+                reasons = []
+                
+                # Location match
+                inv_location = (inv.get('location') or '').lower().strip()
+                if inv_location and any(loc in inv_location or inv_location in loc for loc in buyer_locations if loc):
+                    score += 40
+                    reasons.append(f"Location match: {inv.get('location')}")
+                
+                # Budget match
+                inv_budget = inv.get('budget_min') or inv.get('budget_max') or 0
+                if inv_budget > 0:
+                    if buyer_budget_min <= inv_budget <= buyer_budget_max:
+                        score += 30
+                        reasons.append(f"Budget in range")
+                    elif buyer_budget_min * 0.8 <= inv_budget <= buyer_budget_max * 1.2:
+                        score += 15
+                        reasons.append(f"Budget close to range")
+                
+                # Floor match
+                inv_floors = set((inv.get('floor') or '').lower().split(','))
+                inv_floors = {f.strip() for f in inv_floors if f.strip()}
+                if buyer_floors and inv_floors and buyer_floors.intersection(inv_floors):
+                    score += 20
+                    reasons.append(f"Floor preference match")
+                
+                # BHK match
+                if buyer.get('bhk') and inv.get('bhk') and buyer.get('bhk') == inv.get('bhk'):
+                    score += 10
+                    reasons.append(f"BHK match: {inv.get('bhk')}")
+                
+                if score >= 40 and reasons:
+                    matches.append({
+                        'buyer_id': buyer['id'],
+                        'buyer_name': buyer['name'],
+                        'inventory_id': inv['id'],
+                        'inventory_name': inv['name'] or f"Inventory #{inv['id']}",
+                        'location': inv.get('location') or 'N/A',
+                        'match_score': min(score, 100),
+                        'match_reasons': reasons
+                    })
+        
+        # Sort by score and return top matches
+        matches.sort(key=lambda x: x['match_score'], reverse=True)
+        return matches[:limit]
+
+@api_router.get("/ai/urgent-followups")
+def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: int = 10):
+    """Get urgent follow-ups (missed + today's)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Get missed and today's follow-ups
+        cursor.execute("""
+            SELECT a.id, a.lead_id, a.title, a.due_date, a.due_time, a.status,
+                   l.name as lead_name, l.phone as lead_phone, l.lead_type
+            FROM actions a
+            JOIN leads l ON a.lead_id = l.id
+            WHERE a.status IN ('Pending', 'Up Coming')
+            AND (a.due_date < CURDATE() OR a.due_date = CURDATE())
+            AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY a.due_date ASC, a.due_time ASC
+            LIMIT %s
+        """, (limit,))
+        
+        followups = cursor.fetchall()
+        
+        result = []
+        today = datetime.utcnow().date()
+        
+        for f in followups:
+            due_date = f['due_date']
+            is_missed = due_date < today if due_date else False
+            
+            result.append({
+                'id': f['id'],
+                'lead_id': f['lead_id'],
+                'lead_name': f['lead_name'],
+                'lead_phone': f['lead_phone'],
+                'lead_type': f['lead_type'],
+                'title': f['title'],
+                'due_date': str(due_date) if due_date else None,
+                'due_time': str(f['due_time']) if f['due_time'] else None,
+                'status': 'Missed' if is_missed else 'Due Today',
+                'is_missed': is_missed
+            })
+        
+        return result
+
+@api_router.post("/ai/generate-message", response_model=AIMessageResponse)
+async def generate_ai_message(request: AIMessageRequest, current_user: dict = Depends(get_current_user)):
+    """Generate AI-powered follow-up message for WhatsApp"""
+    
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="AI features not configured")
+    
+    # Get lead details
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT l.*, a.title as last_action_title, a.due_date as last_action_date
+            FROM leads l
+            LEFT JOIN actions a ON l.id = a.lead_id AND a.status = 'Pending'
+            WHERE l.id = %s
+            ORDER BY a.due_date DESC
+            LIMIT 1
+        """, (request.lead_id,))
+        lead = cursor.fetchone()
+        
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+    
+    # Build context for AI
+    lead_name = lead.get('name', 'Customer')
+    lead_type = lead.get('lead_type', 'buyer')
+    location = lead.get('location', '')
+    budget_min = lead.get('budget_min', 0)
+    budget_max = lead.get('budget_max', 0)
+    property_type = lead.get('property_type', '')
+    bhk = lead.get('bhk', '')
+    
+    message_templates = {
+        'first_contact': f"Generate a warm, professional WhatsApp message for first contact with a {lead_type} named {lead_name}. They are interested in {bhk or 'a property'} in {location or 'the area'}. Budget range: {budget_min}-{budget_max} Cr. Keep it brief and friendly.",
+        'follow_up': f"Generate a professional follow-up WhatsApp message for {lead_name} who is a {lead_type}. They showed interest in {property_type or 'property'} in {location}. Remind them about our discussion and ask about their decision. Keep it brief.",
+        'negotiation': f"Generate a negotiation-focused WhatsApp message for {lead_name}. They are interested in {bhk} {property_type or 'property'} in {location} with budget {budget_min}-{budget_max} Cr. Mention flexibility and value. Keep it professional.",
+        'closing': f"Generate a closing WhatsApp message for {lead_name} to finalize the deal. They are a {lead_type} interested in {location}. Create urgency while being professional. Keep it brief."
+    }
+    
+    prompt = message_templates.get(request.message_type, message_templates['follow_up'])
+    if request.custom_context:
+        prompt += f" Additional context: {request.custom_context}"
+    
+    prompt += " Respond ONLY with the message text, no explanations. Use Hindi-English mix for natural conversation. Keep it under 100 words."
+    
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"message-gen-{request.lead_id}",
+            system_message="You are a helpful real estate assistant who generates professional WhatsApp messages. Keep messages brief, friendly, and professional. Use natural Hindi-English mix."
+        ).with_model("openai", "gpt-5.2")
+        
+        user_message = UserMessage(text=prompt)
+        response = await chat.send_message(user_message)
+        
+        return AIMessageResponse(
+            message=response.strip(),
+            lead_name=lead_name,
+            message_type=request.message_type
+        )
+    except Exception as e:
+        logging.error(f"AI message generation error: {e}")
+        # Fallback to template messages
+        fallback_messages = {
+            'first_contact': f"Hi {lead_name}, This is from Sagar Home. I understand you're looking for a property in {location}. I have some excellent options that match your requirements. Would you like to discuss? 🏠",
+            'follow_up': f"Hi {lead_name}, Hope you're doing well! Just wanted to follow up on our earlier conversation about properties in {location}. Any updates from your side? Let me know if you need more details. 😊",
+            'negotiation': f"Hi {lead_name}, I've spoken with the owner and there's some flexibility on the pricing for the {location} property. This is a great opportunity. Shall we discuss further? 📞",
+            'closing': f"Hi {lead_name}, Great news! Everything is set for the {location} property. Let's finalize the paperwork soon to secure this deal for you. When can we meet? 🎉"
+        }
+        return AIMessageResponse(
+            message=fallback_messages.get(request.message_type, fallback_messages['follow_up']),
+            lead_name=lead_name,
+            message_type=request.message_type
+        )
 
 # ============= Inventory File Upload Routes =============
 MAX_IMAGES = 12
