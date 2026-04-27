@@ -13,7 +13,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
-import api from '../../services/api';
+import { api } from '../../services/api';
 
 interface DashboardStats {
   total_leads: number;
@@ -70,14 +70,14 @@ export default function DashboardScreen() {
 
   const fetchData = async () => {
     try {
-      const [statsRes, followupsRes, matchesRes] = await Promise.all([
-        api.get('/dashboard/stats'),
-        api.get('/ai/urgent-followups?limit=5'),
-        api.get('/ai/smart-matches?limit=3'),
+      const [statsData, followupsData, matchesData] = await Promise.all([
+        api.getDashboardStats(),
+        api.getUrgentFollowups(5).catch(() => []),
+        api.getSmartMatches(3).catch(() => []),
       ]);
-      setStats(statsRes.data);
-      setUrgentFollowups(followupsRes.data);
-      setSmartMatches(matchesRes.data);
+      setStats(statsData);
+      setUrgentFollowups(followupsData);
+      setSmartMatches(matchesData);
     } catch (error) {
       console.error('Dashboard fetch error:', error);
     } finally {

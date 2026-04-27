@@ -116,6 +116,37 @@ export const api = {
     );
   },
 
+  // AI Features
+  getUrgentFollowups: async (limit: number = 10) => {
+    const response = await fetch(`${API_URL}/api/ai/urgent-followups?limit=${limit}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch urgent followups');
+    return response.json();
+  },
+
+  getSmartMatches: async (limit: number = 5) => {
+    const response = await fetch(`${API_URL}/api/ai/smart-matches?limit=${limit}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch smart matches');
+    return response.json();
+  },
+
+  generateAIMessage: async (leadId: number, messageType: string, customContext?: string) => {
+    const response = await fetch(`${API_URL}/api/ai/generate-message`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        lead_id: leadId,
+        message_type: messageType,
+        custom_context: customContext
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to generate AI message');
+    return response.json();
+  },
+
   // Leads - All
   getLeads: async () => {
     const response = await fetch(`${API_URL}/api/leads`, {

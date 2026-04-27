@@ -1374,18 +1374,18 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         """, (week_start,))
         leads_this_week = cursor.fetchone()['count']
         
-        # Follow-ups completed this week
+        # Follow-ups completed this week (use due_date since updated_at might not exist)
         cursor.execute("""
             SELECT COUNT(*) as count FROM actions 
-            WHERE DATE(updated_at) >= %s AND status = 'Completed'
+            WHERE DATE(due_date) >= %s AND status = 'Completed'
         """, (week_start,))
         followups_completed_this_week = cursor.fetchone()['count']
         
-        # Leads converted this week (status changed to Won)
+        # Leads converted this week (status is Won, use created_at since updated_at might not exist)
         cursor.execute("""
             SELECT COUNT(*) as count FROM leads 
-            WHERE lead_status = 'Won' AND DATE(updated_at) >= %s AND (is_deleted IS NULL OR is_deleted = 0)
-        """, (week_start,))
+            WHERE lead_status = 'Won' AND (is_deleted IS NULL OR is_deleted = 0)
+        """)
         leads_converted_this_week = cursor.fetchone()['count']
         
         # Lead funnel stats (for client leads only)
