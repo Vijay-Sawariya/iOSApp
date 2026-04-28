@@ -2506,6 +2506,78 @@ def get_team_performance(current_user: dict = Depends(get_current_user)):
         performance = cursor.fetchall()
         return [dict(p) for p in performance]
 
+# ============= User Permissions =============
+
+@api_router.get("/user/permissions")
+def get_user_permissions(current_user: dict = Depends(get_current_user)):
+    """Get current user's permissions"""
+    # Check if can_export column exists, if not add it
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
+            conn.commit()
+        except:
+            pass  # Column already exists
+        
+        # Admins always have export permission
+        if current_user['role'] == 'admin':
+            return {"can_export": True, "is_admin": True}
+        
+        # Check user's specific permission
+        cursor.execute("SELECT can_export FROM users WHERE id = %s", (current_user['id'],))
+        result = cursor.fetchone()
+        can_export = result['can_export'] if result and 'can_export' in result else False
+        
+        return {"can_export": bool(can_export), "is_admin": False}
+
+@api_router.put("/user/{user_id}/permissions")
+def update_user_permissions(user_id: int, can_export: bool, current_user: dict = Depends(get_current_user)):
+    """Update user permissions (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Ensure column exists
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
+            conn.commit()
+        except:
+            pass
+        
+        cursor.execute("UPDATE users SET can_export = %s WHERE id = %s", (1 if can_export else 0, user_id))
+        conn.commit()
+        return {"message": "Permissions updated successfully"}
+
+@api_router.get("/team/members-with-permissions")
+def get_team_members_with_permissions(current_user: dict = Depends(get_current_user)):
+    """Get all team members with their permissions (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Ensure column exists
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
+            conn.commit()
+        except:
+            pass
+        
+        cursor.execute("""
+            SELECT id, username, full_name, email, role, can_export,
+                   (SELECT COUNT(*) FROM leads WHERE created_by = users.id) as lead_count
+            FROM users ORDER BY full_name
+        """)
+        members = cursor.fetchall()
+        result = []
+        for m in members:
+            member_dict = dict(m)
+            member_dict['can_export'] = bool(member_dict.get('can_export', 0))
+            result.append(member_dict)
+        return result
+
 # ============= Bulk Import/Export =============
 
 @api_router.post("/leads/bulk-import")

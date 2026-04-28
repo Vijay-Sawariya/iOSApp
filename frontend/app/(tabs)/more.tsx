@@ -59,6 +59,7 @@ interface TeamMember {
   email: string;
   role: string;
   lead_count: number;
+  can_export?: boolean;
 }
 
 interface ActivityLog {
@@ -83,6 +84,7 @@ export default function MoreScreen() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [canExport, setCanExport] = useState(false);
   
   // Modal states
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
@@ -120,6 +122,13 @@ export default function MoreScreen() {
     try {
       const headers = { Authorization: `Bearer ${token}` };
       
+      // Fetch user permissions
+      const permRes = await fetch(`${API_URL}/api/user/permissions`, { headers });
+      if (permRes.ok) {
+        const permData = await permRes.json();
+        setCanExport(permData.can_export || permData.is_admin);
+      }
+      
       // Fetch site visits
       const visitsRes = await fetch(`${API_URL}/api/site-visits`, { headers });
       if (visitsRes.ok) {
@@ -136,7 +145,7 @@ export default function MoreScreen() {
       
       // Fetch team members (admin only)
       if (user?.role === 'admin') {
-        const teamRes = await fetch(`${API_URL}/api/team/members`, { headers });
+        const teamRes = await fetch(`${API_URL}/api/team/members-with-permissions`, { headers });
         if (teamRes.ok) {
           const teamData = await teamRes.json();
           setTeamMembers(teamData);
@@ -530,11 +539,34 @@ export default function MoreScreen() {
     </TouchableOpacity>
   );
 
+  // Toggle export permission for a user
+  const toggleExportPermission = async (userId: number, currentValue: boolean) => {
+    try {
+      const response = await fetch(`${API_URL}/api/user/${userId}/permissions?can_export=${!currentValue}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        // Update the local state
+        setTeamMembers(prev => prev.map(m => 
+          m.id === userId ? { ...m, can_export: !currentValue } : m
+        ));
+        Alert.alert('Success', `Export permission ${!currentValue ? 'granted' : 'revoked'}`);
+      } else {
+        Alert.alert('Error', 'Failed to update permission');
+      }
+    } catch (error) {
+      console.error('Permission update error:', error);
+      Alert.alert('Error', 'Failed to update permission');
+    }
+  };
+
   const renderTeamMember = ({ item }: { item: TeamMember }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
+          <View style={[styles.avatar, { backgroundColor: item.role === 'admin' ? '#6366F1' : '#3B82F6' }]}>
             <Text style={styles.avatarText}>{(item.full_name || item.username || 'U')[0].toUpperCase()}</Text>
           </View>
           <View>
@@ -547,11 +579,38 @@ export default function MoreScreen() {
         </View>
       </View>
       <View style={styles.cardBody}>
-        <View style={styles.teamStats}>
+        <View style={styles.teamStatsRow}>
           <View style={styles.teamStat}>
             <Text style={styles.teamStatValue}>{item.lead_count || 0}</Text>
             <Text style={styles.teamStatLabel}>Leads</Text>
           </View>
+          {item.role !== 'admin' && (
+            <TouchableOpacity 
+              style={[
+                styles.permissionToggle, 
+                item.can_export && styles.permissionToggleActive
+              ]}
+              onPress={() => toggleExportPermission(item.id, item.can_export || false)}
+            >
+              <Ionicons 
+                name={item.can_export ? 'checkmark-circle' : 'close-circle'} 
+                size={18} 
+                color={item.can_export ? '#10B981' : '#9CA3AF'} 
+              />
+              <Text style={[
+                styles.permissionToggleText,
+                item.can_export && styles.permissionToggleTextActive
+              ]}>
+                Export
+              </Text>
+            </TouchableOpacity>
+          )}
+          {item.role === 'admin' && (
+            <View style={styles.adminBadge}>
+              <Ionicons name="shield-checkmark" size={16} color="#6366F1" />
+              <Text style={styles.adminBadgeText}>Full Access</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -691,17 +750,19 @@ export default function MoreScreen() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity 
-          style={[styles.featureCard, activeTab === 'export' && styles.featureCardActive]}
-          onPress={() => setActiveTab('export')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.featureIconContainer, { backgroundColor: '#FEE2E2' }]}>
-            <Ionicons name="download" size={22} color="#EF4444" />
-          </View>
-          <Text style={styles.featureCardTitle}>Export</Text>
-          <Text style={styles.featureCardCount}>CSV</Text>
-        </TouchableOpacity>
+        {canExport && (
+          <TouchableOpacity 
+            style={[styles.featureCard, activeTab === 'export' && styles.featureCardActive]}
+            onPress={() => setActiveTab('export')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.featureIconContainer, { backgroundColor: '#FEE2E2' }]}>
+              <Ionicons name="download" size={22} color="#EF4444" />
+            </View>
+            <Text style={styles.featureCardTitle}>Export</Text>
+            <Text style={styles.featureCardCount}>CSV</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Section Title */}
@@ -1280,6 +1341,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 24,
   },
+  teamStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   teamStat: {
     alignItems: 'center',
   },
@@ -1291,6 +1357,43 @@ const styles = StyleSheet.create({
   teamStatLabel: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  permissionToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  permissionToggleActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  permissionToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  permissionToggleTextActive: {
+    color: '#059669',
+  },
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+  },
+  adminBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6366F1',
   },
   emptyState: {
     alignItems: 'center',
