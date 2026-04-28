@@ -631,106 +631,144 @@ export default function MoreScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Gradient Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>More Features</Text>
+        <View style={styles.headerGradient}>
+          <Text style={styles.headerTitle}>More Features</Text>
+          <Text style={styles.headerSubtitle}>Manage visits, deals & more</Text>
+        </View>
       </View>
 
-      {/* Tabs */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsContainer}
-        contentContainerStyle={styles.tabs}
-      >
+      {/* Feature Cards Grid */}
+      <View style={styles.featureGrid}>
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'visits' && styles.activeTab]} 
+          style={[styles.featureCard, activeTab === 'visits' && styles.featureCardActive]}
           onPress={() => setActiveTab('visits')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Ionicons name="location" size={16} color={activeTab === 'visits' ? '#FFFFFF' : '#6B7280'} />
-          <Text style={[styles.tabText, activeTab === 'visits' && styles.activeTabText]}>Visits</Text>
+          <View style={[styles.featureIconContainer, { backgroundColor: '#EFF6FF' }]}>
+            <Ionicons name="location" size={22} color="#3B82F6" />
+          </View>
+          <Text style={styles.featureCardTitle}>Site Visits</Text>
+          <Text style={styles.featureCardCount}>{siteVisits.length}</Text>
         </TouchableOpacity>
+
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'deals' && styles.activeTab]} 
+          style={[styles.featureCard, activeTab === 'deals' && styles.featureCardActive]}
           onPress={() => setActiveTab('deals')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Ionicons name="cash" size={16} color={activeTab === 'deals' ? '#FFFFFF' : '#6B7280'} />
-          <Text style={[styles.tabText, activeTab === 'deals' && styles.activeTabText]}>Deals</Text>
+          <View style={[styles.featureIconContainer, { backgroundColor: '#F0FDF4' }]}>
+            <Ionicons name="cash" size={22} color="#10B981" />
+          </View>
+          <Text style={styles.featureCardTitle}>Deals</Text>
+          <Text style={styles.featureCardCount}>{deals.length}</Text>
         </TouchableOpacity>
+
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'activity' && styles.activeTab]} 
+          style={[styles.featureCard, activeTab === 'activity' && styles.featureCardActive]}
           onPress={() => setActiveTab('activity')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Ionicons name="time" size={16} color={activeTab === 'activity' ? '#FFFFFF' : '#6B7280'} />
-          <Text style={[styles.tabText, activeTab === 'activity' && styles.activeTabText]}>Activity</Text>
+          <View style={[styles.featureIconContainer, { backgroundColor: '#FEF3C7' }]}>
+            <Ionicons name="time" size={22} color="#F59E0B" />
+          </View>
+          <Text style={styles.featureCardTitle}>Activity</Text>
+          <Text style={styles.featureCardCount}>{activityLogs.length}</Text>
         </TouchableOpacity>
+
         {user?.role === 'admin' && (
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'team' && styles.activeTab]} 
+            style={[styles.featureCard, activeTab === 'team' && styles.featureCardActive]}
             onPress={() => setActiveTab('team')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <Ionicons name="people" size={16} color={activeTab === 'team' ? '#FFFFFF' : '#6B7280'} />
-            <Text style={[styles.tabText, activeTab === 'team' && styles.activeTabText]}>Team</Text>
+            <View style={[styles.featureIconContainer, { backgroundColor: '#F3E8FF' }]}>
+              <Ionicons name="people" size={22} color="#8B5CF6" />
+            </View>
+            <Text style={styles.featureCardTitle}>Team</Text>
+            <Text style={styles.featureCardCount}>{teamMembers.length}</Text>
           </TouchableOpacity>
         )}
+
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'export' && styles.activeTab]} 
+          style={[styles.featureCard, activeTab === 'export' && styles.featureCardActive]}
           onPress={() => setActiveTab('export')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Ionicons name="download" size={16} color={activeTab === 'export' ? '#FFFFFF' : '#6B7280'} />
-          <Text style={[styles.tabText, activeTab === 'export' && styles.activeTabText]}>Export</Text>
+          <View style={[styles.featureIconContainer, { backgroundColor: '#FEE2E2' }]}>
+            <Ionicons name="download" size={22} color="#EF4444" />
+          </View>
+          <Text style={styles.featureCardTitle}>Export</Text>
+          <Text style={styles.featureCardCount}>CSV</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
+
+      {/* Section Title */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {activeTab === 'visits' && 'Site Visits'}
+          {activeTab === 'deals' && 'Deals & Transactions'}
+          {activeTab === 'activity' && 'Activity Timeline'}
+          {activeTab === 'team' && 'Team Members'}
+          {activeTab === 'export' && 'Export Data'}
+        </Text>
+        {(activeTab === 'visits' || activeTab === 'deals') && (
+          <TouchableOpacity 
+            style={styles.addButtonSmall} 
+            onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+          >
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+      </View>
 
       {/* Content */}
       <View style={styles.content}>
         {activeTab === 'visits' && (
-          <>
-            <TouchableOpacity style={styles.addButton} onPress={() => setShowAddVisitModal(true)}>
-              <Ionicons name="add" size={20} color="#FFFFFF" />
-              <Text style={styles.addButtonText}>Schedule Visit</Text>
-            </TouchableOpacity>
-            <FlatList
-              data={siteVisits}
-              renderItem={renderSiteVisit}
-              keyExtractor={(item) => item.id.toString()}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              contentContainerStyle={styles.listContainer}
-              ListEmptyComponent={
-                <View style={styles.emptyState}>
-                  <Ionicons name="location-outline" size={48} color="#9CA3AF" />
-                  <Text style={styles.emptyText}>No site visits scheduled</Text>
+          <FlatList
+            data={siteVisits}
+            renderItem={renderSiteVisit}
+            keyExtractor={(item) => item.id.toString()}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            contentContainerStyle={styles.listContainer}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="location-outline" size={40} color="#9CA3AF" />
                 </View>
-              }
-            />
-          </>
+                <Text style={styles.emptyTitle}>No Site Visits</Text>
+                <Text style={styles.emptyText}>Schedule your first property visit</Text>
+                <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                  <Text style={styles.emptyButtonText}>Schedule Visit</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
         )}
 
         {activeTab === 'deals' && (
-          <>
-            <TouchableOpacity style={styles.addButton} onPress={() => setShowAddDealModal(true)}>
-              <Ionicons name="add" size={20} color="#FFFFFF" />
-              <Text style={styles.addButtonText}>Add Deal</Text>
-            </TouchableOpacity>
-            <FlatList
-              data={deals}
-              renderItem={renderDeal}
-              keyExtractor={(item) => item.id.toString()}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              contentContainerStyle={styles.listContainer}
-              ListEmptyComponent={
-                <View style={styles.emptyState}>
-                  <Ionicons name="cash-outline" size={48} color="#9CA3AF" />
-                  <Text style={styles.emptyText}>No deals yet</Text>
+          <FlatList
+            data={deals}
+            renderItem={renderDeal}
+            keyExtractor={(item) => item.id.toString()}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            contentContainerStyle={styles.listContainer}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="cash-outline" size={40} color="#9CA3AF" />
                 </View>
-              }
-            />
-          </>
+                <Text style={styles.emptyTitle}>No Deals Yet</Text>
+                <Text style={styles.emptyText}>Create your first deal to track</Text>
+                <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                  <Text style={styles.emptyButtonText}>Add Deal</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
         )}
 
         {activeTab === 'team' && user?.role === 'admin' && (
@@ -1036,12 +1074,13 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F8FAFC',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F8FAFC',
   },
   loadingText: {
     marginTop: 12,
@@ -1049,44 +1088,102 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   header: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
+    backgroundColor: '#3B82F6',
     paddingTop: 50,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+  },
+  headerGradient: {
+    // Simulated gradient effect with solid color
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+  },
+  featureGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 12,
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    marginTop: -10,
+  },
+  featureCard: {
+    width: '31%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  featureCardActive: {
+    borderColor: '#3B82F6',
+    borderWidth: 2,
+    backgroundColor: '#EFF6FF',
+  },
+  featureIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  featureCardTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+    textAlign: 'center',
+  },
+  featureCardCount: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#1F2937',
+  },
+  addButtonSmall: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,
   },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3B82F6',
-    marginHorizontal: 16,
-    marginTop: 16,
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 6,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
   listContainer: {
     padding: 16,
+    paddingTop: 8,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -1096,7 +1193,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1F2937',
   },
   cardSubtitle: {
@@ -1198,12 +1295,43 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 4,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#9CA3AF',
-    marginTop: 12,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
