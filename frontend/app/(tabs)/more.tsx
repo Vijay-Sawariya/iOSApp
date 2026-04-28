@@ -12,11 +12,14 @@ import {
   TextInput,
   FlatList,
   Linking,
+  Platform,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -57,16 +60,28 @@ interface TeamMember {
   lead_count: number;
 }
 
+interface ActivityLog {
+  id: number;
+  lead_id: number;
+  lead_name: string;
+  action_type: string;
+  description: string;
+  created_by: string;
+  created_at: string;
+}
+
 export default function MoreScreen() {
   const { user, token } = useAuth();
-  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team'>('visits');
+  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>('visits');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   
   // Data states
   const [siteVisits, setSiteVisits] = useState<SiteVisit[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   
   // Modal states
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
@@ -114,6 +129,13 @@ export default function MoreScreen() {
           const teamData = await teamRes.json();
           setTeamMembers(teamData);
         }
+      }
+      
+      // Fetch activity logs
+      const activityRes = await fetch(`${API_URL}/api/activity-logs`, { headers });
+      if (activityRes.ok) {
+        const activityData = await activityRes.json();
+        setActivityLogs(activityData);
       }
     } catch (error) {
       console.error('Fetch error:', error);
@@ -238,6 +260,129 @@ export default function MoreScreen() {
     }
   };
 
+  // Export Functions
+  const exportLeads = async (leadType: 'clients' | 'inventory' | 'all') => {
+    setExporting(true);
+    try {
+      const endpoint = leadType === 'all' ? '/api/leads' : `/api/leads/${leadType}`;
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (!response.ok) throw new Error('Failed to fetch leads');
+      
+      const leads = await response.json();
+      
+      // Create CSV content
+      const headers = ['ID', 'Name', 'Phone', 'Email', 'Lead Type', 'Status', 'Temperature', 'Budget', 'Location', 'Property Type', 'Created At'];
+      const csvRows = [headers.join(',')];
+      
+      for (const lead of leads) {
+        const row = [
+          lead.id || '',
+          `"${(lead.name || '').replace(/"/g, '""')}"`,
+          lead.phone || '',
+          lead.email || '',
+          lead.lead_type || '',
+          lead.lead_status || '',
+          lead.temperature || '',
+          `${lead.budget_min || ''}-${lead.budget_max || ''}`,
+          `"${(lead.location || '').replace(/"/g, '""')}"`,
+          lead.property_type || '',
+          lead.created_at || ''
+        ];
+        csvRows.push(row.join(','));
+      }
+      
+      const csvContent = csvRows.join('\n');
+      const fileName = `leads_${leadType}_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      if (Platform.OS === 'web') {
+        // Web download
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        Alert.alert('Success', `Exported ${leads.length} leads`);
+      } else {
+        // Mobile - save and share
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Leads' });
+        } else {
+          Alert.alert('Success', `Saved to ${fileUri}`);
+        }
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', 'Failed to export leads');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportDeals = async () => {
+    setExporting(true);
+    try {
+      const response = await fetch(`${API_URL}/api/deals`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (!response.ok) throw new Error('Failed to fetch deals');
+      
+      const deals_data = await response.json();
+      
+      const headers = ['ID', 'Lead Name', 'Property', 'Deal Amount', 'Commission %', 'Status', 'Expected Close Date'];
+      const csvRows = [headers.join(',')];
+      
+      for (const deal of deals_data) {
+        const row = [
+          deal.id || '',
+          `"${(deal.lead_name || '').replace(/"/g, '""')}"`,
+          `"${(deal.property_name || '').replace(/"/g, '""')}"`,
+          deal.deal_amount || '',
+          deal.commission_percent || '',
+          deal.status || '',
+          deal.expected_closing_date || ''
+        ];
+        csvRows.push(row.join(','));
+      }
+      
+      const csvContent = csvRows.join('\n');
+      const fileName = `deals_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        Alert.alert('Success', `Exported ${deals_data.length} deals`);
+      } else {
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Deals' });
+        } else {
+          Alert.alert('Success', `Saved to ${fileUri}`);
+        }
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', 'Failed to export deals');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const renderSiteVisit = ({ item }: { item: SiteVisit }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -344,6 +489,69 @@ export default function MoreScreen() {
     </View>
   );
 
+  const getActivityIcon = (actionType: string) => {
+    switch (actionType?.toLowerCase()) {
+      case 'call': return 'call';
+      case 'whatsapp': return 'logo-whatsapp';
+      case 'email': return 'mail';
+      case 'visit': return 'location';
+      case 'meeting': return 'people';
+      case 'note': return 'document-text';
+      case 'status_change': return 'swap-horizontal';
+      case 'deal': return 'cash';
+      default: return 'time';
+    }
+  };
+
+  const getActivityColor = (actionType: string) => {
+    switch (actionType?.toLowerCase()) {
+      case 'call': return '#3B82F6';
+      case 'whatsapp': return '#25D366';
+      case 'email': return '#EF4444';
+      case 'visit': return '#F59E0B';
+      case 'meeting': return '#8B5CF6';
+      case 'deal': return '#10B981';
+      default: return '#6B7280';
+    }
+  };
+
+  const formatActivityDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  const renderActivityLog = ({ item }: { item: ActivityLog }) => (
+    <View style={styles.activityCard}>
+      <View style={[styles.activityIcon, { backgroundColor: getActivityColor(item.action_type) + '20' }]}>
+        <Ionicons name={getActivityIcon(item.action_type) as any} size={18} color={getActivityColor(item.action_type)} />
+      </View>
+      <View style={styles.activityContent}>
+        <Text style={styles.activityTitle}>{item.description || item.action_type}</Text>
+        <View style={styles.activityMeta}>
+          {item.lead_name && (
+            <TouchableOpacity onPress={() => router.push(`/leads/${item.lead_id}` as any)}>
+              <Text style={styles.activityLead}>{item.lead_name}</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.activityTime}>{formatActivityDate(item.created_at)}</Text>
+        </View>
+        {item.created_by && (
+          <Text style={styles.activityUser}>by {item.created_by}</Text>
+        )}
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -361,31 +569,55 @@ export default function MoreScreen() {
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabs}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsContainer}
+        contentContainerStyle={styles.tabs}
+      >
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'visits' && styles.activeTab]} 
           onPress={() => setActiveTab('visits')}
+          activeOpacity={0.7}
         >
-          <Ionicons name="location" size={18} color={activeTab === 'visits' ? '#3B82F6' : '#6B7280'} />
-          <Text style={[styles.tabText, activeTab === 'visits' && styles.activeTabText]}>Site Visits</Text>
+          <Ionicons name="location" size={16} color={activeTab === 'visits' ? '#FFFFFF' : '#6B7280'} />
+          <Text style={[styles.tabText, activeTab === 'visits' && styles.activeTabText]}>Visits</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'deals' && styles.activeTab]} 
           onPress={() => setActiveTab('deals')}
+          activeOpacity={0.7}
         >
-          <Ionicons name="cash" size={18} color={activeTab === 'deals' ? '#3B82F6' : '#6B7280'} />
+          <Ionicons name="cash" size={16} color={activeTab === 'deals' ? '#FFFFFF' : '#6B7280'} />
           <Text style={[styles.tabText, activeTab === 'deals' && styles.activeTabText]}>Deals</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'activity' && styles.activeTab]} 
+          onPress={() => setActiveTab('activity')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="time" size={16} color={activeTab === 'activity' ? '#FFFFFF' : '#6B7280'} />
+          <Text style={[styles.tabText, activeTab === 'activity' && styles.activeTabText]}>Activity</Text>
         </TouchableOpacity>
         {user?.role === 'admin' && (
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'team' && styles.activeTab]} 
             onPress={() => setActiveTab('team')}
+            activeOpacity={0.7}
           >
-            <Ionicons name="people" size={18} color={activeTab === 'team' ? '#3B82F6' : '#6B7280'} />
+            <Ionicons name="people" size={16} color={activeTab === 'team' ? '#FFFFFF' : '#6B7280'} />
             <Text style={[styles.tabText, activeTab === 'team' && styles.activeTabText]}>Team</Text>
           </TouchableOpacity>
         )}
-      </View>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'export' && styles.activeTab]} 
+          onPress={() => setActiveTab('export')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="download" size={16} color={activeTab === 'export' ? '#FFFFFF' : '#6B7280'} />
+          <Text style={[styles.tabText, activeTab === 'export' && styles.activeTabText]}>Export</Text>
+        </TouchableOpacity>
+      </ScrollView>
 
       {/* Content */}
       <View style={styles.content}>
@@ -447,6 +679,87 @@ export default function MoreScreen() {
               </View>
             }
           />
+        )}
+
+        {activeTab === 'activity' && (
+          <FlatList
+            data={activityLogs}
+            renderItem={renderActivityLog}
+            keyExtractor={(item) => item.id.toString()}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            contentContainerStyle={styles.listContainer}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="time-outline" size={48} color="#9CA3AF" />
+                <Text style={styles.emptyText}>No activity yet</Text>
+                <Text style={styles.emptySubtext}>Lead updates, calls, and notes will appear here</Text>
+              </View>
+            }
+          />
+        )}
+
+        {activeTab === 'export' && (
+          <ScrollView style={styles.exportContainer} contentContainerStyle={styles.exportContent}>
+            {exporting && (
+              <View style={styles.exportingOverlay}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
+                <Text style={styles.exportingText}>Exporting...</Text>
+              </View>
+            )}
+            
+            <View style={styles.exportSection}>
+              <Text style={styles.exportSectionTitle}>Export Leads</Text>
+              <Text style={styles.exportDescription}>Download lead data as CSV file</Text>
+              
+              <TouchableOpacity 
+                style={styles.exportButton} 
+                onPress={() => exportLeads('clients')}
+                disabled={exporting}
+              >
+                <Ionicons name="people" size={20} color="#FFFFFF" />
+                <Text style={styles.exportButtonText}>Export Clients (Buyers/Tenants)</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.exportButton, { backgroundColor: '#8B5CF6' }]} 
+                onPress={() => exportLeads('inventory')}
+                disabled={exporting}
+              >
+                <Ionicons name="business" size={20} color="#FFFFFF" />
+                <Text style={styles.exportButtonText}>Export Inventory (Sellers/Owners)</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.exportButton, { backgroundColor: '#059669' }]} 
+                onPress={() => exportLeads('all')}
+                disabled={exporting}
+              >
+                <Ionicons name="document-text" size={20} color="#FFFFFF" />
+                <Text style={styles.exportButtonText}>Export All Leads</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.exportSection}>
+              <Text style={styles.exportSectionTitle}>Export Deals</Text>
+              <Text style={styles.exportDescription}>Download deals and transactions data</Text>
+              
+              <TouchableOpacity 
+                style={[styles.exportButton, { backgroundColor: '#F59E0B' }]} 
+                onPress={exportDeals}
+                disabled={exporting}
+              >
+                <Ionicons name="cash" size={20} color="#FFFFFF" />
+                <Text style={styles.exportButtonText}>Export All Deals</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.exportInfo}>
+              <Ionicons name="information-circle" size={20} color="#6B7280" />
+              <Text style={styles.exportInfoText}>
+                Exports are generated in CSV format which can be opened in Excel, Google Sheets, or any spreadsheet application.
+              </Text>
+            </View>
+          </ScrollView>
         )}
       </View>
 
@@ -605,33 +918,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: '#1F2937',
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  activeTab: {
-    backgroundColor: '#EFF6FF',
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  activeTabText: {
-    color: '#3B82F6',
   },
   content: {
     flex: 1,
@@ -837,5 +1123,159 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Tabs container for horizontal scroll
+  tabsContainer: {
+    backgroundColor: '#FFFFFF',
+    maxHeight: 70,
+  },
+  tabs: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 44,
+    borderRadius: 10,
+    gap: 6,
+    backgroundColor: '#F3F4F6',
+  },
+  activeTab: {
+    backgroundColor: '#3B82F6',
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  activeTabText: {
+    color: '#FFFFFF',
+  },
+  // Activity Log styles
+  activityCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  activityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityContent: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  activityMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  activityLead: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '500',
+  },
+  activityTime: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  activityUser: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  // Export styles
+  exportContainer: {
+    flex: 1,
+  },
+  exportContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  exportingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  exportingText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginTop: 12,
+  },
+  exportSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  exportSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  exportDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B82F6',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    gap: 10,
+  },
+  exportButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  exportInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 14,
+    gap: 10,
+  },
+  exportInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
   },
 });

@@ -2185,15 +2185,36 @@ def get_deals(current_user: dict = Depends(get_current_user), status: Optional[s
             """)
             conn.commit()
             
-            query = """
-                SELECT d.*, 
-                       l.name as lead_name, l.phone as lead_phone,
-                       p.name as property_name, p.location as property_location
-                FROM deals d
-                LEFT JOIN leads l ON d.lead_id = l.id
-                LEFT JOIN leads p ON d.property_lead_id = p.id
-                WHERE 1=1
-            """
+            # Try to add missing columns if table already existed
+            try:
+                cursor.execute("ALTER TABLE deals ADD COLUMN property_lead_id INT")
+                conn.commit()
+            except:
+                pass  # Column already exists
+            
+            # Check if property_lead_id column exists
+            cursor.execute("SHOW COLUMNS FROM deals LIKE 'property_lead_id'")
+            has_property_lead_id = cursor.fetchone() is not None
+            
+            if has_property_lead_id:
+                query = """
+                    SELECT d.*, 
+                           l.name as lead_name, l.phone as lead_phone,
+                           p.name as property_name, p.location as property_location
+                    FROM deals d
+                    LEFT JOIN leads l ON d.lead_id = l.id
+                    LEFT JOIN leads p ON d.property_lead_id = p.id
+                    WHERE 1=1
+                """
+            else:
+                query = """
+                    SELECT d.*, 
+                           l.name as lead_name, l.phone as lead_phone,
+                           NULL as property_name, NULL as property_location
+                    FROM deals d
+                    LEFT JOIN leads l ON d.lead_id = l.id
+                    WHERE 1=1
+                """
             params = []
             
             if current_user['role'] != 'admin':
@@ -2320,6 +2341,96 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
     return activities
 
 # ============= Team Management =============
+
+@api_router.get("/activity-logs")
+def get_activity_logs(current_user: dict = Depends(get_current_user), limit: int = 50):
+    """Get recent activity logs across all leads"""
+    activities = []
+    
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Get recent follow-ups/actions with lead names
+            cursor.execute("""
+                SELECT a.id, a.lead_id, a.title, a.action_type, a.description, a.status, 
+                       a.created_at, l.name as lead_name, u.full_name as created_by
+                FROM actions a
+                LEFT JOIN leads l ON a.lead_id = l.id
+                LEFT JOIN users u ON a.user_id = u.id
+                ORDER BY a.created_at DESC
+                LIMIT %s
+            """, (limit,))
+            actions = cursor.fetchall()
+            
+            for a in actions:
+                activities.append({
+                    'id': a['id'],
+                    'lead_id': a['lead_id'],
+                    'lead_name': a['lead_name'] or f"Lead #{a['lead_id']}" if a['lead_id'] else 'Unknown',
+                    'action_type': a['action_type'] or 'Task',
+                    'description': a['title'] or a['description'] or 'Activity',
+                    'created_by': a['created_by'] or 'System',
+                    'created_at': a['created_at'].isoformat() if a['created_at'] else None
+                })
+            
+            # Get recent site visits (wrapped in try-catch)
+            try:
+                cursor.execute("""
+                    SELECT sv.id, sv.lead_id, sv.location, sv.status, sv.visit_date, sv.created_at,
+                           l.name as lead_name, u.full_name as created_by
+                    FROM site_visits sv
+                    LEFT JOIN leads l ON sv.lead_id = l.id
+                    LEFT JOIN users u ON sv.created_by = u.id
+                    ORDER BY sv.created_at DESC
+                    LIMIT %s
+                """, (limit // 2,))
+                visits = cursor.fetchall()
+                
+                for v in visits:
+                    activities.append({
+                        'id': v['id'] + 10000,
+                        'lead_id': v['lead_id'],
+                        'lead_name': v['lead_name'] or f"Lead #{v['lead_id']}" if v['lead_id'] else 'Unknown',
+                        'action_type': 'visit',
+                        'description': f"Site visit at {v['location'] or 'property'} - {v['status']}",
+                        'created_by': v['created_by'] or 'System',
+                        'created_at': v['created_at'].isoformat() if v['created_at'] else (v['visit_date'].isoformat() if v.get('visit_date') else None)
+                    })
+            except Exception as e:
+                logging.warning(f"Could not fetch site visits for activity log: {e}")
+            
+            # Get recent deals (wrapped in try-catch, with flexible column handling)
+            try:
+                cursor.execute("""
+                    SELECT d.id, d.lead_id, d.created_at,
+                           l.name as lead_name
+                    FROM deals d
+                    LEFT JOIN leads l ON d.lead_id = l.id
+                    ORDER BY d.created_at DESC
+                    LIMIT %s
+                """, (limit // 2,))
+                deals = cursor.fetchall()
+                
+                for d in deals:
+                    activities.append({
+                        'id': d['id'] + 20000,
+                        'lead_id': d['lead_id'],
+                        'lead_name': d['lead_name'] or f"Lead #{d['lead_id']}" if d['lead_id'] else 'Unknown',
+                        'action_type': 'deal',
+                        'description': "Deal created",
+                        'created_by': 'System',
+                        'created_at': d['created_at'].isoformat() if d['created_at'] else None
+                    })
+            except Exception as e:
+                logging.warning(f"Could not fetch deals for activity log: {e}")
+        
+        # Sort all activities by created_at descending
+        activities.sort(key=lambda x: x['created_at'] or '', reverse=True)
+        return activities[:limit]
+    except Exception as e:
+        logging.error(f"Activity logs error: {e}")
+        return []
 
 @api_router.get("/team/members")
 def get_team_members(current_user: dict = Depends(get_current_user)):
