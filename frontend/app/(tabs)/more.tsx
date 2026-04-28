@@ -20,6 +20,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { LOCATIONS } from '../../constants/leadOptions';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -87,9 +88,20 @@ export default function MoreScreen() {
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [showAddDealModal, setShowAddDealModal] = useState(false);
   
+  // Lead search states
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+  const [leadSearchResults, setLeadSearchResults] = useState<any[]>([]);
+  const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [showLeadDropdown, setShowLeadDropdown] = useState(false);
+  
+  // Location dropdown state
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [filteredLocations, setFilteredLocations] = useState<string[]>(LOCATIONS);
+  
   // Form states
   const [visitForm, setVisitForm] = useState({
     lead_id: '',
+    lead_name: '',
     visit_date: '',
     visit_time: '',
     location: '',
@@ -154,6 +166,62 @@ export default function MoreScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
+  };
+
+  // Search leads as user types
+  const searchLeads = async (query: string) => {
+    setLeadSearchQuery(query);
+    if (query.length < 2) {
+      setLeadSearchResults([]);
+      setShowLeadDropdown(false);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_URL}/api/leads/search?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        const results = await response.json();
+        setLeadSearchResults(results);
+        setShowLeadDropdown(results.length > 0);
+      }
+    } catch (error) {
+      console.error('Lead search error:', error);
+    }
+  };
+  
+  // Select a lead from search results
+  const selectLead = (lead: any) => {
+    setSelectedLead(lead);
+    setVisitForm({ 
+      ...visitForm, 
+      lead_id: lead.id.toString(), 
+      lead_name: lead.name 
+    });
+    setLeadSearchQuery(lead.name);
+    setShowLeadDropdown(false);
+  };
+  
+  // Filter locations as user types
+  const filterLocations = (query: string) => {
+    setVisitForm({ ...visitForm, location: query });
+    if (query.length === 0) {
+      setFilteredLocations(LOCATIONS);
+    } else {
+      const filtered = LOCATIONS.filter(loc => 
+        loc.toLowerCase().includes(query.toLowerCase())
+      );
+      setFilteredLocations(filtered);
+    }
+    setShowLocationDropdown(true);
+  };
+  
+  // Select a location
+  const selectLocation = (location: string) => {
+    setVisitForm({ ...visitForm, location });
+    setShowLocationDropdown(false);
   };
 
   const handleAddVisit = async () => {
@@ -769,19 +837,63 @@ export default function MoreScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Schedule Site Visit</Text>
-              <TouchableOpacity onPress={() => setShowAddVisitModal(false)}>
+              <TouchableOpacity onPress={() => {
+                setShowAddVisitModal(false);
+                setLeadSearchQuery('');
+                setLeadSearchResults([]);
+                setShowLeadDropdown(false);
+                setShowLocationDropdown(false);
+              }}>
                 <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalBody}>
-              <Text style={styles.inputLabel}>Lead ID *</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.lead_id}
-                onChangeText={(text) => setVisitForm({ ...visitForm, lead_id: text })}
-                placeholder="Enter Lead ID"
-                keyboardType="numeric"
-              />
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.inputLabel}>Lead *</Text>
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={leadSearchQuery}
+                  onChangeText={searchLeads}
+                  placeholder="Search lead by name or phone..."
+                  onFocus={() => leadSearchResults.length > 0 && setShowLeadDropdown(true)}
+                />
+                {selectedLead && (
+                  <TouchableOpacity 
+                    style={styles.clearButton}
+                    onPress={() => {
+                      setSelectedLead(null);
+                      setLeadSearchQuery('');
+                      setVisitForm({ ...visitForm, lead_id: '', lead_name: '' });
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showLeadDropdown && leadSearchResults.length > 0 && (
+                <View style={styles.dropdownContainer}>
+                  {leadSearchResults.slice(0, 5).map((lead) => (
+                    <TouchableOpacity
+                      key={lead.id}
+                      style={styles.dropdownItem}
+                      onPress={() => selectLead(lead)}
+                    >
+                      <View>
+                        <Text style={styles.dropdownItemText}>{lead.name}</Text>
+                        <Text style={styles.dropdownItemSubtext}>{lead.phone} • {lead.lead_type}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {selectedLead && (
+                <View style={styles.selectedLeadCard}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={styles.selectedLeadText}>
+                    {selectedLead.name} ({selectedLead.phone})
+                  </Text>
+                </View>
+              )}
               
               <Text style={styles.inputLabel}>Visit Date *</Text>
               <TextInput
@@ -800,12 +912,41 @@ export default function MoreScreen() {
               />
               
               <Text style={styles.inputLabel}>Location</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.location}
-                onChangeText={(text) => setVisitForm({ ...visitForm, location: text })}
-                placeholder="Visit location"
-              />
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={visitForm.location}
+                  onChangeText={filterLocations}
+                  placeholder="Search or select location..."
+                  onFocus={() => setShowLocationDropdown(true)}
+                />
+                {visitForm.location && (
+                  <TouchableOpacity 
+                    style={styles.clearButton}
+                    onPress={() => {
+                      setVisitForm({ ...visitForm, location: '' });
+                      setFilteredLocations(LOCATIONS);
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showLocationDropdown && (
+                <View style={[styles.dropdownContainer, { maxHeight: 150 }]}>
+                  <ScrollView nestedScrollEnabled>
+                    {filteredLocations.slice(0, 10).map((loc, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.dropdownItem}
+                        onPress={() => selectLocation(loc)}
+                      >
+                        <Text style={styles.dropdownItemText}>{loc}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
               
               <Text style={styles.inputLabel}>Notes</Text>
               <TextInput
@@ -1277,5 +1418,54 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     lineHeight: 18,
+  },
+  // Search and Dropdown styles
+  searchContainer: {
+    position: 'relative',
+  },
+  clearButton: {
+    position: 'absolute',
+    right: 12,
+    top: 14,
+  },
+  dropdownContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginTop: -8,
+    marginBottom: 12,
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownItemText: {
+    fontSize: 15,
+    color: '#1F2937',
+    fontWeight: '500',
+  },
+  dropdownItemSubtext: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  selectedLeadCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  selectedLeadText: {
+    fontSize: 14,
+    color: '#065F46',
+    fontWeight: '500',
   },
 });

@@ -608,6 +608,28 @@ def get_inventory_leads(
     
     return leads
 
+@api_router.get("/leads/search")
+def search_leads(q: str, current_user: dict = Depends(get_current_user)):
+    """Search leads by name or phone"""
+    if len(q) < 2:
+        return []
+    
+    search_term = f"%{q}%"
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT id, name, phone, email, lead_type, lead_status, location 
+               FROM leads 
+               WHERE (is_deleted IS NULL OR is_deleted = 0)
+               AND (name LIKE %s OR phone LIKE %s OR email LIKE %s)
+               ORDER BY name ASC
+               LIMIT 10""",
+            (search_term, search_term, search_term)
+        )
+        leads = cursor.fetchall()
+    
+    return [dict(lead) for lead in leads]
+
 @api_router.get("/leads", response_model=List[LeadResponse])
 def get_all_leads(
     skip: int = 0,
