@@ -72,12 +72,25 @@ interface ActivityLog {
   created_at: string;
 }
 
+import { useLocalSearchParams } from 'expo-router';
+
 export default function MoreScreen() {
   const { user, token } = useAuth();
-  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>('visits');
+  const params = useLocalSearchParams();
+  const initialTab = (params.tab as string) || 'visits';
+  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>(
+    initialTab as any
+  );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  
+  // Update active tab when params change
+  useEffect(() => {
+    if (params.tab) {
+      setActiveTab(params.tab as any);
+    }
+  }, [params.tab]);
   
   // Data states
   const [siteVisits, setSiteVisits] = useState<SiteVisit[]>([]);
