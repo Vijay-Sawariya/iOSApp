@@ -81,7 +81,7 @@ const MenuItem = ({ icon, label, color, bgColor, onPress }: MenuItemProps) => (
 const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; onClose: () => void; bottomInset: number }) => {
   const handleMenuItemPress = (tab: string) => {
     onClose();
-    router.push(`/more?tab=${tab}` as any);
+    router.push(`/more?tab=${tab}&fromPopup=true` as any);
   };
 
   return (

@@ -73,17 +73,32 @@ interface ActivityLog {
 }
 
 import { useLocalSearchParams } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Time options for dropdown
+const TIME_OPTIONS = [
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+  '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+  '18:00', '18:30', '19:00', '19:30', '20:00'
+];
 
 export default function MoreScreen() {
   const { user, token } = useAuth();
   const params = useLocalSearchParams();
   const initialTab = (params.tab as string) || 'visits';
+  const fromPopup = params.fromPopup === 'true';
   const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>(
     initialTab as any
   );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  
+  // Date/Time picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
   
   // Update active tab when params change
   useEffect(() => {
@@ -103,11 +118,17 @@ export default function MoreScreen() {
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [showAddDealModal, setShowAddDealModal] = useState(false);
   
-  // Lead search states
+  // Lead search states for Site Visit
   const [leadSearchQuery, setLeadSearchQuery] = useState('');
   const [leadSearchResults, setLeadSearchResults] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [showLeadDropdown, setShowLeadDropdown] = useState(false);
+  
+  // Lead search states for Deal
+  const [dealLeadSearchQuery, setDealLeadSearchQuery] = useState('');
+  const [dealLeadSearchResults, setDealLeadSearchResults] = useState<any[]>([]);
+  const [selectedDealLead, setSelectedDealLead] = useState<any>(null);
+  const [showDealLeadDropdown, setShowDealLeadDropdown] = useState(false);
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -125,6 +146,7 @@ export default function MoreScreen() {
   
   const [dealForm, setDealForm] = useState({
     lead_id: '',
+    lead_name: '',
     deal_amount: '',
     commission_percent: '',
     expected_closing_date: '',
@@ -244,6 +266,52 @@ export default function MoreScreen() {
   const selectLocation = (location: string) => {
     setVisitForm({ ...visitForm, location });
     setShowLocationDropdown(false);
+  };
+
+  // Search leads for Deal
+  const searchDealLeads = async (query: string) => {
+    setDealLeadSearchQuery(query);
+    if (query.length < 2) {
+      setDealLeadSearchResults([]);
+      setShowDealLeadDropdown(false);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_URL}/api/leads/search?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        const results = await response.json();
+        setDealLeadSearchResults(results);
+        setShowDealLeadDropdown(results.length > 0);
+      }
+    } catch (error) {
+      console.error('Deal lead search error:', error);
+    }
+  };
+  
+  // Select a lead for Deal
+  const selectDealLead = (lead: any) => {
+    setSelectedDealLead(lead);
+    setDealForm({ 
+      ...dealForm, 
+      lead_id: lead.id.toString(), 
+      lead_name: lead.name 
+    });
+    setDealLeadSearchQuery(lead.name);
+    setShowDealLeadDropdown(false);
+  };
+
+  // Handle date picker change
+  const handleDateChange = (event: any, date?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (date) {
+      setSelectedDate(date);
+      const formattedDate = date.toISOString().split('T')[0];
+      setVisitForm({ ...visitForm, visit_date: formattedDate });
+    }
   };
 
   const handleAddVisit = async () => {
@@ -692,11 +760,489 @@ export default function MoreScreen() {
     </View>
   );
 
+  // Render modals (shared between both views)
+  const renderModals = () => (
+    <>
+      {/* Add Site Visit Modal */}
+      <Modal visible={showAddVisitModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Schedule Site Visit</Text>
+              <TouchableOpacity onPress={() => {
+                setShowAddVisitModal(false);
+                setLeadSearchQuery('');
+                setLeadSearchResults([]);
+                setShowLeadDropdown(false);
+                setShowLocationDropdown(false);
+                setShowDatePicker(false);
+                setShowTimePicker(false);
+              }}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.inputLabel}>Lead *</Text>
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={leadSearchQuery}
+                  onChangeText={searchLeads}
+                  placeholder="Search lead by name or phone..."
+                  onFocus={() => leadSearchResults.length > 0 && setShowLeadDropdown(true)}
+                />
+                {selectedLead && (
+                  <TouchableOpacity 
+                    style={styles.clearButton}
+                    onPress={() => {
+                      setSelectedLead(null);
+                      setLeadSearchQuery('');
+                      setVisitForm({ ...visitForm, lead_id: '', lead_name: '' });
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showLeadDropdown && leadSearchResults.length > 0 && (
+                <View style={styles.dropdownContainer}>
+                  {leadSearchResults.slice(0, 5).map((lead) => (
+                    <TouchableOpacity
+                      key={lead.id}
+                      style={styles.dropdownItem}
+                      onPress={() => selectLead(lead)}
+                    >
+                      <View>
+                        <Text style={styles.dropdownItemText}>{lead.name}</Text>
+                        <Text style={styles.dropdownItemSubtext}>{lead.phone} • {lead.lead_type}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {selectedLead && (
+                <View style={styles.selectedLeadCard}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={styles.selectedLeadText}>
+                    {selectedLead.name} ({selectedLead.phone})
+                  </Text>
+                </View>
+              )}
+              
+              <Text style={styles.inputLabel}>Visit Date *</Text>
+              {Platform.OS === 'web' ? (
+                <TextInput
+                  style={styles.input}
+                  value={visitForm.visit_date}
+                  onChangeText={(text) => setVisitForm({ ...visitForm, visit_date: text })}
+                  placeholder="YYYY-MM-DD (e.g., 2026-05-15)"
+                />
+              ) : (
+                <>
+                  <TouchableOpacity 
+                    style={styles.datePickerButton}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Ionicons name="calendar" size={20} color="#6B7280" />
+                    <Text style={[styles.datePickerText, !visitForm.visit_date && styles.placeholderText]}>
+                      {visitForm.visit_date || 'Select date'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={selectedDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={handleDateChange}
+                      minimumDate={new Date()}
+                    />
+                  )}
+                </>
+              )}
+              
+              <Text style={styles.inputLabel}>Visit Time</Text>
+              <TouchableOpacity 
+                style={styles.datePickerButton}
+                onPress={() => setShowTimePicker(!showTimePicker)}
+              >
+                <Ionicons name="time" size={20} color="#6B7280" />
+                <Text style={[styles.datePickerText, !visitForm.visit_time && styles.placeholderText]}>
+                  {visitForm.visit_time || 'Select time'}
+                </Text>
+              </TouchableOpacity>
+              {showTimePicker && (
+                <View style={[styles.dropdownContainer, { maxHeight: 200 }]}>
+                  <ScrollView nestedScrollEnabled>
+                    {TIME_OPTIONS.map((time, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={[styles.dropdownItem, visitForm.visit_time === time && styles.dropdownItemSelected]}
+                        onPress={() => {
+                          setVisitForm({ ...visitForm, visit_time: time });
+                          setShowTimePicker(false);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, visitForm.visit_time === time && styles.dropdownItemTextSelected]}>
+                          {time}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+              
+              <Text style={styles.inputLabel}>Location</Text>
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={visitForm.location}
+                  onChangeText={filterLocations}
+                  placeholder="Search or select location..."
+                  onFocus={() => setShowLocationDropdown(true)}
+                />
+                {visitForm.location && (
+                  <TouchableOpacity 
+                    style={styles.clearButton}
+                    onPress={() => {
+                      setVisitForm({ ...visitForm, location: '' });
+                      setFilteredLocations(LOCATIONS);
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showLocationDropdown && (
+                <View style={[styles.dropdownContainer, { maxHeight: 150 }]}>
+                  <ScrollView nestedScrollEnabled>
+                    {filteredLocations.slice(0, 10).map((loc, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.dropdownItem}
+                        onPress={() => selectLocation(loc)}
+                      >
+                        <Text style={styles.dropdownItemText}>{loc}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+              
+              <Text style={styles.inputLabel}>Notes</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={visitForm.notes}
+                onChangeText={(text) => setVisitForm({ ...visitForm, notes: text })}
+                placeholder="Add notes..."
+                multiline
+                numberOfLines={3}
+              />
+              
+              <TouchableOpacity style={styles.submitButton} onPress={handleAddVisit}>
+                <Text style={styles.submitButtonText}>Schedule Visit</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Deal Modal */}
+      <Modal visible={showAddDealModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Deal</Text>
+              <TouchableOpacity onPress={() => {
+                setShowAddDealModal(false);
+                setDealLeadSearchQuery('');
+                setDealLeadSearchResults([]);
+                setShowDealLeadDropdown(false);
+              }}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.inputLabel}>Lead *</Text>
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={dealLeadSearchQuery}
+                  onChangeText={searchDealLeads}
+                  placeholder="Search lead by name or phone..."
+                  onFocus={() => dealLeadSearchResults.length > 0 && setShowDealLeadDropdown(true)}
+                />
+                {selectedDealLead && (
+                  <TouchableOpacity 
+                    style={styles.clearButton}
+                    onPress={() => {
+                      setSelectedDealLead(null);
+                      setDealLeadSearchQuery('');
+                      setDealForm({ ...dealForm, lead_id: '', lead_name: '' });
+                    }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showDealLeadDropdown && dealLeadSearchResults.length > 0 && (
+                <View style={styles.dropdownContainer}>
+                  {dealLeadSearchResults.slice(0, 5).map((lead) => (
+                    <TouchableOpacity
+                      key={lead.id}
+                      style={styles.dropdownItem}
+                      onPress={() => selectDealLead(lead)}
+                    >
+                      <View>
+                        <Text style={styles.dropdownItemText}>{lead.name}</Text>
+                        <Text style={styles.dropdownItemSubtext}>{lead.phone} • {lead.lead_type}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {selectedDealLead && (
+                <View style={styles.selectedLeadCard}>
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={styles.selectedLeadText}>
+                    {selectedDealLead.name} ({selectedDealLead.phone})
+                  </Text>
+                </View>
+              )}
+              
+              <Text style={styles.inputLabel}>Deal Amount (Cr) *</Text>
+              <TextInput
+                style={styles.input}
+                value={dealForm.deal_amount}
+                onChangeText={(text) => setDealForm({ ...dealForm, deal_amount: text })}
+                placeholder="e.g., 2.5"
+                keyboardType="decimal-pad"
+              />
+              
+              <Text style={styles.inputLabel}>Commission %</Text>
+              <TextInput
+                style={styles.input}
+                value={dealForm.commission_percent}
+                onChangeText={(text) => setDealForm({ ...dealForm, commission_percent: text })}
+                placeholder="e.g., 2"
+                keyboardType="decimal-pad"
+              />
+              
+              <Text style={styles.inputLabel}>Expected Closing Date</Text>
+              <TextInput
+                style={styles.input}
+                value={dealForm.expected_closing_date}
+                onChangeText={(text) => setDealForm({ ...dealForm, expected_closing_date: text })}
+                placeholder="YYYY-MM-DD"
+              />
+              
+              <Text style={styles.inputLabel}>Notes</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={dealForm.notes}
+                onChangeText={(text) => setDealForm({ ...dealForm, notes: text })}
+                placeholder="Add notes..."
+                multiline
+                numberOfLines={3}
+              />
+              
+              <TouchableOpacity style={styles.submitButton} onPress={handleAddDeal}>
+                <Text style={styles.submitButtonText}>Create Deal</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
         <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // When coming from popup, show simplified header with back button
+  if (fromPopup) {
+    return (
+      <View style={styles.container}>
+        {/* Simple Header with Back */}
+        <View style={styles.simpleHeader}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#1F2937" />
+          </TouchableOpacity>
+          <Text style={styles.simpleHeaderTitle}>
+            {activeTab === 'visits' && 'Site Visits'}
+            {activeTab === 'deals' && 'Deals & Transactions'}
+            {activeTab === 'activity' && 'Activity Timeline'}
+            {activeTab === 'team' && 'Team Members'}
+            {activeTab === 'export' && 'Export Data'}
+          </Text>
+          {(activeTab === 'visits' || activeTab === 'deals') && (
+            <TouchableOpacity 
+              style={styles.headerAddButton} 
+              onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+            >
+              <Ionicons name="add" size={24} color="#3B82F6" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Content */}
+        <View style={styles.content}>
+          {activeTab === 'visits' && (
+            <FlatList
+              data={siteVisits}
+              renderItem={renderSiteVisit}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={styles.listContainer}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="location-outline" size={40} color="#9CA3AF" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Site Visits</Text>
+                  <Text style={styles.emptyText}>Schedule your first property visit</Text>
+                  <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.emptyButtonText}>Schedule Visit</Text>
+                  </TouchableOpacity>
+                </View>
+              }
+            />
+          )}
+
+          {activeTab === 'deals' && (
+            <FlatList
+              data={deals}
+              renderItem={renderDeal}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={styles.listContainer}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="cash-outline" size={40} color="#9CA3AF" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Deals Yet</Text>
+                  <Text style={styles.emptyText}>Create your first deal to track</Text>
+                  <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.emptyButtonText}>Add Deal</Text>
+                  </TouchableOpacity>
+                </View>
+              }
+            />
+          )}
+
+          {activeTab === 'team' && user?.role === 'admin' && (
+            <FlatList
+              data={teamMembers}
+              renderItem={renderTeamMember}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={styles.listContainer}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Ionicons name="people-outline" size={48} color="#9CA3AF" />
+                  <Text style={styles.emptyText}>No team members</Text>
+                </View>
+              }
+            />
+          )}
+
+          {activeTab === 'activity' && (
+            <FlatList
+              data={activityLogs}
+              renderItem={renderActivityLog}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={styles.listContainer}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="time-outline" size={40} color="#9CA3AF" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Activity Yet</Text>
+                  <Text style={styles.emptyText}>Lead updates, calls, and notes will appear here</Text>
+                </View>
+              }
+            />
+          )}
+
+          {activeTab === 'export' && canExport && (
+            <ScrollView style={styles.exportContainer} contentContainerStyle={styles.exportContent}>
+              {exporting && (
+                <View style={styles.exportingOverlay}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  <Text style={styles.exportingText}>Exporting...</Text>
+                </View>
+              )}
+              
+              <View style={styles.exportSection}>
+                <Text style={styles.exportSectionTitle}>Export Leads</Text>
+                <Text style={styles.exportDescription}>Download lead data as CSV file</Text>
+                
+                <TouchableOpacity 
+                  style={styles.exportButton} 
+                  onPress={() => exportLeads('clients')}
+                  disabled={exporting}
+                >
+                  <Ionicons name="people" size={20} color="#FFFFFF" />
+                  <Text style={styles.exportButtonText}>Export Clients (Buyers/Tenants)</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.exportButton, { backgroundColor: '#8B5CF6' }]} 
+                  onPress={() => exportLeads('inventory')}
+                  disabled={exporting}
+                >
+                  <Ionicons name="business" size={20} color="#FFFFFF" />
+                  <Text style={styles.exportButtonText}>Export Inventory (Sellers/Owners)</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.exportButton, { backgroundColor: '#059669' }]} 
+                  onPress={() => exportLeads('all')}
+                  disabled={exporting}
+                >
+                  <Ionicons name="document-text" size={20} color="#FFFFFF" />
+                  <Text style={styles.exportButtonText}>Export All Leads</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.exportSection}>
+                <Text style={styles.exportSectionTitle}>Export Deals</Text>
+                <Text style={styles.exportDescription}>Download deals and transactions data</Text>
+                
+                <TouchableOpacity 
+                  style={[styles.exportButton, { backgroundColor: '#F59E0B' }]} 
+                  onPress={exportDeals}
+                  disabled={exporting}
+                >
+                  <Ionicons name="cash" size={20} color="#FFFFFF" />
+                  <Text style={styles.exportButtonText}>Export All Deals</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.exportInfo}>
+                <Ionicons name="information-circle" size={20} color="#6B7280" />
+                <Text style={styles.exportInfoText}>
+                  Exports are generated in CSV format which can be opened in Excel, Google Sheets, or any spreadsheet application.
+                </Text>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Modals */}
+        {renderModals()}
       </View>
     );
   }
@@ -943,204 +1489,7 @@ export default function MoreScreen() {
         )}
       </View>
 
-      {/* Add Site Visit Modal */}
-      <Modal visible={showAddVisitModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Schedule Site Visit</Text>
-              <TouchableOpacity onPress={() => {
-                setShowAddVisitModal(false);
-                setLeadSearchQuery('');
-                setLeadSearchResults([]);
-                setShowLeadDropdown(false);
-                setShowLocationDropdown(false);
-              }}>
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <Text style={styles.inputLabel}>Lead *</Text>
-              <View style={styles.searchContainer}>
-                <TextInput
-                  style={styles.input}
-                  value={leadSearchQuery}
-                  onChangeText={searchLeads}
-                  placeholder="Search lead by name or phone..."
-                  onFocus={() => leadSearchResults.length > 0 && setShowLeadDropdown(true)}
-                />
-                {selectedLead && (
-                  <TouchableOpacity 
-                    style={styles.clearButton}
-                    onPress={() => {
-                      setSelectedLead(null);
-                      setLeadSearchQuery('');
-                      setVisitForm({ ...visitForm, lead_id: '', lead_name: '' });
-                    }}
-                  >
-                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                  </TouchableOpacity>
-                )}
-              </View>
-              {showLeadDropdown && leadSearchResults.length > 0 && (
-                <View style={styles.dropdownContainer}>
-                  {leadSearchResults.slice(0, 5).map((lead) => (
-                    <TouchableOpacity
-                      key={lead.id}
-                      style={styles.dropdownItem}
-                      onPress={() => selectLead(lead)}
-                    >
-                      <View>
-                        <Text style={styles.dropdownItemText}>{lead.name}</Text>
-                        <Text style={styles.dropdownItemSubtext}>{lead.phone} • {lead.lead_type}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {selectedLead && (
-                <View style={styles.selectedLeadCard}>
-                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-                  <Text style={styles.selectedLeadText}>
-                    {selectedLead.name} ({selectedLead.phone})
-                  </Text>
-                </View>
-              )}
-              
-              <Text style={styles.inputLabel}>Visit Date *</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.visit_date}
-                onChangeText={(text) => setVisitForm({ ...visitForm, visit_date: text })}
-                placeholder="YYYY-MM-DD"
-              />
-              
-              <Text style={styles.inputLabel}>Visit Time</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.visit_time}
-                onChangeText={(text) => setVisitForm({ ...visitForm, visit_time: text })}
-                placeholder="HH:MM"
-              />
-              
-              <Text style={styles.inputLabel}>Location</Text>
-              <View style={styles.searchContainer}>
-                <TextInput
-                  style={styles.input}
-                  value={visitForm.location}
-                  onChangeText={filterLocations}
-                  placeholder="Search or select location..."
-                  onFocus={() => setShowLocationDropdown(true)}
-                />
-                {visitForm.location && (
-                  <TouchableOpacity 
-                    style={styles.clearButton}
-                    onPress={() => {
-                      setVisitForm({ ...visitForm, location: '' });
-                      setFilteredLocations(LOCATIONS);
-                    }}
-                  >
-                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-                  </TouchableOpacity>
-                )}
-              </View>
-              {showLocationDropdown && (
-                <View style={[styles.dropdownContainer, { maxHeight: 150 }]}>
-                  <ScrollView nestedScrollEnabled>
-                    {filteredLocations.slice(0, 10).map((loc, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={styles.dropdownItem}
-                        onPress={() => selectLocation(loc)}
-                      >
-                        <Text style={styles.dropdownItemText}>{loc}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-              
-              <Text style={styles.inputLabel}>Notes</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={visitForm.notes}
-                onChangeText={(text) => setVisitForm({ ...visitForm, notes: text })}
-                placeholder="Add notes..."
-                multiline
-                numberOfLines={3}
-              />
-              
-              <TouchableOpacity style={styles.submitButton} onPress={handleAddVisit}>
-                <Text style={styles.submitButtonText}>Schedule Visit</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add Deal Modal */}
-      <Modal visible={showAddDealModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Deal</Text>
-              <TouchableOpacity onPress={() => setShowAddDealModal(false)}>
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalBody}>
-              <Text style={styles.inputLabel}>Lead ID *</Text>
-              <TextInput
-                style={styles.input}
-                value={dealForm.lead_id}
-                onChangeText={(text) => setDealForm({ ...dealForm, lead_id: text })}
-                placeholder="Enter Lead ID"
-                keyboardType="numeric"
-              />
-              
-              <Text style={styles.inputLabel}>Deal Amount (Cr) *</Text>
-              <TextInput
-                style={styles.input}
-                value={dealForm.deal_amount}
-                onChangeText={(text) => setDealForm({ ...dealForm, deal_amount: text })}
-                placeholder="e.g., 2.5"
-                keyboardType="decimal-pad"
-              />
-              
-              <Text style={styles.inputLabel}>Commission %</Text>
-              <TextInput
-                style={styles.input}
-                value={dealForm.commission_percent}
-                onChangeText={(text) => setDealForm({ ...dealForm, commission_percent: text })}
-                placeholder="e.g., 2"
-                keyboardType="decimal-pad"
-              />
-              
-              <Text style={styles.inputLabel}>Expected Closing Date</Text>
-              <TextInput
-                style={styles.input}
-                value={dealForm.expected_closing_date}
-                onChangeText={(text) => setDealForm({ ...dealForm, expected_closing_date: text })}
-                placeholder="YYYY-MM-DD"
-              />
-              
-              <Text style={styles.inputLabel}>Notes</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={dealForm.notes}
-                onChangeText={(text) => setDealForm({ ...dealForm, notes: text })}
-                placeholder="Add notes..."
-                multiline
-                numberOfLines={3}
-              />
-              
-              <TouchableOpacity style={styles.submitButton} onPress={handleAddDeal}>
-                <Text style={styles.submitButtonText}>Create Deal</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      {renderModals()}
     </View>
   );
 }
@@ -1711,5 +2060,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#065F46',
     fontWeight: '500',
+  },
+  // Simple header styles for popup navigation
+  simpleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  simpleHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerAddButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Date/Time picker styles
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  datePickerText: {
+    fontSize: 15,
+    color: '#1F2937',
+    flex: 1,
+  },
+  placeholderText: {
+    color: '#9CA3AF',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  dropdownItemTextSelected: {
+    color: '#3B82F6',
+    fontWeight: '600',
   },
 });
