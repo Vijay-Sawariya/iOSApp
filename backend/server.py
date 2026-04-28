@@ -1466,8 +1466,8 @@ def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int
         for buyer in buyers:
             buyer_locations = set((buyer.get('location') or '').lower().split(','))
             buyer_locations = {loc.strip() for loc in buyer_locations if loc.strip()}
-            buyer_budget_min = buyer.get('budget_min') or 0
-            buyer_budget_max = buyer.get('budget_max') or float('inf')
+            buyer_budget_min = float(buyer.get('budget_min') or 0)
+            buyer_budget_max = float(buyer.get('budget_max') or 999999)
             buyer_floors = set((buyer.get('floor') or '').lower().split(','))
             buyer_floors = {f.strip() for f in buyer_floors if f.strip()}
             
@@ -1482,7 +1482,7 @@ def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int
                     reasons.append(f"Location match: {inv.get('location')}")
                 
                 # Budget match
-                inv_budget = inv.get('budget_min') or inv.get('budget_max') or 0
+                inv_budget = float(inv.get('budget_min') or inv.get('budget_max') or 0)
                 if inv_budget > 0:
                     if buyer_budget_min <= inv_budget <= buyer_budget_max:
                         score += 30
@@ -2040,6 +2040,445 @@ def get_all_locations(current_user: dict = Depends(get_current_user)):
         """)
         locations = cursor.fetchall()
         return [dict(l) for l in locations]
+
+# ============= Site Visit Scheduler =============
+
+class SiteVisitCreate(BaseModel):
+    lead_id: int
+    property_lead_id: Optional[int] = None  # The inventory/property to visit
+    visit_date: str
+    visit_time: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = "Scheduled"  # Scheduled, Completed, Cancelled, Rescheduled
+
+class SiteVisitResponse(BaseModel):
+    id: int
+    lead_id: int
+    property_lead_id: Optional[int]
+    visit_date: str
+    visit_time: Optional[str]
+    location: Optional[str]
+    notes: Optional[str]
+    status: str
+    lead_name: Optional[str]
+    property_name: Optional[str]
+    created_by: Optional[int]
+    created_at: Optional[str]
+
+@api_router.get("/site-visits")
+def get_site_visits(current_user: dict = Depends(get_current_user), status: Optional[str] = None):
+    """Get all site visits"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            # First check if table exists, create if not
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS site_visits (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    lead_id INT,
+                    property_lead_id INT,
+                    visit_date DATE,
+                    visit_time TIME,
+                    location VARCHAR(255),
+                    notes TEXT,
+                    status VARCHAR(50) DEFAULT 'Scheduled',
+                    created_by INT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            
+            query = """
+                SELECT sv.*, 
+                       l.name as lead_name, l.phone as lead_phone,
+                       p.name as property_name, p.location as property_location
+                FROM site_visits sv
+                LEFT JOIN leads l ON sv.lead_id = l.id
+                LEFT JOIN leads p ON sv.property_lead_id = p.id
+                WHERE sv.created_by = %s
+            """
+            params = [current_user['id']]
+            
+            if status:
+                query += " AND sv.status = %s"
+                params.append(status)
+            
+            query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC"
+            cursor.execute(query, params)
+            visits = cursor.fetchall()
+            return [dict(v) for v in visits]
+    except Exception as e:
+        logging.error(f"Site visits error: {e}")
+        return []
+
+@api_router.post("/site-visits")
+def create_site_visit(visit: SiteVisitCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new site visit"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO site_visits (lead_id, property_lead_id, visit_date, visit_time, location, notes, status, created_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """, (visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time, 
+              visit.location, visit.notes, visit.status or 'Scheduled', current_user['id']))
+        conn.commit()
+        return {"id": cursor.lastrowid, "message": "Site visit scheduled successfully"}
+
+@api_router.put("/site-visits/{visit_id}")
+def update_site_visit(visit_id: int, visit: SiteVisitCreate, current_user: dict = Depends(get_current_user)):
+    """Update a site visit"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE site_visits SET lead_id=%s, property_lead_id=%s, visit_date=%s, visit_time=%s, 
+            location=%s, notes=%s, status=%s WHERE id=%s AND created_by=%s
+        """, (visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time,
+              visit.location, visit.notes, visit.status, visit_id, current_user['id']))
+        conn.commit()
+        return {"message": "Site visit updated successfully"}
+
+@api_router.delete("/site-visits/{visit_id}")
+def delete_site_visit(visit_id: int, current_user: dict = Depends(get_current_user)):
+    """Delete a site visit"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM site_visits WHERE id=%s AND created_by=%s", (visit_id, current_user['id']))
+        conn.commit()
+        return {"message": "Site visit deleted successfully"}
+
+# ============= Deal/Transaction Tracker =============
+
+class DealCreate(BaseModel):
+    lead_id: int
+    property_lead_id: Optional[int] = None
+    deal_amount: Optional[float] = None
+    commission_percent: Optional[float] = None
+    commission_amount: Optional[float] = None
+    status: Optional[str] = "Negotiation"  # Negotiation, Agreement, Documentation, Payment, Closed, Cancelled
+    payment_received: Optional[float] = 0
+    notes: Optional[str] = None
+    expected_closing_date: Optional[str] = None
+
+@api_router.get("/deals")
+def get_deals(current_user: dict = Depends(get_current_user), status: Optional[str] = None):
+    """Get all deals"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            # First check if table exists, create if not
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS deals (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    lead_id INT,
+                    property_lead_id INT,
+                    deal_amount DECIMAL(15,2),
+                    commission_percent DECIMAL(5,2),
+                    commission_amount DECIMAL(15,2),
+                    status VARCHAR(50) DEFAULT 'Negotiation',
+                    payment_received DECIMAL(15,2) DEFAULT 0,
+                    notes TEXT,
+                    expected_closing_date DATE,
+                    created_by INT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            
+            query = """
+                SELECT d.*, 
+                       l.name as lead_name, l.phone as lead_phone,
+                       p.name as property_name, p.location as property_location
+                FROM deals d
+                LEFT JOIN leads l ON d.lead_id = l.id
+                LEFT JOIN leads p ON d.property_lead_id = p.id
+                WHERE 1=1
+            """
+            params = []
+            
+            if current_user['role'] != 'admin':
+                query += " AND d.created_by = %s"
+                params.append(current_user['id'])
+            
+            if status:
+                query += " AND d.status = %s"
+                params.append(status)
+            
+            query += " ORDER BY d.created_at DESC"
+            cursor.execute(query, params)
+            deals = cursor.fetchall()
+            return [dict(d) for d in deals]
+    except Exception as e:
+        logging.error(f"Deals error: {e}")
+        return []
+
+@api_router.post("/deals")
+def create_deal(deal: DealCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new deal"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        commission = deal.commission_amount or (deal.deal_amount * deal.commission_percent / 100 if deal.deal_amount and deal.commission_percent else 0)
+        cursor.execute("""
+            INSERT INTO deals (lead_id, property_lead_id, deal_amount, commission_percent, commission_amount, 
+            status, payment_received, notes, expected_closing_date, created_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """, (deal.lead_id, deal.property_lead_id, deal.deal_amount, deal.commission_percent, commission,
+              deal.status or 'Negotiation', deal.payment_received or 0, deal.notes, deal.expected_closing_date, current_user['id']))
+        conn.commit()
+        return {"id": cursor.lastrowid, "message": "Deal created successfully"}
+
+@api_router.put("/deals/{deal_id}")
+def update_deal(deal_id: int, deal: DealCreate, current_user: dict = Depends(get_current_user)):
+    """Update a deal"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        commission = deal.commission_amount or (deal.deal_amount * deal.commission_percent / 100 if deal.deal_amount and deal.commission_percent else 0)
+        cursor.execute("""
+            UPDATE deals SET lead_id=%s, property_lead_id=%s, deal_amount=%s, commission_percent=%s, 
+            commission_amount=%s, status=%s, payment_received=%s, notes=%s, expected_closing_date=%s
+            WHERE id=%s
+        """, (deal.lead_id, deal.property_lead_id, deal.deal_amount, deal.commission_percent, commission,
+              deal.status, deal.payment_received, deal.notes, deal.expected_closing_date, deal_id))
+        conn.commit()
+        return {"message": "Deal updated successfully"}
+
+@api_router.delete("/deals/{deal_id}")
+def delete_deal(deal_id: int, current_user: dict = Depends(get_current_user)):
+    """Delete a deal"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM deals WHERE id=%s", (deal_id,))
+        conn.commit()
+        return {"message": "Deal deleted successfully"}
+
+# ============= Activity Log / Timeline =============
+
+@api_router.get("/leads/{lead_id}/activity")
+def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_user)):
+    """Get activity timeline for a lead"""
+    activities = []
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Get follow-ups/actions
+        cursor.execute("""
+            SELECT 'followup' as type, id, title as description, due_date as activity_date, 
+                   status, created_at, NULL as created_by_name
+            FROM actions WHERE lead_id = %s
+            ORDER BY created_at DESC
+        """, (lead_id,))
+        followups = cursor.fetchall()
+        for f in followups:
+            activities.append({
+                'type': 'followup',
+                'id': f['id'],
+                'description': f['description'],
+                'date': str(f['activity_date']) if f['activity_date'] else str(f['created_at']),
+                'status': f['status'],
+                'icon': 'calendar'
+            })
+        
+        # Get site visits
+        cursor.execute("""
+            SELECT 'visit' as type, id, CONCAT('Site Visit: ', COALESCE(location, 'Property')) as description,
+                   visit_date as activity_date, status, created_at
+            FROM site_visits WHERE lead_id = %s
+            ORDER BY created_at DESC
+        """, (lead_id,))
+        visits = cursor.fetchall()
+        for v in visits:
+            activities.append({
+                'type': 'visit',
+                'id': v['id'],
+                'description': v['description'],
+                'date': str(v['activity_date']) if v['activity_date'] else str(v['created_at']),
+                'status': v['status'],
+                'icon': 'location'
+            })
+        
+        # Get deals
+        cursor.execute("""
+            SELECT 'deal' as type, id, CONCAT('Deal: ₹', COALESCE(deal_amount, 0), ' Cr') as description,
+                   expected_closing_date as activity_date, status, created_at
+            FROM deals WHERE lead_id = %s
+            ORDER BY created_at DESC
+        """, (lead_id,))
+        deals = cursor.fetchall()
+        for d in deals:
+            activities.append({
+                'type': 'deal',
+                'id': d['id'],
+                'description': d['description'],
+                'date': str(d['activity_date']) if d['activity_date'] else str(d['created_at']),
+                'status': d['status'],
+                'icon': 'cash'
+            })
+    
+    # Sort by date descending
+    activities.sort(key=lambda x: x['date'] if x['date'] else '', reverse=True)
+    return activities
+
+# ============= Team Management =============
+
+@api_router.get("/team/members")
+def get_team_members(current_user: dict = Depends(get_current_user)):
+    """Get all team members (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, username, full_name, email, role, created_at,
+                   (SELECT COUNT(*) FROM leads WHERE created_by = users.id) as lead_count
+            FROM users ORDER BY full_name
+        """)
+        members = cursor.fetchall()
+        return [dict(m) for m in members]
+
+@api_router.post("/team/assign-lead")
+def assign_lead_to_member(lead_id: int, user_id: int, current_user: dict = Depends(get_current_user)):
+    """Assign a lead to a team member"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE leads SET assigned_to = %s WHERE id = %s", (user_id, lead_id))
+        conn.commit()
+        return {"message": "Lead assigned successfully"}
+
+@api_router.get("/team/performance")
+def get_team_performance(current_user: dict = Depends(get_current_user)):
+    """Get team performance stats"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.id, u.full_name, u.username,
+                   COUNT(DISTINCT l.id) as total_leads,
+                   SUM(CASE WHEN l.lead_status = 'Won' THEN 1 ELSE 0 END) as won_deals,
+                   COUNT(DISTINCT sv.id) as site_visits,
+                   COUNT(DISTINCT a.id) as followups_done
+            FROM users u
+            LEFT JOIN leads l ON l.created_by = u.id
+            LEFT JOIN site_visits sv ON sv.created_by = u.id
+            LEFT JOIN actions a ON a.user_id = u.id AND a.status = 'Completed'
+            GROUP BY u.id, u.full_name, u.username
+            ORDER BY total_leads DESC
+        """)
+        performance = cursor.fetchall()
+        return [dict(p) for p in performance]
+
+# ============= Bulk Import/Export =============
+
+@api_router.post("/leads/bulk-import")
+async def bulk_import_leads(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """Import leads from CSV file"""
+    import csv
+    import io
+    
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    
+    content = await file.read()
+    decoded = content.decode('utf-8')
+    reader = csv.DictReader(io.StringIO(decoded))
+    
+    imported = 0
+    errors = []
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for row in reader:
+            try:
+                cursor.execute("""
+                    INSERT INTO leads (name, phone, email, lead_type, location, budget_min, budget_max, 
+                    property_type, bhk, lead_temperature, lead_status, notes, created_by, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                """, (
+                    row.get('name', ''),
+                    row.get('phone', ''),
+                    row.get('email', ''),
+                    row.get('lead_type', 'buyer'),
+                    row.get('location', ''),
+                    float(row.get('budget_min', 0)) if row.get('budget_min') else None,
+                    float(row.get('budget_max', 0)) if row.get('budget_max') else None,
+                    row.get('property_type', ''),
+                    row.get('bhk', ''),
+                    row.get('lead_temperature', 'Hot'),
+                    row.get('lead_status', 'New'),
+                    row.get('notes', ''),
+                    current_user['id']
+                ))
+                imported += 1
+            except Exception as e:
+                errors.append(f"Row {imported + 1}: {str(e)}")
+        conn.commit()
+    
+    return {"imported": imported, "errors": errors}
+
+@api_router.get("/leads/export")
+def export_leads(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Export leads to CSV format"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = "SELECT * FROM leads WHERE (is_deleted IS NULL OR is_deleted = 0)"
+        params = []
+        
+        if lead_type:
+            query += " AND lead_type = %s"
+            params.append(lead_type)
+        
+        cursor.execute(query, params)
+        leads = cursor.fetchall()
+        
+        # Convert to list of dicts
+        return [dict(l) for l in leads]
+
+# ============= Property Gallery =============
+
+@api_router.get("/leads/{lead_id}/gallery")
+def get_property_gallery(lead_id: int, current_user: dict = Depends(get_current_user)):
+    """Get all images for a property"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, lead_id, file_name, file_path, file_type, file_size, uploaded_at
+            FROM inventory_files WHERE lead_id = %s AND file_type LIKE 'image/%'
+            ORDER BY uploaded_at DESC
+        """, (lead_id,))
+        images = cursor.fetchall()
+        return [dict(img) for img in images]
+
+# ============= Map/Location Features =============
+
+@api_router.get("/leads/map-data")
+def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get leads with location data for map view"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
+                   l.budget_min, l.budget_max, l.bhk, l.area_size, loc.latitude, loc.longitude
+            FROM leads l
+            LEFT JOIN locations loc ON LOWER(l.location) LIKE CONCAT('%', LOWER(loc.location), '%')
+            WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+            AND l.location IS NOT NULL AND l.location != ''
+        """
+        params = []
+        
+        if lead_type:
+            query += " AND l.lead_type = %s"
+            params.append(lead_type)
+        
+        query += " LIMIT 100"
+        cursor.execute(query, params)
+        leads = cursor.fetchall()
+        return [dict(l) for l in leads]
 
 # Include router
 app.include_router(api_router)
