@@ -19,7 +19,17 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { LOCATIONS, FLOORS, LEAD_SOURCES, normalizeSearchText, canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
+import { 
+  LOCATIONS, 
+  FLOORS, 
+  LEAD_SOURCES, 
+  normalizeSearchText, 
+  canViewSensitiveData, 
+  maskPhone, 
+  maskAddress,
+  getScoreColor,
+  getAgingStyles,
+} from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Lead {
@@ -49,6 +59,13 @@ interface Lead {
   next_action_time?: string | null;
   next_action_title?: string | null;
   next_action_status?: string | null;
+  // Lead Scoring fields
+  lead_score?: number | null;
+  days_since_contact?: number | null;
+  aging_label?: string | null;
+  aging_color?: string | null;
+  aging_urgency?: string | null;
+  score_breakdown?: Array<[string, number, string]> | null;
 }
 
 // Filter arrays
@@ -475,8 +492,44 @@ www.sagarhome.com`;
     // Get followup status
     const followupStatus = getFollowupStatus(item);
     
+    // Get lead score and aging info
+    const leadScore = item.lead_score ?? 0;
+    const scoreColor = getScoreColor(leadScore);
+    const agingStyles = getAgingStyles(item.aging_color);
+    
     return (
       <View style={styles.leadCard}>
+        {/* Lead Score & Aging Banner */}
+        <View style={styles.scoreBanner}>
+          {/* Score Badge */}
+          <View style={styles.scoreSection}>
+            <View style={[styles.scoreBadge, { backgroundColor: scoreColor }]}>
+              <Text style={styles.scoreText}>{leadScore}</Text>
+            </View>
+            <Text style={styles.scoreLabel}>Score</Text>
+          </View>
+          
+          {/* Aging Indicator */}
+          <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
+            <Ionicons 
+              name="time-outline" 
+              size={14} 
+              color={agingStyles.text} 
+            />
+            <Text style={[styles.agingText, { color: agingStyles.text }]}>
+              {item.aging_label || 'Never contacted'}
+            </Text>
+          </View>
+          
+          {/* Temperature Indicator */}
+          <View style={[styles.tempBadge, { backgroundColor: getTemperatureColor(item.lead_temperature) + '20' }]}>
+            <View style={[styles.tempDot, { backgroundColor: getTemperatureColor(item.lead_temperature) }]} />
+            <Text style={[styles.tempText, { color: getTemperatureColor(item.lead_temperature) }]}>
+              {item.lead_temperature || 'N/A'}
+            </Text>
+          </View>
+        </View>
+        
         {/* Missed/Due Followup Banner */}
         {followupStatus && (
           <View style={[
@@ -1256,6 +1309,68 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
+  },
+  scoreBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  scoreSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scoreText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  scoreLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  agingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+  },
+  agingText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tempBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+    marginLeft: 'auto',
+  },
+  tempDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tempText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   followupBanner: {
     flexDirection: 'row',

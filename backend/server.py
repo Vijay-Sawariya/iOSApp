@@ -486,6 +486,137 @@ def login(credentials: UserLogin):
 def get_me(current_user: dict = Depends(get_current_user)):
     return UserResponse(**current_user)
 
+# ============= Lead Scoring Helper Functions =============
+def calculate_lead_score(lead: dict, last_followup_date: Optional[date] = None) -> dict:
+    """
+    Calculate lead score based on multiple factors:
+    - Recency: How recently the lead was contacted
+    - Temperature: Hot/Warm/Cold preference
+    - Budget: Higher budget = higher priority
+    - Engagement: Based on followup history
+    
+    Returns a dict with score (0-100) and score breakdown
+    """
+    score = 0
+    breakdown = []
+    
+    today = datetime.utcnow().date()
+    
+    # 1. Temperature Score (0-30 points)
+    temp = lead.get('lead_temperature', '')
+    if temp == 'Hot':
+        score += 30
+        breakdown.append(('Temperature', 30, 'Hot lead'))
+    elif temp == 'Warm':
+        score += 20
+        breakdown.append(('Temperature', 20, 'Warm lead'))
+    elif temp == 'Cold':
+        score += 5
+        breakdown.append(('Temperature', 5, 'Cold lead'))
+    
+    # 2. Recency Score (0-25 points) - Based on last contact
+    days_since_contact = None
+    if last_followup_date:
+        days_since_contact = (today - last_followup_date).days
+        if days_since_contact <= 2:
+            score += 25
+            breakdown.append(('Recency', 25, f'Contacted {days_since_contact}d ago'))
+        elif days_since_contact <= 7:
+            score += 20
+            breakdown.append(('Recency', 20, f'Contacted {days_since_contact}d ago'))
+        elif days_since_contact <= 14:
+            score += 12
+            breakdown.append(('Recency', 12, f'Contacted {days_since_contact}d ago'))
+        elif days_since_contact <= 30:
+            score += 5
+            breakdown.append(('Recency', 5, f'Contacted {days_since_contact}d ago'))
+        else:
+            breakdown.append(('Recency', 0, f'No contact for {days_since_contact}d'))
+    else:
+        # Check created_at if no followup
+        created_at = lead.get('created_at')
+        if created_at:
+            if isinstance(created_at, str):
+                created_date = datetime.strptime(created_at[:10], '%Y-%m-%d').date()
+            else:
+                created_date = created_at.date() if hasattr(created_at, 'date') else created_at
+            days_since_created = (today - created_date).days
+            if days_since_created <= 3:
+                score += 15
+                breakdown.append(('Recency', 15, f'New lead ({days_since_created}d old)'))
+            else:
+                breakdown.append(('Recency', 0, 'Never contacted'))
+        else:
+            breakdown.append(('Recency', 0, 'Never contacted'))
+    
+    # 3. Budget Score (0-20 points)
+    budget_max = lead.get('budget_max') or lead.get('budget_min') or 0
+    if budget_max:
+        budget_max = float(budget_max)
+        if budget_max >= 5:  # 5 Cr+
+            score += 20
+            breakdown.append(('Budget', 20, f'High budget (₹{budget_max}Cr)'))
+        elif budget_max >= 2:  # 2-5 Cr
+            score += 15
+            breakdown.append(('Budget', 15, f'Medium budget (₹{budget_max}Cr)'))
+        elif budget_max >= 1:  # 1-2 Cr
+            score += 10
+            breakdown.append(('Budget', 10, f'Standard budget (₹{budget_max}Cr)'))
+        else:
+            score += 5
+            breakdown.append(('Budget', 5, f'Entry budget (₹{budget_max}Cr)'))
+    
+    # 4. Lead Status Score (0-15 points)
+    status = lead.get('lead_status', '')
+    if status in ['Negotiating', 'Site Visit Done']:
+        score += 15
+        breakdown.append(('Status', 15, f'{status}'))
+    elif status in ['Qualified', 'Interested']:
+        score += 12
+        breakdown.append(('Status', 12, f'{status}'))
+    elif status in ['Contacted', 'Follow Up']:
+        score += 8
+        breakdown.append(('Status', 8, f'{status}'))
+    elif status == 'New':
+        score += 5
+        breakdown.append(('Status', 5, 'New lead'))
+    
+    # 5. Completeness Score (0-10 points)
+    completeness = 0
+    if lead.get('phone'):
+        completeness += 2
+    if lead.get('location'):
+        completeness += 2
+    if lead.get('budget_min') or lead.get('budget_max'):
+        completeness += 2
+    if lead.get('bhk'):
+        completeness += 2
+    if lead.get('floor'):
+        completeness += 2
+    score += completeness
+    breakdown.append(('Completeness', completeness, f'{completeness}/10 fields'))
+    
+    return {
+        'score': min(score, 100),
+        'days_since_contact': days_since_contact,
+        'breakdown': breakdown
+    }
+
+def get_aging_label(days: Optional[int]) -> dict:
+    """Get aging indicator label and color based on days since contact"""
+    if days is None:
+        return {'label': 'Never contacted', 'color': 'gray', 'urgency': 'unknown'}
+    elif days <= 2:
+        return {'label': f'{days}d ago', 'color': 'green', 'urgency': 'recent'}
+    elif days <= 7:
+        return {'label': f'{days}d ago', 'color': 'blue', 'urgency': 'good'}
+    elif days <= 14:
+        return {'label': f'{days}d ago', 'color': 'orange', 'urgency': 'attention'}
+    elif days <= 30:
+        return {'label': f'{days}d ago', 'color': 'red', 'urgency': 'overdue'}
+    else:
+        return {'label': f'{days}d ago', 'color': 'darkred', 'urgency': 'critical'}
+
 # ============= Lead Routes =============
 @api_router.get("/leads/clients")
 def get_client_leads(
@@ -493,7 +624,7 @@ def get_client_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get CLIENT leads (buyer, tenant) - excludes deleted, includes next action/followup"""
+    """Get CLIENT leads (buyer, tenant) - excludes deleted, includes next action/followup and lead scoring"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -507,10 +638,11 @@ def get_client_leads(
         )
         leads = cursor.fetchall()
         
-        # Fetch next pending action/followup for each lead
         if leads:
             lead_ids = [lead['id'] for lead in leads]
             placeholders = ','.join(['%s'] * len(lead_ids))
+            
+            # Fetch next pending action/followup for each lead
             cursor.execute(
                 f"""SELECT lead_id, due_date, due_time, title, status
                     FROM actions 
@@ -528,15 +660,43 @@ def get_client_leads(
                 if lead_id not in action_map:
                     action_map[lead_id] = a
             
-            # Add next_action to each lead
+            # Fetch last followup date for each lead (for aging/scoring)
+            cursor.execute(
+                f"""SELECT lead_id, MAX(followup_date) as last_followup_date
+                    FROM followups
+                    WHERE lead_id IN ({placeholders})
+                    AND (is_deleted IS NULL OR is_deleted = 0)
+                    GROUP BY lead_id""",
+                lead_ids
+            )
+            last_followups = cursor.fetchall()
+            followup_map = {f['lead_id']: f['last_followup_date'] for f in last_followups}
+            
+            # Add next_action and scoring to each lead
             for lead in leads:
                 lead_id = lead['id']
+                
+                # Add next action
                 if lead_id in action_map:
                     action = action_map[lead_id]
                     lead['next_action_date'] = str(action['due_date']) if action['due_date'] else None
                     lead['next_action_time'] = str(action['due_time']) if action['due_time'] else None
                     lead['next_action_title'] = action['title']
                     lead['next_action_status'] = action['status']
+                
+                # Calculate lead score and aging
+                last_contact_date = followup_map.get(lead_id)
+                score_data = calculate_lead_score(lead, last_contact_date)
+                
+                lead['lead_score'] = score_data['score']
+                lead['days_since_contact'] = score_data['days_since_contact']
+                lead['score_breakdown'] = score_data['breakdown']
+                
+                # Add aging indicator
+                aging = get_aging_label(score_data['days_since_contact'])
+                lead['aging_label'] = aging['label']
+                lead['aging_color'] = aging['color']
+                lead['aging_urgency'] = aging['urgency']
     
     return leads
 
@@ -567,7 +727,7 @@ def get_inventory_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get INVENTORY leads (seller, landlord, builder) with floor pricing - excludes deleted"""
+    """Get INVENTORY leads (seller, landlord, builder) with floor pricing, scoring, and aging - excludes deleted"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -602,9 +762,36 @@ def get_inventory_leads(
                     'floor_amount': float(fp['floor_amount']) if fp['floor_amount'] else 0
                 })
             
-            # Add floor pricing to each lead (calculations done only in detail view for performance)
+            # Fetch last followup date for each lead (for aging/scoring)
+            cursor.execute(
+                f"""SELECT lead_id, MAX(followup_date) as last_followup_date
+                    FROM followups
+                    WHERE lead_id IN ({placeholders})
+                    AND (is_deleted IS NULL OR is_deleted = 0)
+                    GROUP BY lead_id""",
+                lead_ids
+            )
+            last_followups = cursor.fetchall()
+            followup_map = {f['lead_id']: f['last_followup_date'] for f in last_followups}
+            
+            # Add floor pricing, scoring, and aging to each lead
             for lead in leads:
-                lead['floor_pricing'] = floor_pricing_map.get(lead['id'], [])
+                lead_id = lead['id']
+                lead['floor_pricing'] = floor_pricing_map.get(lead_id, [])
+                
+                # Calculate lead score and aging
+                last_contact_date = followup_map.get(lead_id)
+                score_data = calculate_lead_score(lead, last_contact_date)
+                
+                lead['lead_score'] = score_data['score']
+                lead['days_since_contact'] = score_data['days_since_contact']
+                lead['score_breakdown'] = score_data['breakdown']
+                
+                # Add aging indicator
+                aging = get_aging_label(score_data['days_since_contact'])
+                lead['aging_label'] = aging['label']
+                lead['aging_color'] = aging['color']
+                lead['aging_urgency'] = aging['urgency']
     
     return leads
 
@@ -648,6 +835,51 @@ def get_all_leads(
         leads = cursor.fetchall()
     
     return [LeadResponse(**lead) for lead in leads]
+
+@api_router.get("/leads/map-data")
+def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get leads with location data for map view"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # First check if locations table exists and has latitude/longitude columns
+        try:
+            cursor.execute("SHOW COLUMNS FROM locations LIKE 'latitude'")
+            has_latitude = cursor.fetchone() is not None
+            cursor.execute("SHOW COLUMNS FROM locations LIKE 'longitude'")
+            has_longitude = cursor.fetchone() is not None
+            has_coordinates = has_latitude and has_longitude
+        except:
+            has_coordinates = False
+        
+        if has_coordinates:
+            query = """
+                SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
+                       l.budget_min, l.budget_max, l.bhk, l.area_size, loc.latitude, loc.longitude
+                FROM leads l
+                LEFT JOIN locations loc ON LOWER(l.location) LIKE CONCAT('%%', LOWER(loc.name), '%%')
+                WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND l.location IS NOT NULL AND l.location != ''
+            """
+        else:
+            query = """
+                SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
+                       l.budget_min, l.budget_max, l.bhk, l.area_size, NULL as latitude, NULL as longitude
+                FROM leads l
+                WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND l.location IS NOT NULL AND l.location != ''
+            """
+        
+        params = []
+        
+        if lead_type:
+            query += " AND l.lead_type = %s"
+            params.append(lead_type)
+        
+        query += " LIMIT 100"
+        cursor.execute(query, params)
+        leads = cursor.fetchall()
+        return [dict(l) for l in leads]
 
 @api_router.get("/leads/{lead_id}")
 def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
@@ -2658,32 +2890,6 @@ def get_property_gallery(lead_id: int, current_user: dict = Depends(get_current_
         """, (lead_id,))
         images = cursor.fetchall()
         return [dict(img) for img in images]
-
-# ============= Map/Location Features =============
-
-@api_router.get("/leads/map-data")
-def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    """Get leads with location data for map view"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        query = """
-            SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
-                   l.budget_min, l.budget_max, l.bhk, l.area_size, loc.latitude, loc.longitude
-            FROM leads l
-            LEFT JOIN locations loc ON LOWER(l.location) LIKE CONCAT('%', LOWER(loc.location), '%')
-            WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
-            AND l.location IS NOT NULL AND l.location != ''
-        """
-        params = []
-        
-        if lead_type:
-            query += " AND l.lead_type = %s"
-            params.append(lead_type)
-        
-        query += " LIMIT 100"
-        cursor.execute(query, params)
-        leads = cursor.fetchall()
-        return [dict(l) for l in leads]
 
 # Include router
 app.include_router(api_router)

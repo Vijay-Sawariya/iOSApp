@@ -34,6 +34,8 @@ import {
   canViewSensitiveData,
   maskPhone,
   maskAddress,
+  getScoreColor,
+  getAgingStyles,
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
 
@@ -527,8 +529,44 @@ export default function InventoryLeadsScreen() {
     if ((item as any).lift === '1' || (item as any).lift === 1 || item.lift === 'Yes') amenitiesList.push('Lift');
     if ((item as any).stilt === '1' || (item as any).stilt === 1) amenitiesList.push('Stilt');
 
+    // Get lead score and aging info
+    const leadScore = item.lead_score ?? 0;
+    const scoreColor = getScoreColor(leadScore);
+    const agingStyles = getAgingStyles(item.aging_color);
+
     return (
       <View style={styles.leadCard}>
+        {/* Lead Score & Aging Banner */}
+        <View style={styles.scoreBanner}>
+          {/* Score Badge */}
+          <View style={styles.scoreSection}>
+            <View style={[styles.scoreBadge, { backgroundColor: scoreColor }]}>
+              <Text style={styles.scoreText}>{leadScore}</Text>
+            </View>
+            <Text style={styles.scoreLabel}>Score</Text>
+          </View>
+          
+          {/* Aging Indicator */}
+          <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
+            <Ionicons 
+              name="time-outline" 
+              size={14} 
+              color={agingStyles.text} 
+            />
+            <Text style={[styles.agingText, { color: agingStyles.text }]}>
+              {item.aging_label || 'Never contacted'}
+            </Text>
+          </View>
+          
+          {/* Temperature Indicator */}
+          <View style={[styles.tempBadge, { backgroundColor: (typeColor.text || '#9CA3AF') + '15' }]}>
+            <View style={[styles.tempDot, { backgroundColor: isHot ? '#EF4444' : item.lead_temperature === 'Warm' ? '#F59E0B' : '#3B82F6' }]} />
+            <Text style={[styles.tempText, { color: isHot ? '#EF4444' : item.lead_temperature === 'Warm' ? '#F59E0B' : '#3B82F6' }]}>
+              {item.lead_temperature || 'N/A'}
+            </Text>
+          </View>
+        </View>
+        
         <TouchableOpacity
           style={styles.leadContent}
           onPress={() => router.push(`/leads/${item.id}`)}
@@ -777,16 +815,26 @@ export default function InventoryLeadsScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Inventories</Text>
-          <TouchableOpacity 
-            style={styles.headerIconBtn}
-            onPress={() => setShowFilters(!showFilters)}
-          >
-            <Ionicons 
-              name="options-outline" 
-              size={22} 
-              color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
-            />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {/* Map View Button */}
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => router.push('/map' as any)}
+            >
+              <Ionicons name="map-outline" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+            {/* Filter Button */}
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={22} 
+                color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -1495,6 +1543,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerIconBtn: {
     width: 40,
     height: 40,
@@ -1791,6 +1844,68 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
+  },
+  scoreBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  scoreSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  scoreBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scoreText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  scoreLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  agingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+  },
+  agingText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tempBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+    marginLeft: 'auto',
+  },
+  tempDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tempText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   leadContent: {
     padding: 16,

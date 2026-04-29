@@ -546,4 +546,16 @@ export const api = {
     if (!response.ok) throw new Error('Failed to fetch file count');
     return response.json();
   },
+
+  // Map Data
+  getMapData: async (leadType?: string) => {
+    const url = new URL(`${API_URL}/api/leads/map-data`);
+    if (leadType) url.searchParams.append('lead_type', leadType);
+    
+    const response = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch map data');
+    return response.json();
+  },
 };
