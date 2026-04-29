@@ -428,6 +428,9 @@ class AIMessageResponse(BaseModel):
     lead_name: str
     message_type: str
 
+class PreferredLeadsRequest(BaseModel):
+    matching_lead_ids: List[int]
+
 # ============= Auth Routes =============
 @api_router.post("/auth/register", response_model=UserResponse)
 def register(user_data: UserCreate):
@@ -486,6 +489,137 @@ def login(credentials: UserLogin):
 def get_me(current_user: dict = Depends(get_current_user)):
     return UserResponse(**current_user)
 
+# ============= Lead Scoring Helper Functions =============
+def calculate_lead_score(lead: dict, last_followup_date: Optional[date] = None) -> dict:
+    """
+    Calculate lead score based on multiple factors:
+    - Recency: How recently the lead was contacted
+    - Temperature: Hot/Warm/Cold preference
+    - Budget: Higher budget = higher priority
+    - Engagement: Based on followup history
+    
+    Returns a dict with score (0-100) and score breakdown
+    """
+    score = 0
+    breakdown = []
+    
+    today = datetime.utcnow().date()
+    
+    # 1. Temperature Score (0-30 points)
+    temp = lead.get('lead_temperature', '')
+    if temp == 'Hot':
+        score += 30
+        breakdown.append(('Temperature', 30, 'Hot lead'))
+    elif temp == 'Warm':
+        score += 20
+        breakdown.append(('Temperature', 20, 'Warm lead'))
+    elif temp == 'Cold':
+        score += 5
+        breakdown.append(('Temperature', 5, 'Cold lead'))
+    
+    # 2. Recency Score (0-25 points) - Based on last contact
+    days_since_contact = None
+    if last_followup_date:
+        days_since_contact = (today - last_followup_date).days
+        if days_since_contact <= 2:
+            score += 25
+            breakdown.append(('Recency', 25, f'Contacted {days_since_contact}d ago'))
+        elif days_since_contact <= 7:
+            score += 20
+            breakdown.append(('Recency', 20, f'Contacted {days_since_contact}d ago'))
+        elif days_since_contact <= 14:
+            score += 12
+            breakdown.append(('Recency', 12, f'Contacted {days_since_contact}d ago'))
+        elif days_since_contact <= 30:
+            score += 5
+            breakdown.append(('Recency', 5, f'Contacted {days_since_contact}d ago'))
+        else:
+            breakdown.append(('Recency', 0, f'No contact for {days_since_contact}d'))
+    else:
+        # Check created_at if no followup
+        created_at = lead.get('created_at')
+        if created_at:
+            if isinstance(created_at, str):
+                created_date = datetime.strptime(created_at[:10], '%Y-%m-%d').date()
+            else:
+                created_date = created_at.date() if hasattr(created_at, 'date') else created_at
+            days_since_created = (today - created_date).days
+            if days_since_created <= 3:
+                score += 15
+                breakdown.append(('Recency', 15, f'New lead ({days_since_created}d old)'))
+            else:
+                breakdown.append(('Recency', 0, 'Never contacted'))
+        else:
+            breakdown.append(('Recency', 0, 'Never contacted'))
+    
+    # 3. Budget Score (0-20 points)
+    budget_max = lead.get('budget_max') or lead.get('budget_min') or 0
+    if budget_max:
+        budget_max = float(budget_max)
+        if budget_max >= 5:  # 5 Cr+
+            score += 20
+            breakdown.append(('Budget', 20, f'High budget (₹{budget_max}Cr)'))
+        elif budget_max >= 2:  # 2-5 Cr
+            score += 15
+            breakdown.append(('Budget', 15, f'Medium budget (₹{budget_max}Cr)'))
+        elif budget_max >= 1:  # 1-2 Cr
+            score += 10
+            breakdown.append(('Budget', 10, f'Standard budget (₹{budget_max}Cr)'))
+        else:
+            score += 5
+            breakdown.append(('Budget', 5, f'Entry budget (₹{budget_max}Cr)'))
+    
+    # 4. Lead Status Score (0-15 points)
+    status = lead.get('lead_status', '')
+    if status in ['Negotiating', 'Site Visit Done']:
+        score += 15
+        breakdown.append(('Status', 15, f'{status}'))
+    elif status in ['Qualified', 'Interested']:
+        score += 12
+        breakdown.append(('Status', 12, f'{status}'))
+    elif status in ['Contacted', 'Follow Up']:
+        score += 8
+        breakdown.append(('Status', 8, f'{status}'))
+    elif status == 'New':
+        score += 5
+        breakdown.append(('Status', 5, 'New lead'))
+    
+    # 5. Completeness Score (0-10 points)
+    completeness = 0
+    if lead.get('phone'):
+        completeness += 2
+    if lead.get('location'):
+        completeness += 2
+    if lead.get('budget_min') or lead.get('budget_max'):
+        completeness += 2
+    if lead.get('bhk'):
+        completeness += 2
+    if lead.get('floor'):
+        completeness += 2
+    score += completeness
+    breakdown.append(('Completeness', completeness, f'{completeness}/10 fields'))
+    
+    return {
+        'score': min(score, 100),
+        'days_since_contact': days_since_contact,
+        'breakdown': breakdown
+    }
+
+def get_aging_label(days: Optional[int]) -> dict:
+    """Get aging indicator label and color based on days since contact"""
+    if days is None:
+        return {'label': 'Never contacted', 'color': 'gray', 'urgency': 'unknown'}
+    elif days <= 2:
+        return {'label': f'{days}d ago', 'color': 'green', 'urgency': 'recent'}
+    elif days <= 7:
+        return {'label': f'{days}d ago', 'color': 'blue', 'urgency': 'good'}
+    elif days <= 14:
+        return {'label': f'{days}d ago', 'color': 'orange', 'urgency': 'attention'}
+    elif days <= 30:
+        return {'label': f'{days}d ago', 'color': 'red', 'urgency': 'overdue'}
+    else:
+        return {'label': f'{days}d ago', 'color': 'darkred', 'urgency': 'critical'}
+
 # ============= Lead Routes =============
 @api_router.get("/leads/clients")
 def get_client_leads(
@@ -493,7 +627,7 @@ def get_client_leads(
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get CLIENT leads (buyer, tenant) - excludes deleted, includes next action/followup"""
+    """Get CLIENT leads (buyer, tenant) - excludes deleted, includes next action/followup and lead scoring"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -507,10 +641,11 @@ def get_client_leads(
         )
         leads = cursor.fetchall()
         
-        # Fetch next pending action/followup for each lead
         if leads:
             lead_ids = [lead['id'] for lead in leads]
             placeholders = ','.join(['%s'] * len(lead_ids))
+            
+            # Fetch next pending action/followup for each lead
             cursor.execute(
                 f"""SELECT lead_id, due_date, due_time, title, status
                     FROM actions 
@@ -528,15 +663,43 @@ def get_client_leads(
                 if lead_id not in action_map:
                     action_map[lead_id] = a
             
-            # Add next_action to each lead
+            # Fetch last followup date for each lead (for aging/scoring)
+            cursor.execute(
+                f"""SELECT lead_id, MAX(followup_date) as last_followup_date
+                    FROM followups
+                    WHERE lead_id IN ({placeholders})
+                    AND (is_deleted IS NULL OR is_deleted = 0)
+                    GROUP BY lead_id""",
+                lead_ids
+            )
+            last_followups = cursor.fetchall()
+            followup_map = {f['lead_id']: f['last_followup_date'] for f in last_followups}
+            
+            # Add next_action and scoring to each lead
             for lead in leads:
                 lead_id = lead['id']
+                
+                # Add next action
                 if lead_id in action_map:
                     action = action_map[lead_id]
                     lead['next_action_date'] = str(action['due_date']) if action['due_date'] else None
                     lead['next_action_time'] = str(action['due_time']) if action['due_time'] else None
                     lead['next_action_title'] = action['title']
                     lead['next_action_status'] = action['status']
+                
+                # Calculate lead score and aging
+                last_contact_date = followup_map.get(lead_id)
+                score_data = calculate_lead_score(lead, last_contact_date)
+                
+                lead['lead_score'] = score_data['score']
+                lead['days_since_contact'] = score_data['days_since_contact']
+                lead['score_breakdown'] = score_data['breakdown']
+                
+                # Add aging indicator
+                aging = get_aging_label(score_data['days_since_contact'])
+                lead['aging_label'] = aging['label']
+                lead['aging_color'] = aging['color']
+                lead['aging_urgency'] = aging['urgency']
     
     return leads
 
@@ -561,13 +724,357 @@ def get_preferred_inventory_ids(
     inventory_ids = [row['matching_lead_id'] for row in rows]
     return {"client_id": lead_id, "preferred_inventory_ids": inventory_ids}
 
+def _split_csv(value) -> List[str]:
+    return [item.strip() for item in str(value or '').split(',') if item and item.strip()]
+
+def _normalize_floor_token(value) -> str:
+    token = str(value or '').strip().lower()
+    token = re.sub(r'\s*\+\s*', '+', token)
+    token = re.sub(r'\s+', ' ', token)
+    return token
+
+def _normalize_floor_list(values) -> List[str]:
+    tokens = []
+    for value in values or []:
+        for part in str(value or '').split(','):
+            token = _normalize_floor_token(part)
+            if token and token not in tokens:
+                tokens.append(token)
+    return tokens
+
+def _parse_multi_param(value) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw_values = value
+    else:
+        raw_values = str(value).split(',')
+    return [str(v).strip() for v in raw_values if str(v).strip()]
+
+def _float_or_none(value):
+    try:
+        if value is None or value == '':
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def _lead_price_range(lead: dict, floor_pricing: Optional[List[dict]] = None, selected_floors: Optional[List[str]] = None):
+    prices = []
+    selected_tokens = set(_normalize_floor_list(selected_floors or []))
+    for row in floor_pricing or []:
+        label = row.get('floor_label')
+        if selected_tokens and _normalize_floor_token(label) not in selected_tokens:
+            continue
+        amount = _float_or_none(row.get('floor_amount'))
+        if amount and amount > 0:
+            prices.append(amount)
+    if prices:
+        return min(prices), max(prices)
+
+    budget_min = _float_or_none(lead.get('budget_min'))
+    budget_max = _float_or_none(lead.get('budget_max'))
+    if budget_min is None and budget_max is None:
+        return None, None
+    if budget_min is None:
+        budget_min = budget_max
+    if budget_max is None:
+        budget_max = budget_min
+    return budget_min, budget_max
+
+def _ranges_overlap(min_a, max_a, min_b, max_b) -> bool:
+    if min_a is None and max_a is None:
+        return True
+    if min_b is None and max_b is None:
+        return True
+    a_min = min_a if min_a is not None else max_a
+    a_max = max_a if max_a is not None else min_a
+    b_min = min_b if min_b is not None else max_b
+    b_max = max_b if max_b is not None else min_b
+    return float(a_max) >= float(b_min) and float(a_min) <= float(b_max)
+
+def _location_matches(candidate_location: str, selected_locations: List[str]) -> bool:
+    if not selected_locations:
+        return True
+    candidate_locations = [loc.lower() for loc in _split_csv(candidate_location)]
+    selected = [loc.lower() for loc in selected_locations]
+    return any(
+        cand == sel or cand in sel or sel in cand
+        for cand in candidate_locations
+        for sel in selected
+    )
+
+def _floor_matches(candidate_floor: str, selected_floors: List[str]) -> bool:
+    selected_tokens = set(_normalize_floor_list(selected_floors))
+    if not selected_tokens:
+        return True
+    candidate_tokens = set(_normalize_floor_list([candidate_floor]))
+    return not candidate_tokens or bool(candidate_tokens.intersection(selected_tokens))
+
+def _matching_defaults(lead: dict) -> dict:
+    area = _float_or_none(lead.get('area_size'))
+    budget_min = _float_or_none(lead.get('budget_min'))
+    budget_max = _float_or_none(lead.get('budget_max'))
+    return {
+        "locations": _split_csv(lead.get('location')),
+        "floors": _split_csv(lead.get('floor')),
+        "area_min": max(0, area - 100) if area is not None else None,
+        "area_max": area + 100 if area is not None else None,
+        "budget_min": budget_min * 0.8 if budget_min is not None else None,
+        "budget_max": budget_max * 1.2 if budget_max is not None else None,
+    }
+
+def _get_floor_pricing_map(cursor, lead_ids: List[int]) -> dict:
+    if not lead_ids:
+        return {}
+    placeholders = ','.join(['%s'] * len(lead_ids))
+    cursor.execute(
+        f"SELECT lead_id, floor_label, floor_amount FROM inventory_floor_pricing WHERE lead_id IN ({placeholders}) ORDER BY lead_id, id",
+        lead_ids
+    )
+    floor_rows = cursor.fetchall()
+    pricing = {}
+    for row in floor_rows:
+        pricing.setdefault(row['lead_id'], []).append({
+            'floor_label': row['floor_label'],
+            'floor_amount': float(row['floor_amount']) if row['floor_amount'] else 0
+        })
+    return pricing
+
+@api_router.get("/leads/{lead_id}/matching-inventory")
+def get_matching_inventory(
+    lead_id: int,
+    locations: Optional[str] = None,
+    floors: Optional[str] = None,
+    area_min: Optional[float] = None,
+    area_max: Optional[float] = None,
+    budget_min: Optional[float] = None,
+    budget_max: Optional[float] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Find seller/builder/owner inventory candidates for a buyer/tenant lead."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = %s AND (is_deleted IS NULL OR is_deleted = 0)", (lead_id,))
+        lead = cursor.fetchone()
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        defaults = _matching_defaults(lead)
+        selected_locations = _parse_multi_param(locations) or defaults["locations"]
+        selected_floors = _parse_multi_param(floors) or defaults["floors"]
+        effective_area_min = area_min if area_min is not None else defaults["area_min"]
+        effective_area_max = area_max if area_max is not None else defaults["area_max"]
+        effective_budget_min = budget_min if budget_min is not None else defaults["budget_min"]
+        effective_budget_max = budget_max if budget_max is not None else defaults["budget_max"]
+
+        cursor.execute("""
+            SELECT l.*, u.full_name AS created_by_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.id != %s
+              AND LOWER(IFNULL(l.lead_type, '')) IN ('seller', 'builder', 'landlord', 'owner')
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY l.created_at DESC
+        """, (lead_id,))
+        candidates = cursor.fetchall()
+        pricing_map = _get_floor_pricing_map(cursor, [row['id'] for row in candidates])
+
+        cursor.execute(
+            "SELECT matching_lead_id FROM preferred_leads WHERE lead_id = %s AND matching_lead_id IS NOT NULL",
+            (lead_id,)
+        )
+        preferred_ids = {row['matching_lead_id'] for row in cursor.fetchall()}
+
+    matches = []
+    for row in candidates:
+        if not _location_matches(row.get('location'), selected_locations):
+            continue
+        if not _floor_matches(row.get('floor'), selected_floors):
+            continue
+
+        candidate_area = _float_or_none(row.get('area_size'))
+        if effective_area_min is not None and candidate_area is not None and candidate_area < effective_area_min:
+            continue
+        if effective_area_max is not None and candidate_area is not None and candidate_area > effective_area_max:
+            continue
+
+        price_min, price_max = _lead_price_range(row, pricing_map.get(row['id'], []), selected_floors)
+        if not _ranges_overlap(price_min, price_max, effective_budget_min, effective_budget_max):
+            continue
+
+        item = dict(row)
+        item['floor_pricing'] = pricing_map.get(row['id'], [])
+        item['is_preferred'] = row['id'] in preferred_ids
+        item['match_reasons'] = [
+            reason for reason, ok in [
+                ('Location', bool(selected_locations)),
+                ('Floor', bool(selected_floors)),
+                ('Area +/- 100 sq yds', effective_area_min is not None or effective_area_max is not None),
+                ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
+            ] if ok
+        ]
+        matches.append(item)
+
+    return {"lead_id": lead_id, "defaults": defaults, "filters": {
+        "locations": selected_locations,
+        "floors": selected_floors,
+        "area_min": effective_area_min,
+        "area_max": effective_area_max,
+        "budget_min": effective_budget_min,
+        "budget_max": effective_budget_max,
+    }, "matches": matches}
+
+@api_router.get("/leads/{lead_id}/matching-clients")
+def get_matching_clients(
+    lead_id: int,
+    locations: Optional[str] = None,
+    floors: Optional[str] = None,
+    area_min: Optional[float] = None,
+    area_max: Optional[float] = None,
+    budget_min: Optional[float] = None,
+    budget_max: Optional[float] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Find buyer/tenant client candidates for a seller/builder/owner inventory lead."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = %s AND (is_deleted IS NULL OR is_deleted = 0)", (lead_id,))
+        inventory = cursor.fetchone()
+        if not inventory:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        defaults = _matching_defaults(inventory)
+        inventory_pricing = _get_floor_pricing_map(cursor, [lead_id]).get(lead_id, [])
+        inv_min, inv_max = _lead_price_range(inventory, inventory_pricing, defaults["floors"])
+        if defaults["budget_min"] is None and inv_min is not None:
+            defaults["budget_min"] = inv_min * 0.8
+        if defaults["budget_max"] is None and inv_max is not None:
+            defaults["budget_max"] = inv_max * 1.2
+
+        selected_locations = _parse_multi_param(locations) or defaults["locations"]
+        selected_floors = _parse_multi_param(floors) or defaults["floors"]
+        effective_area_min = area_min if area_min is not None else defaults["area_min"]
+        effective_area_max = area_max if area_max is not None else defaults["area_max"]
+        effective_budget_min = budget_min if budget_min is not None else defaults["budget_min"]
+        effective_budget_max = budget_max if budget_max is not None else defaults["budget_max"]
+
+        inventory_type = str(inventory.get('lead_type') or '').lower()
+        target_types = ['buyer', 'tenant']
+        if inventory_type in ['seller', 'builder']:
+            target_types = ['buyer']
+        elif inventory_type in ['landlord', 'owner']:
+            target_types = ['tenant']
+        placeholders = ','.join(['%s'] * len(target_types))
+        cursor.execute(f"""
+            SELECT l.*, u.full_name AS created_by_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.id != %s
+              AND LOWER(IFNULL(l.lead_type, '')) IN ({placeholders})
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY l.created_at DESC
+        """, [lead_id, *target_types])
+        candidates = cursor.fetchall()
+
+        cursor.execute(
+            "SELECT lead_id FROM preferred_leads WHERE matching_lead_id = %s AND lead_id IS NOT NULL",
+            (lead_id,)
+        )
+        preferred_client_ids = {row['lead_id'] for row in cursor.fetchall()}
+
+    matches = []
+    for row in candidates:
+        if not _location_matches(row.get('location'), selected_locations):
+            continue
+        if not _floor_matches(row.get('floor'), selected_floors):
+            continue
+
+        candidate_area = _float_or_none(row.get('area_size'))
+        if effective_area_min is not None and candidate_area is not None and candidate_area < effective_area_min:
+            continue
+        if effective_area_max is not None and candidate_area is not None and candidate_area > effective_area_max:
+            continue
+
+        buyer_min, buyer_max = _lead_price_range(row)
+        expanded_min = buyer_min * 0.8 if buyer_min is not None else None
+        expanded_max = buyer_max * 1.2 if buyer_max is not None else None
+        if not _ranges_overlap(expanded_min, expanded_max, effective_budget_min, effective_budget_max):
+            continue
+
+        item = dict(row)
+        item['is_preferred'] = row['id'] in preferred_client_ids
+        item['match_reasons'] = [
+            reason for reason, ok in [
+                ('Location', bool(selected_locations)),
+                ('Floor', bool(selected_floors)),
+                ('Area +/- 100 sq yds', effective_area_min is not None or effective_area_max is not None),
+                ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
+            ] if ok
+        ]
+        matches.append(item)
+
+    return {"lead_id": lead_id, "defaults": defaults, "filters": {
+        "locations": selected_locations,
+        "floors": selected_floors,
+        "area_min": effective_area_min,
+        "area_max": effective_area_max,
+        "budget_min": effective_budget_min,
+        "budget_max": effective_budget_max,
+    }, "matches": matches}
+
+@api_router.post("/leads/{lead_id}/preferred-leads")
+def add_preferred_leads(
+    lead_id: int,
+    payload: PreferredLeadsRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add checked matching inventory/client rows into preferred_leads."""
+    ids = [int(item) for item in payload.matching_lead_ids if int(item) > 0]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No matching leads selected")
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, lead_type FROM leads WHERE id = %s AND (is_deleted IS NULL OR is_deleted = 0)", (lead_id,))
+        source = cursor.fetchone()
+        if not source:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        source_type = str(source.get('lead_type') or '').lower()
+        inserted = 0
+        for match_id in ids:
+            if source_type in ['buyer', 'tenant']:
+                client_id = lead_id
+                inventory_id = match_id
+            else:
+                client_id = match_id
+                inventory_id = lead_id
+
+            cursor.execute(
+                "SELECT id FROM preferred_leads WHERE lead_id = %s AND matching_lead_id = %s LIMIT 1",
+                (client_id, inventory_id)
+            )
+            if cursor.fetchone():
+                continue
+
+            cursor.execute(
+                "INSERT INTO preferred_leads (lead_id, matching_lead_id, reaction, created_at) VALUES (%s, %s, %s, %s)",
+                (client_id, inventory_id, 'neutral', datetime.utcnow())
+            )
+            inserted += 1
+
+        conn.commit()
+
+    return {"success": True, "added": inserted, "selected": len(ids)}
+
 @api_router.get("/leads/inventory")
 def get_inventory_leads(
     skip: int = 0,
     limit: int = 1000,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get INVENTORY leads (seller, landlord, builder) with floor pricing - excludes deleted"""
+    """Get INVENTORY leads (seller, landlord, builder) with floor pricing, scoring, and aging - excludes deleted"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -602,9 +1109,36 @@ def get_inventory_leads(
                     'floor_amount': float(fp['floor_amount']) if fp['floor_amount'] else 0
                 })
             
-            # Add floor pricing to each lead (calculations done only in detail view for performance)
+            # Fetch last followup date for each lead (for aging/scoring)
+            cursor.execute(
+                f"""SELECT lead_id, MAX(followup_date) as last_followup_date
+                    FROM followups
+                    WHERE lead_id IN ({placeholders})
+                    AND (is_deleted IS NULL OR is_deleted = 0)
+                    GROUP BY lead_id""",
+                lead_ids
+            )
+            last_followups = cursor.fetchall()
+            followup_map = {f['lead_id']: f['last_followup_date'] for f in last_followups}
+            
+            # Add floor pricing, scoring, and aging to each lead
             for lead in leads:
-                lead['floor_pricing'] = floor_pricing_map.get(lead['id'], [])
+                lead_id = lead['id']
+                lead['floor_pricing'] = floor_pricing_map.get(lead_id, [])
+                
+                # Calculate lead score and aging
+                last_contact_date = followup_map.get(lead_id)
+                score_data = calculate_lead_score(lead, last_contact_date)
+                
+                lead['lead_score'] = score_data['score']
+                lead['days_since_contact'] = score_data['days_since_contact']
+                lead['score_breakdown'] = score_data['breakdown']
+                
+                # Add aging indicator
+                aging = get_aging_label(score_data['days_since_contact'])
+                lead['aging_label'] = aging['label']
+                lead['aging_color'] = aging['color']
+                lead['aging_urgency'] = aging['urgency']
     
     return leads
 
@@ -648,6 +1182,51 @@ def get_all_leads(
         leads = cursor.fetchall()
     
     return [LeadResponse(**lead) for lead in leads]
+
+@api_router.get("/leads/map-data")
+def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get leads with location data for map view"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # First check if locations table exists and has latitude/longitude columns
+        try:
+            cursor.execute("SHOW COLUMNS FROM locations LIKE 'latitude'")
+            has_latitude = cursor.fetchone() is not None
+            cursor.execute("SHOW COLUMNS FROM locations LIKE 'longitude'")
+            has_longitude = cursor.fetchone() is not None
+            has_coordinates = has_latitude and has_longitude
+        except:
+            has_coordinates = False
+        
+        if has_coordinates:
+            query = """
+                SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
+                       l.budget_min, l.budget_max, l.bhk, l.area_size, loc.latitude, loc.longitude
+                FROM leads l
+                LEFT JOIN locations loc ON LOWER(l.location) LIKE CONCAT('%%', LOWER(loc.name), '%%')
+                WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND l.location IS NOT NULL AND l.location != ''
+            """
+        else:
+            query = """
+                SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
+                       l.budget_min, l.budget_max, l.bhk, l.area_size, NULL as latitude, NULL as longitude
+                FROM leads l
+                WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND l.location IS NOT NULL AND l.location != ''
+            """
+        
+        params = []
+        
+        if lead_type:
+            query += " AND l.lead_type = %s"
+            params.append(lead_type)
+        
+        query += " LIMIT 100"
+        cursor.execute(query, params)
+        leads = cursor.fetchall()
+        return [dict(l) for l in leads]
 
 @api_router.get("/leads/{lead_id}")
 def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
@@ -2658,32 +3237,6 @@ def get_property_gallery(lead_id: int, current_user: dict = Depends(get_current_
         """, (lead_id,))
         images = cursor.fetchall()
         return [dict(img) for img in images]
-
-# ============= Map/Location Features =============
-
-@api_router.get("/leads/map-data")
-def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    """Get leads with location data for map view"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        query = """
-            SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
-                   l.budget_min, l.budget_max, l.bhk, l.area_size, loc.latitude, loc.longitude
-            FROM leads l
-            LEFT JOIN locations loc ON LOWER(l.location) LIKE CONCAT('%', LOWER(loc.location), '%')
-            WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
-            AND l.location IS NOT NULL AND l.location != ''
-        """
-        params = []
-        
-        if lead_type:
-            query += " AND l.lead_type = %s"
-            params.append(lead_type)
-        
-        query += " LIMIT 100"
-        cursor.execute(query, params)
-        leads = cursor.fetchall()
-        return [dict(l) for l in leads]
 
 # Include router
 app.include_router(api_router)

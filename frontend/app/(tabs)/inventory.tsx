@@ -21,6 +21,7 @@ import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
+import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 import {
   Lead,
   FloorPricing,
@@ -34,6 +35,7 @@ import {
   canViewSensitiveData,
   maskPhone,
   maskAddress,
+  getAgingStyles,
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
 
@@ -72,6 +74,7 @@ export default function InventoryLeadsScreen() {
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Single budget field for +/- 10% search
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
+  const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
   
   // Client/Buyer matching states
   const [clients, setClients] = useState<any[]>([]);
@@ -527,8 +530,34 @@ export default function InventoryLeadsScreen() {
     if ((item as any).lift === '1' || (item as any).lift === 1 || item.lift === 'Yes') amenitiesList.push('Lift');
     if ((item as any).stilt === '1' || (item as any).stilt === 1) amenitiesList.push('Stilt');
 
+    // Get aging info
+    const agingStyles = getAgingStyles(item.aging_color);
+
     return (
       <View style={styles.leadCard}>
+        {/* Aging & Temperature Banner */}
+        <View style={styles.agingBanner}>
+          {/* Aging Indicator */}
+          <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
+            <Ionicons 
+              name="time-outline" 
+              size={14} 
+              color={agingStyles.text} 
+            />
+            <Text style={[styles.agingText, { color: agingStyles.text }]}>
+              {item.aging_label || 'Never contacted'}
+            </Text>
+          </View>
+          
+          {/* Temperature Indicator */}
+          <View style={[styles.tempBadge, { backgroundColor: (typeColor.text || '#9CA3AF') + '15' }]}>
+            <View style={[styles.tempDot, { backgroundColor: isHot ? '#EF4444' : item.lead_temperature === 'Warm' ? '#F59E0B' : '#3B82F6' }]} />
+            <Text style={[styles.tempText, { color: isHot ? '#EF4444' : item.lead_temperature === 'Warm' ? '#F59E0B' : '#3B82F6' }]}>
+              {item.lead_temperature || 'N/A'}
+            </Text>
+          </View>
+        </View>
+        
         <TouchableOpacity
           style={styles.leadContent}
           onPress={() => router.push(`/leads/${item.id}`)}
@@ -649,6 +678,14 @@ export default function InventoryLeadsScreen() {
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setMatchingLead(item)}
+          >
+            <Ionicons name="people-outline" size={18} color="#2563EB" />
+            <Text style={[styles.actionText, { color: '#2563EB' }]}>Clients</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
@@ -777,16 +814,26 @@ export default function InventoryLeadsScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Inventories</Text>
-          <TouchableOpacity 
-            style={styles.headerIconBtn}
-            onPress={() => setShowFilters(!showFilters)}
-          >
-            <Ionicons 
-              name="options-outline" 
-              size={22} 
-              color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
-            />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {/* Map View Button */}
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => router.push('/map' as any)}
+            >
+              <Ionicons name="map-outline" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+            {/* Filter Button */}
+            <TouchableOpacity 
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Ionicons 
+                name="options-outline" 
+                size={22} 
+                color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -1470,6 +1517,14 @@ export default function InventoryLeadsScreen() {
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+
+      <MatchingLeadsModal
+        visible={!!matchingLead}
+        lead={matchingLead}
+        mode="clients"
+        onClose={() => setMatchingLead(null)}
+        onSaved={loadLeads}
+      />
     </View>
   );
 }
@@ -1494,6 +1549,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerIconBtn: {
     width: 40,
@@ -1791,6 +1851,46 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
+  },
+  agingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  agingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+  },
+  agingText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tempBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+    marginLeft: 'auto',
+  },
+  tempDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tempText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   leadContent: {
     padding: 16,

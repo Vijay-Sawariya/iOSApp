@@ -51,6 +51,51 @@ class SyncService {
     return response.json();
   }
 
+  private async postToApi(endpoint: string, payload: any): Promise<any> {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  private async pushPendingOperations(onProgress?: ProgressCallback): Promise<void> {
+    const pending = await db.getPendingOperations();
+    if (pending.length === 0) return;
+
+    onProgress?.({ stage: `Uploading ${pending.length} offline change${pending.length > 1 ? 's' : ''}...`, progress: 0, total: pending.length });
+
+    for (let index = 0; index < pending.length; index += 1) {
+      const operation = pending[index];
+      try {
+        const payload = JSON.parse(operation.payload);
+        if (operation.entity_type === 'lead' && operation.operation_type === 'create') {
+          const created = await this.postToApi('/api/leads', payload);
+          await db.deletePendingOperation(operation.id);
+          if (operation.local_entity_id) {
+            await db.removeLocalLead(operation.local_entity_id);
+          }
+          await db.saveLeads([created]);
+          if (created?.id && payload.floor_pricing && Array.isArray(payload.floor_pricing)) {
+            await db.saveFloorPricing(created.id, payload.floor_pricing.map((fp: any) => ({
+              floor_label: fp.floor || fp.floor_label,
+              floor_amount: parseFloat(fp.price || fp.floor_amount || 0),
+            })));
+          }
+        }
+      } catch (error: any) {
+        await db.markPendingOperationError(operation.id, error.message || 'Sync failed');
+        throw error;
+      }
+
+      onProgress?.({ stage: 'Uploading offline changes...', progress: index + 1, total: pending.length });
+    }
+  }
+
   // Full sync from server (quick mode skips followups)
   async fullSync(onProgress?: ProgressCallback, quickMode: boolean = true): Promise<{ success: boolean; error?: string }> {
     if (this.isSyncing) {
@@ -66,6 +111,8 @@ class SyncService {
 
     try {
       const totalSteps = quickMode ? 4 : 5;
+
+      await this.pushPendingOperations(onProgress);
       
       // Step 1: Fetch client leads
       onProgress?.({ stage: 'Syncing client leads...', progress: 0, total: totalSteps });

@@ -82,6 +82,17 @@ export const initDatabase = async (): Promise<void> => {
         key TEXT PRIMARY KEY,
         value TEXT
       );
+
+      -- Pending write operations created while offline
+      CREATE TABLE IF NOT EXISTS pending_operations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_type TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        local_entity_id INTEGER,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_error TEXT
+      );
     `);
     
     isInitialized = true;
@@ -321,10 +332,10 @@ export const getSyncMetadata = async (key: string): Promise<string | null> => {
   const database = getDatabase();
   if (!database) return null;
   
-  const result = await database.getFirstAsync<{ value: string }>(
+  const result = await database.getFirstAsync(
     'SELECT value FROM sync_metadata WHERE key = ?',
     [key]
-  );
+  ) as { value: string } | null;
   return result?.value || null;
 };
 
@@ -339,18 +350,118 @@ export const updateLastSyncTime = async (): Promise<void> => {
   await setSyncMetadata('last_sync', new Date().toISOString());
 };
 
+export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
+  if (!isSQLiteAvailable()) return { ...lead, is_pending_sync: true };
+  const database = getDatabase();
+  if (!database) return { ...lead, is_pending_sync: true };
+
+  const now = new Date().toISOString();
+  const localId = -Date.now();
+  const localLead = {
+    ...lead,
+    id: localId,
+    created_at: now,
+    updated_at: now,
+    is_pending_sync: true,
+  };
+
+  await database.runAsync(
+    `INSERT OR REPLACE INTO leads (
+      id, name, phone, email, lead_type, lead_temperature, lead_status,
+      location, address, property_type, bhk, floor, area_size,
+      budget_min, budget_max, unit, car_parking_number, lift_available,
+      building_facing, notes, Property_locationUrl, created_at, updated_at, synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      localId, lead.name, lead.phone, lead.email || null, lead.lead_type,
+      lead.lead_temperature, lead.lead_status, lead.location, lead.address,
+      lead.property_type, lead.bhk, lead.floor, lead.area_size,
+      lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
+      lead.lift_available, lead.building_facing, lead.notes,
+      lead.Property_locationUrl, now, now, null
+    ]
+  );
+
+  if (lead.floor_pricing && Array.isArray(lead.floor_pricing)) {
+    for (const fp of lead.floor_pricing) {
+      await database.runAsync(
+        'INSERT INTO floor_pricing (lead_id, floor_label, floor_amount) VALUES (?, ?, ?)',
+        [localId, fp.floor || fp.floor_label, parseFloat(fp.price || fp.floor_amount || 0)]
+      );
+    }
+  }
+
+  await database.runAsync(
+    `INSERT INTO pending_operations (
+      operation_type, entity_type, local_entity_id, payload, created_at
+    ) VALUES (?, ?, ?, ?, ?)`,
+    ['create', 'lead', localId, JSON.stringify(lead), now]
+  );
+
+  return localLead;
+};
+
+export const getPendingOperations = async (): Promise<any[]> => {
+  if (!isSQLiteAvailable()) return [];
+  const database = getDatabase();
+  if (!database) return [];
+
+  return database.getAllAsync(
+    'SELECT * FROM pending_operations ORDER BY created_at ASC'
+  );
+};
+
+export const deletePendingOperation = async (id: number): Promise<void> => {
+  if (!isSQLiteAvailable()) return;
+  const database = getDatabase();
+  if (!database) return;
+
+  await database.runAsync('DELETE FROM pending_operations WHERE id = ?', [id]);
+};
+
+export const markPendingOperationError = async (id: number, error: string): Promise<void> => {
+  if (!isSQLiteAvailable()) return;
+  const database = getDatabase();
+  if (!database) return;
+
+  await database.runAsync(
+    'UPDATE pending_operations SET last_error = ? WHERE id = ?',
+    [error, id]
+  );
+};
+
+export const removeLocalLead = async (id: number): Promise<void> => {
+  if (!isSQLiteAvailable()) return;
+  const database = getDatabase();
+  if (!database) return;
+
+  await database.runAsync('DELETE FROM floor_pricing WHERE lead_id = ?', [id]);
+  await database.runAsync('DELETE FROM leads WHERE id = ?', [id]);
+};
+
+export const getPendingOperationCount = async (): Promise<number> => {
+  if (!isSQLiteAvailable()) return 0;
+  const database = getDatabase();
+  if (!database) return 0;
+
+  const result = await database.getFirstAsync(
+    'SELECT COUNT(*) as count FROM pending_operations'
+  ) as { count: number } | null;
+  return result?.count || 0;
+};
+
 // Get lead count
 export const getLeadCount = async (): Promise<{ clients: number; inventory: number }> => {
   if (!isSQLiteAvailable()) return { clients: 0, inventory: 0 };
   const database = getDatabase();
   if (!database) return { clients: 0, inventory: 0 };
   
-  const clientResult = await database.getFirstAsync<{ count: number }>(
+  const clientResult = await database.getFirstAsync(
     `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant')`
-  );
-  const inventoryResult = await database.getFirstAsync<{ count: number }>(
+  ) as { count: number } | null;
+  const inventoryResult = await database.getFirstAsync(
     `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder')`
-  );
+  ) as { count: number } | null;
   return {
     clients: clientResult?.count || 0,
     inventory: inventoryResult?.count || 0
@@ -363,8 +474,8 @@ export const getBuilderCount = async (): Promise<number> => {
   const database = getDatabase();
   if (!database) return 0;
   
-  const result = await database.getFirstAsync<{ count: number }>(
+  const result = await database.getFirstAsync(
     'SELECT COUNT(*) as count FROM builders'
-  );
+  ) as { count: number } | null;
   return result?.count || 0;
 };

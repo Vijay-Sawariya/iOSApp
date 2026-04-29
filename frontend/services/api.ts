@@ -1,5 +1,6 @@
 import { cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as db from './database';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -194,10 +195,56 @@ export const api = {
     return data.preferred_inventory_ids || [];
   },
 
+  getMatchingInventory: async (leadId: number, filters: any = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (Array.isArray(value)) {
+        if (value.length > 0) params.set(key, value.join(','));
+      } else {
+        params.set(key, String(value));
+      }
+    });
+    const query = params.toString();
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/matching-inventory${query ? `?${query}` : ''}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch matching inventory');
+    return response.json();
+  },
+
+  getMatchingClients: async (leadId: number, filters: any = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (Array.isArray(value)) {
+        if (value.length > 0) params.set(key, value.join(','));
+      } else {
+        params.set(key, String(value));
+      }
+    });
+    const query = params.toString();
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/matching-clients${query ? `?${query}` : ''}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch matching clients');
+    return response.json();
+  },
+
+  addPreferredLeads: async (leadId: number, matchingLeadIds: number[]) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/preferred-leads`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ matching_lead_ids: matchingLeadIds }),
+    });
+    if (!response.ok) throw new Error('Failed to save preferred leads');
+    return response.json();
+  },
+
   createLead: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot create lead while offline. Please connect to the internet.');
+      return db.queuePendingLeadCreate(data);
     }
     
     const response = await fetch(`${API_URL}/api/leads`, {
@@ -543,6 +590,18 @@ export const api = {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch file count');
+    return response.json();
+  },
+
+  // Map Data
+  getMapData: async (leadType?: string) => {
+    const url = new URL(`${API_URL}/api/leads/map-data`);
+    if (leadType) url.searchParams.append('lead_type', leadType);
+    
+    const response = await fetch(url.toString(), {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch map data');
     return response.json();
   },
 };

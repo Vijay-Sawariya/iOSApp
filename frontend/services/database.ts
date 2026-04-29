@@ -39,6 +39,18 @@ export const getLastSyncTime = async (): Promise<Date | null> => null;
 
 export const updateLastSyncTime = async (): Promise<void> => {};
 
+export const queuePendingLeadCreate = async (lead: any): Promise<any> => ({ ...lead, is_pending_sync: true });
+
+export const getPendingOperations = async (): Promise<any[]> => [];
+
+export const deletePendingOperation = async (id: number): Promise<void> => {};
+
+export const markPendingOperationError = async (id: number, error: string): Promise<void> => {};
+
+export const removeLocalLead = async (id: number): Promise<void> => {};
+
+export const getPendingOperationCount = async (): Promise<number> => 0;
+
 export const getLeadCount = async (): Promise<{ clients: number; inventory: number }> => ({ clients: 0, inventory: 0 });
 
 export const getBuilderCount = async (): Promise<number> => 0;

@@ -19,8 +19,18 @@ import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { LOCATIONS, FLOORS, LEAD_SOURCES, normalizeSearchText, canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
+import { 
+  LOCATIONS, 
+  FLOORS, 
+  LEAD_SOURCES, 
+  normalizeSearchText, 
+  canViewSensitiveData, 
+  maskPhone, 
+  maskAddress,
+  getAgingStyles,
+} from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 
 interface Lead {
   id: number;
@@ -49,6 +59,13 @@ interface Lead {
   next_action_time?: string | null;
   next_action_title?: string | null;
   next_action_status?: string | null;
+  // Lead Scoring fields
+  lead_score?: number | null;
+  days_since_contact?: number | null;
+  aging_label?: string | null;
+  aging_color?: string | null;
+  aging_urgency?: string | null;
+  score_breakdown?: Array<[string, number, string]> | null;
 }
 
 // Filter arrays
@@ -79,6 +96,7 @@ export default function ClientLeadsScreen() {
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
+  const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
 
   // Get time-based greeting
   const getGreeting = () => {
@@ -475,8 +493,34 @@ www.sagarhome.com`;
     // Get followup status
     const followupStatus = getFollowupStatus(item);
     
+    // Get aging info
+    const agingStyles = getAgingStyles(item.aging_color);
+    
     return (
       <View style={styles.leadCard}>
+        {/* Aging & Temperature Banner */}
+        <View style={styles.agingBanner}>
+          {/* Aging Indicator */}
+          <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
+            <Ionicons 
+              name="time-outline" 
+              size={14} 
+              color={agingStyles.text} 
+            />
+            <Text style={[styles.agingText, { color: agingStyles.text }]}>
+              {item.aging_label || 'Never contacted'}
+            </Text>
+          </View>
+          
+          {/* Temperature Indicator */}
+          <View style={[styles.tempBadge, { backgroundColor: getTemperatureColor(item.lead_temperature) + '20' }]}>
+            <View style={[styles.tempDot, { backgroundColor: getTemperatureColor(item.lead_temperature) }]} />
+            <Text style={[styles.tempText, { color: getTemperatureColor(item.lead_temperature) }]}>
+              {item.lead_temperature || 'N/A'}
+            </Text>
+          </View>
+        </View>
+        
         {/* Missed/Due Followup Banner */}
         {followupStatus && (
           <View style={[
@@ -591,6 +635,14 @@ www.sagarhome.com`;
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setMatchingLead(item)}
+          >
+            <Ionicons name="git-compare-outline" size={18} color="#2563EB" />
+            <Text style={[styles.actionText, { color: '#2563EB' }]}>Matches</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
@@ -1138,6 +1190,14 @@ www.sagarhome.com`;
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+
+      <MatchingLeadsModal
+        visible={!!matchingLead}
+        lead={matchingLead}
+        mode="inventory"
+        onClose={() => setMatchingLead(null)}
+        onSaved={loadLeads}
+      />
     </View>
   );
 }
@@ -1256,6 +1316,46 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
+  },
+  agingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  agingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+  },
+  agingText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tempBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    gap: 4,
+    marginLeft: 'auto',
+  },
+  tempDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tempText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   followupBanner: {
     flexDirection: 'row',

@@ -10,7 +10,8 @@
 
 import NetInfo from '@react-native-community/netinfo';
 import { syncService } from './syncService';
-import { getAuthToken } from './api';
+import { api, getAuthToken } from './api';
+import * as db from './database';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -94,6 +95,30 @@ class OfflineApiService {
     return syncService.getLead(numericId);
   }
 
+  async getMatchingInventory(leadId: number, filters: any = {}): Promise<any> {
+    const online = await this.isOnline();
+    if (!online) {
+      throw new Error('Matching search requires internet.');
+    }
+    return api.getMatchingInventory(leadId, filters);
+  }
+
+  async getMatchingClients(leadId: number, filters: any = {}): Promise<any> {
+    const online = await this.isOnline();
+    if (!online) {
+      throw new Error('Matching search requires internet.');
+    }
+    return api.getMatchingClients(leadId, filters);
+  }
+
+  async addPreferredLeads(leadId: number, matchingLeadIds: number[]): Promise<any> {
+    const online = await this.isOnline();
+    if (!online) {
+      throw new Error('Saving matching leads requires internet.');
+    }
+    return api.addPreferredLeads(leadId, matchingLeadIds);
+  }
+
   // ============ BUILDERS ============
   async getBuilders(): Promise<any[]> {
     const online = await this.isOnline();
@@ -169,7 +194,7 @@ class OfflineApiService {
   async createLead(data: any): Promise<any> {
     const online = await this.isOnline();
     if (!online) {
-      throw new Error('Cannot create lead while offline. Please connect to the internet.');
+      return db.queuePendingLeadCreate(data);
     }
     
     const response = await fetch(`${API_URL}/api/leads`, {

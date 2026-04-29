@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '../../services/api';
 import * as Location from 'expo-location';
+import { useOffline } from '../../contexts/OfflineContext';
 
 // Import shared components
 import { CustomDropdown } from '../../components/forms/CustomDropdown';
@@ -59,10 +60,12 @@ interface Builder {
 
 export default function AddLeadScreen() {
   const params = useLocalSearchParams<{ type?: string }>();
+  const { isOnline } = useOffline();
   const isClientForm = params.type === 'client';
   const isInventoryForm = params.type === 'inventory' || !params.type; // Default to inventory
   
   const [saving, setSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [builders, setBuilders] = useState<Builder[]>([]);
   const [fetchingLocation, setFetchingLocation] = useState(false);
   
@@ -281,10 +284,14 @@ export default function AddLeadScreen() {
         }
       }
 
-      await api.createLead(leadData);
-      Alert.alert('Success', 'Lead created successfully', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      const created = await api.createLead(leadData);
+      Alert.alert(
+        created?.is_pending_sync ? 'Saved Offline' : 'Success',
+        created?.is_pending_sync
+          ? 'Lead saved on this device and will sync when internet is available.'
+          : 'Lead created successfully',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
     } catch (err) {
       console.error('Create lead error:', err);
       Alert.alert('Error', 'Failed to create lead');
@@ -319,9 +326,17 @@ export default function AddLeadScreen() {
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {!isOnline && (
+          <View style={styles.offlineDraftBanner}>
+            <Ionicons name="cloud-offline-outline" size={18} color="#D97706" />
+            <Text style={styles.offlineDraftText}>Offline mode: this lead will be queued for sync.</Text>
+          </View>
+        )}
+
         {/* Lead Type & Builder Selection - AT TOP */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Lead Type</Text>
+          <Text style={styles.sectionTitle}>Start Here</Text>
+          <Text style={styles.sectionHint}>Capture the minimum first. Add property, pricing, and advanced details when available.</Text>
           
           <CustomDropdown
             label="Lead Type"
@@ -347,7 +362,7 @@ export default function AddLeadScreen() {
 
         {/* Basic Info */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Basic Information</Text>
+          <Text style={styles.sectionTitle}>Contact</Text>
           <FormInput
             label="Name"
             value={name}
@@ -366,7 +381,7 @@ export default function AddLeadScreen() {
 
         {/* Lead Classification */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Lead Classification</Text>
+          <Text style={styles.sectionTitle}>Priority</Text>
           <CustomDropdown
             label="Temperature"
             value={leadTemperature}
@@ -578,9 +593,18 @@ export default function AddLeadScreen() {
           )}
         </View>
 
-        {/* Additional Details */}
+        <TouchableOpacity style={styles.advancedToggle} onPress={() => setShowAdvanced(!showAdvanced)}>
+          <View style={styles.advancedToggleCopy}>
+            <Text style={styles.advancedToggleTitle}>Advanced Details</Text>
+            <Text style={styles.advancedToggleText}>Parking, lift, possession, builder, notes, and amenities</Text>
+          </View>
+          <Ionicons name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={22} color="#374151" />
+        </TouchableOpacity>
+
+        {showAdvanced && (
+        <>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Additional Details</Text>
+          <Text style={styles.sectionTitle}>Advanced Details</Text>
           
           <FormInput
             label="Parking Spaces"
@@ -671,6 +695,8 @@ export default function AddLeadScreen() {
             </View>
           ))}
         </View>
+        </>
+        )}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -723,6 +749,21 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  offlineDraftBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  offlineDraftText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#92400E',
+  },
   section: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -739,6 +780,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1F2937',
     marginBottom: 8,
+  },
+  sectionHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  advancedToggle: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  advancedToggleCopy: {
+    flex: 1,
+    marginRight: 12,
+  },
+  advancedToggleTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  advancedToggleText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 3,
   },
   label: {
     fontSize: 14,
