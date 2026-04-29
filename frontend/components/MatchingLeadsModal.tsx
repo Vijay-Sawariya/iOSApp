@@ -165,18 +165,20 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
     [locationSearch]
   );
 
-  // Get lead info for display
+  // Get lead info for display - show ACTUAL lead requirements
   const leadInfo = useMemo(() => {
     if (!lead) return null;
-    const area = Number.parseFloat(toText(lead.area_size));
     const budgetMin = Number.parseFloat(toText(lead.budget_min));
     const budgetMax = Number.parseFloat(toText(lead.budget_max));
+    const unit = lead.unit || 'CR';
     return {
       location: lead.location || '',
-      areaRange: Number.isFinite(area) ? `${Math.max(0, area - 100)} - ${area + 100} sq yds` : '',
+      areaSize: lead.area_size ? `${lead.area_size} sq yds` : '',
       budgetRange: Number.isFinite(budgetMin) && Number.isFinite(budgetMax)
-        ? `Min ${budgetMin} | Max ${budgetMax} with 20% range`
-        : '',
+        ? `Min ${budgetMin} | Max ${budgetMax} ${unit}`
+        : Number.isFinite(budgetMax) 
+          ? `${budgetMax} ${unit}`
+          : '',
       floors: lead.floor || '',
       leadType: lead.lead_type || 'Buyer',
       leadId: lead.id,
@@ -410,10 +412,10 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
                   <Text style={styles.infoPillText}>{leadInfo.location}</Text>
                 </View>
               )}
-              {leadInfo.areaRange && (
+              {leadInfo.areaSize && (
                 <View style={styles.infoPill}>
                   <Ionicons name="resize" size={14} color="#475569" />
-                  <Text style={styles.infoPillText}>{leadInfo.areaRange}</Text>
+                  <Text style={styles.infoPillText}>{leadInfo.areaSize}</Text>
                 </View>
               )}
               {leadInfo.budgetRange && (
