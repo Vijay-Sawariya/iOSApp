@@ -21,6 +21,7 @@ import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
+import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 import {
   Lead,
   FloorPricing,
@@ -73,6 +74,7 @@ export default function InventoryLeadsScreen() {
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Single budget field for +/- 10% search
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
+  const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
   
   // Client/Buyer matching states
   const [clients, setClients] = useState<any[]>([]);
@@ -676,6 +678,14 @@ export default function InventoryLeadsScreen() {
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setMatchingLead(item)}
+          >
+            <Ionicons name="people-outline" size={18} color="#2563EB" />
+            <Text style={[styles.actionText, { color: '#2563EB' }]}>Clients</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
@@ -1507,6 +1517,14 @@ export default function InventoryLeadsScreen() {
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+
+      <MatchingLeadsModal
+        visible={!!matchingLead}
+        lead={matchingLead}
+        mode="clients"
+        onClose={() => setMatchingLead(null)}
+        onSaved={loadLeads}
+      />
     </View>
   );
 }

@@ -428,6 +428,9 @@ class AIMessageResponse(BaseModel):
     lead_name: str
     message_type: str
 
+class PreferredLeadsRequest(BaseModel):
+    matching_lead_ids: List[int]
+
 # ============= Auth Routes =============
 @api_router.post("/auth/register", response_model=UserResponse)
 def register(user_data: UserCreate):
@@ -720,6 +723,350 @@ def get_preferred_inventory_ids(
     # Return list of inventory IDs
     inventory_ids = [row['matching_lead_id'] for row in rows]
     return {"client_id": lead_id, "preferred_inventory_ids": inventory_ids}
+
+def _split_csv(value) -> List[str]:
+    return [item.strip() for item in str(value or '').split(',') if item and item.strip()]
+
+def _normalize_floor_token(value) -> str:
+    token = str(value or '').strip().lower()
+    token = re.sub(r'\s*\+\s*', '+', token)
+    token = re.sub(r'\s+', ' ', token)
+    return token
+
+def _normalize_floor_list(values) -> List[str]:
+    tokens = []
+    for value in values or []:
+        for part in str(value or '').split(','):
+            token = _normalize_floor_token(part)
+            if token and token not in tokens:
+                tokens.append(token)
+    return tokens
+
+def _parse_multi_param(value) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw_values = value
+    else:
+        raw_values = str(value).split(',')
+    return [str(v).strip() for v in raw_values if str(v).strip()]
+
+def _float_or_none(value):
+    try:
+        if value is None or value == '':
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def _lead_price_range(lead: dict, floor_pricing: Optional[List[dict]] = None, selected_floors: Optional[List[str]] = None):
+    prices = []
+    selected_tokens = set(_normalize_floor_list(selected_floors or []))
+    for row in floor_pricing or []:
+        label = row.get('floor_label')
+        if selected_tokens and _normalize_floor_token(label) not in selected_tokens:
+            continue
+        amount = _float_or_none(row.get('floor_amount'))
+        if amount and amount > 0:
+            prices.append(amount)
+    if prices:
+        return min(prices), max(prices)
+
+    budget_min = _float_or_none(lead.get('budget_min'))
+    budget_max = _float_or_none(lead.get('budget_max'))
+    if budget_min is None and budget_max is None:
+        return None, None
+    if budget_min is None:
+        budget_min = budget_max
+    if budget_max is None:
+        budget_max = budget_min
+    return budget_min, budget_max
+
+def _ranges_overlap(min_a, max_a, min_b, max_b) -> bool:
+    if min_a is None and max_a is None:
+        return True
+    if min_b is None and max_b is None:
+        return True
+    a_min = min_a if min_a is not None else max_a
+    a_max = max_a if max_a is not None else min_a
+    b_min = min_b if min_b is not None else max_b
+    b_max = max_b if max_b is not None else min_b
+    return float(a_max) >= float(b_min) and float(a_min) <= float(b_max)
+
+def _location_matches(candidate_location: str, selected_locations: List[str]) -> bool:
+    if not selected_locations:
+        return True
+    candidate_locations = [loc.lower() for loc in _split_csv(candidate_location)]
+    selected = [loc.lower() for loc in selected_locations]
+    return any(
+        cand == sel or cand in sel or sel in cand
+        for cand in candidate_locations
+        for sel in selected
+    )
+
+def _floor_matches(candidate_floor: str, selected_floors: List[str]) -> bool:
+    selected_tokens = set(_normalize_floor_list(selected_floors))
+    if not selected_tokens:
+        return True
+    candidate_tokens = set(_normalize_floor_list([candidate_floor]))
+    return not candidate_tokens or bool(candidate_tokens.intersection(selected_tokens))
+
+def _matching_defaults(lead: dict) -> dict:
+    area = _float_or_none(lead.get('area_size'))
+    budget_min = _float_or_none(lead.get('budget_min'))
+    budget_max = _float_or_none(lead.get('budget_max'))
+    return {
+        "locations": _split_csv(lead.get('location')),
+        "floors": _split_csv(lead.get('floor')),
+        "area_min": max(0, area - 100) if area is not None else None,
+        "area_max": area + 100 if area is not None else None,
+        "budget_min": budget_min * 0.8 if budget_min is not None else None,
+        "budget_max": budget_max * 1.2 if budget_max is not None else None,
+    }
+
+def _get_floor_pricing_map(cursor, lead_ids: List[int]) -> dict:
+    if not lead_ids:
+        return {}
+    placeholders = ','.join(['%s'] * len(lead_ids))
+    cursor.execute(
+        f"SELECT lead_id, floor_label, floor_amount FROM inventory_floor_pricing WHERE lead_id IN ({placeholders}) ORDER BY lead_id, id",
+        lead_ids
+    )
+    floor_rows = cursor.fetchall()
+    pricing = {}
+    for row in floor_rows:
+        pricing.setdefault(row['lead_id'], []).append({
+            'floor_label': row['floor_label'],
+            'floor_amount': float(row['floor_amount']) if row['floor_amount'] else 0
+        })
+    return pricing
+
+@api_router.get("/leads/{lead_id}/matching-inventory")
+def get_matching_inventory(
+    lead_id: int,
+    locations: Optional[str] = None,
+    floors: Optional[str] = None,
+    area_min: Optional[float] = None,
+    area_max: Optional[float] = None,
+    budget_min: Optional[float] = None,
+    budget_max: Optional[float] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Find seller/builder/owner inventory candidates for a buyer/tenant lead."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = %s AND (is_deleted IS NULL OR is_deleted = 0)", (lead_id,))
+        lead = cursor.fetchone()
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        defaults = _matching_defaults(lead)
+        selected_locations = _parse_multi_param(locations) or defaults["locations"]
+        selected_floors = _parse_multi_param(floors) or defaults["floors"]
+        effective_area_min = area_min if area_min is not None else defaults["area_min"]
+        effective_area_max = area_max if area_max is not None else defaults["area_max"]
+        effective_budget_min = budget_min if budget_min is not None else defaults["budget_min"]
+        effective_budget_max = budget_max if budget_max is not None else defaults["budget_max"]
+
+        cursor.execute("""
+            SELECT l.*, u.full_name AS created_by_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.id != %s
+              AND LOWER(IFNULL(l.lead_type, '')) IN ('seller', 'builder', 'landlord', 'owner')
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY l.created_at DESC
+        """, (lead_id,))
+        candidates = cursor.fetchall()
+        pricing_map = _get_floor_pricing_map(cursor, [row['id'] for row in candidates])
+
+        cursor.execute(
+            "SELECT matching_lead_id FROM preferred_leads WHERE lead_id = %s AND matching_lead_id IS NOT NULL",
+            (lead_id,)
+        )
+        preferred_ids = {row['matching_lead_id'] for row in cursor.fetchall()}
+
+    matches = []
+    for row in candidates:
+        if not _location_matches(row.get('location'), selected_locations):
+            continue
+        if not _floor_matches(row.get('floor'), selected_floors):
+            continue
+
+        candidate_area = _float_or_none(row.get('area_size'))
+        if effective_area_min is not None and candidate_area is not None and candidate_area < effective_area_min:
+            continue
+        if effective_area_max is not None and candidate_area is not None and candidate_area > effective_area_max:
+            continue
+
+        price_min, price_max = _lead_price_range(row, pricing_map.get(row['id'], []), selected_floors)
+        if not _ranges_overlap(price_min, price_max, effective_budget_min, effective_budget_max):
+            continue
+
+        item = dict(row)
+        item['floor_pricing'] = pricing_map.get(row['id'], [])
+        item['is_preferred'] = row['id'] in preferred_ids
+        item['match_reasons'] = [
+            reason for reason, ok in [
+                ('Location', bool(selected_locations)),
+                ('Floor', bool(selected_floors)),
+                ('Area +/- 100 sq yds', effective_area_min is not None or effective_area_max is not None),
+                ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
+            ] if ok
+        ]
+        matches.append(item)
+
+    return {"lead_id": lead_id, "defaults": defaults, "filters": {
+        "locations": selected_locations,
+        "floors": selected_floors,
+        "area_min": effective_area_min,
+        "area_max": effective_area_max,
+        "budget_min": effective_budget_min,
+        "budget_max": effective_budget_max,
+    }, "matches": matches}
+
+@api_router.get("/leads/{lead_id}/matching-clients")
+def get_matching_clients(
+    lead_id: int,
+    locations: Optional[str] = None,
+    floors: Optional[str] = None,
+    area_min: Optional[float] = None,
+    area_max: Optional[float] = None,
+    budget_min: Optional[float] = None,
+    budget_max: Optional[float] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Find buyer/tenant client candidates for a seller/builder/owner inventory lead."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = %s AND (is_deleted IS NULL OR is_deleted = 0)", (lead_id,))
+        inventory = cursor.fetchone()
+        if not inventory:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        defaults = _matching_defaults(inventory)
+        inventory_pricing = _get_floor_pricing_map(cursor, [lead_id]).get(lead_id, [])
+        inv_min, inv_max = _lead_price_range(inventory, inventory_pricing, defaults["floors"])
+        if defaults["budget_min"] is None and inv_min is not None:
+            defaults["budget_min"] = inv_min * 0.8
+        if defaults["budget_max"] is None and inv_max is not None:
+            defaults["budget_max"] = inv_max * 1.2
+
+        selected_locations = _parse_multi_param(locations) or defaults["locations"]
+        selected_floors = _parse_multi_param(floors) or defaults["floors"]
+        effective_area_min = area_min if area_min is not None else defaults["area_min"]
+        effective_area_max = area_max if area_max is not None else defaults["area_max"]
+        effective_budget_min = budget_min if budget_min is not None else defaults["budget_min"]
+        effective_budget_max = budget_max if budget_max is not None else defaults["budget_max"]
+
+        inventory_type = str(inventory.get('lead_type') or '').lower()
+        target_types = ['buyer', 'tenant']
+        if inventory_type in ['seller', 'builder']:
+            target_types = ['buyer']
+        elif inventory_type in ['landlord', 'owner']:
+            target_types = ['tenant']
+        placeholders = ','.join(['%s'] * len(target_types))
+        cursor.execute(f"""
+            SELECT l.*, u.full_name AS created_by_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.id != %s
+              AND LOWER(IFNULL(l.lead_type, '')) IN ({placeholders})
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY l.created_at DESC
+        """, [lead_id, *target_types])
+        candidates = cursor.fetchall()
+
+        cursor.execute(
+            "SELECT lead_id FROM preferred_leads WHERE matching_lead_id = %s AND lead_id IS NOT NULL",
+            (lead_id,)
+        )
+        preferred_client_ids = {row['lead_id'] for row in cursor.fetchall()}
+
+    matches = []
+    for row in candidates:
+        if not _location_matches(row.get('location'), selected_locations):
+            continue
+        if not _floor_matches(row.get('floor'), selected_floors):
+            continue
+
+        candidate_area = _float_or_none(row.get('area_size'))
+        if effective_area_min is not None and candidate_area is not None and candidate_area < effective_area_min:
+            continue
+        if effective_area_max is not None and candidate_area is not None and candidate_area > effective_area_max:
+            continue
+
+        buyer_min, buyer_max = _lead_price_range(row)
+        expanded_min = buyer_min * 0.8 if buyer_min is not None else None
+        expanded_max = buyer_max * 1.2 if buyer_max is not None else None
+        if not _ranges_overlap(expanded_min, expanded_max, effective_budget_min, effective_budget_max):
+            continue
+
+        item = dict(row)
+        item['is_preferred'] = row['id'] in preferred_client_ids
+        item['match_reasons'] = [
+            reason for reason, ok in [
+                ('Location', bool(selected_locations)),
+                ('Floor', bool(selected_floors)),
+                ('Area +/- 100 sq yds', effective_area_min is not None or effective_area_max is not None),
+                ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
+            ] if ok
+        ]
+        matches.append(item)
+
+    return {"lead_id": lead_id, "defaults": defaults, "filters": {
+        "locations": selected_locations,
+        "floors": selected_floors,
+        "area_min": effective_area_min,
+        "area_max": effective_area_max,
+        "budget_min": effective_budget_min,
+        "budget_max": effective_budget_max,
+    }, "matches": matches}
+
+@api_router.post("/leads/{lead_id}/preferred-leads")
+def add_preferred_leads(
+    lead_id: int,
+    payload: PreferredLeadsRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add checked matching inventory/client rows into preferred_leads."""
+    ids = [int(item) for item in payload.matching_lead_ids if int(item) > 0]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No matching leads selected")
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, lead_type FROM leads WHERE id = %s AND (is_deleted IS NULL OR is_deleted = 0)", (lead_id,))
+        source = cursor.fetchone()
+        if not source:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        source_type = str(source.get('lead_type') or '').lower()
+        inserted = 0
+        for match_id in ids:
+            if source_type in ['buyer', 'tenant']:
+                client_id = lead_id
+                inventory_id = match_id
+            else:
+                client_id = match_id
+                inventory_id = lead_id
+
+            cursor.execute(
+                "SELECT id FROM preferred_leads WHERE lead_id = %s AND matching_lead_id = %s LIMIT 1",
+                (client_id, inventory_id)
+            )
+            if cursor.fetchone():
+                continue
+
+            cursor.execute(
+                "INSERT INTO preferred_leads (lead_id, matching_lead_id, reaction, created_at) VALUES (%s, %s, %s, %s)",
+                (client_id, inventory_id, 'neutral', datetime.utcnow())
+            )
+            inserted += 1
+
+        conn.commit()
+
+    return {"success": True, "added": inserted, "selected": len(ids)}
 
 @api_router.get("/leads/inventory")
 def get_inventory_leads(

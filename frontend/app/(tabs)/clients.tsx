@@ -30,6 +30,7 @@ import {
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 
 interface Lead {
   id: number;
@@ -95,6 +96,7 @@ export default function ClientLeadsScreen() {
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
+  const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
 
   // Get time-based greeting
   const getGreeting = () => {
@@ -633,6 +635,14 @@ www.sagarhome.com`;
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setMatchingLead(item)}
+          >
+            <Ionicons name="git-compare-outline" size={18} color="#2563EB" />
+            <Text style={[styles.actionText, { color: '#2563EB' }]}>Matches</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
@@ -1180,6 +1190,14 @@ www.sagarhome.com`;
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+
+      <MatchingLeadsModal
+        visible={!!matchingLead}
+        lead={matchingLead}
+        mode="inventory"
+        onClose={() => setMatchingLead(null)}
+        onSaved={loadLeads}
+      />
     </View>
   );
 }

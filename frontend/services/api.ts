@@ -195,6 +195,52 @@ export const api = {
     return data.preferred_inventory_ids || [];
   },
 
+  getMatchingInventory: async (leadId: number, filters: any = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (Array.isArray(value)) {
+        if (value.length > 0) params.set(key, value.join(','));
+      } else {
+        params.set(key, String(value));
+      }
+    });
+    const query = params.toString();
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/matching-inventory${query ? `?${query}` : ''}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch matching inventory');
+    return response.json();
+  },
+
+  getMatchingClients: async (leadId: number, filters: any = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (Array.isArray(value)) {
+        if (value.length > 0) params.set(key, value.join(','));
+      } else {
+        params.set(key, String(value));
+      }
+    });
+    const query = params.toString();
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/matching-clients${query ? `?${query}` : ''}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch matching clients');
+    return response.json();
+  },
+
+  addPreferredLeads: async (leadId: number, matchingLeadIds: number[]) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/preferred-leads`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ matching_lead_ids: matchingLeadIds }),
+    });
+    if (!response.ok) throw new Error('Failed to save preferred leads');
+    return response.json();
+  },
+
   createLead: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {

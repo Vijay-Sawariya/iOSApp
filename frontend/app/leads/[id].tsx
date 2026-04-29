@@ -24,6 +24,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
+import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 
 // Import shared components and helpers
 import {
@@ -68,6 +69,7 @@ export default function LeadDetailScreen() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
 
   // Refresh data when screen comes into focus (e.g., returning from edit)
   useFocusEffect(
@@ -663,6 +665,15 @@ export default function LeadDetailScreen() {
             <Ionicons name="cash-outline" size={18} color="#8B5CF6" />
             <Text style={styles.commandActionText}>Deal</Text>
           </TouchableOpacity>
+          {(isClientLead() || isInventoryLead()) ? (
+            <TouchableOpacity
+              style={styles.commandAction}
+              onPress={() => setShowMatchingModal(true)}
+            >
+              <Ionicons name={isClientLead() ? 'git-compare-outline' : 'people-outline'} size={18} color="#2563EB" />
+              <Text style={styles.commandActionText}>{isClientLead() ? 'Matches' : 'Clients'}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {isClientLead() ? (
@@ -1184,6 +1195,14 @@ export default function LeadDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <MatchingLeadsModal
+        visible={showMatchingModal}
+        lead={lead}
+        mode={isClientLead() ? 'inventory' : 'clients'}
+        onClose={() => setShowMatchingModal(false)}
+        onSaved={loadLead}
+      />
     </SafeAreaView>
   );
 }
