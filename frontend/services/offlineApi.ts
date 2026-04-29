@@ -11,6 +11,7 @@
 import NetInfo from '@react-native-community/netinfo';
 import { syncService } from './syncService';
 import { getAuthToken } from './api';
+import * as db from './database';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -169,7 +170,7 @@ class OfflineApiService {
   async createLead(data: any): Promise<any> {
     const online = await this.isOnline();
     if (!online) {
-      throw new Error('Cannot create lead while offline. Please connect to the internet.');
+      return db.queuePendingLeadCreate(data);
     }
     
     const response = await fetch(`${API_URL}/api/leads`, {

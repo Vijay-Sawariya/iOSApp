@@ -1,5 +1,6 @@
 import { cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as db from './database';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -197,7 +198,7 @@ export const api = {
   createLead: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot create lead while offline. Please connect to the internet.');
+      return db.queuePendingLeadCreate(data);
     }
     
     const response = await fetch(`${API_URL}/api/leads`, {

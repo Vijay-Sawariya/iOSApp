@@ -326,7 +326,7 @@ export default function LeadDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.deleteLead(String(id));
+              await offlineApi.deleteLead(String(id));
               Alert.alert('Success', 'Lead deleted successfully');
               router.back();
             } catch (err) {
@@ -528,6 +528,13 @@ export default function LeadDetailScreen() {
   // Get display values for sensitive fields (location is visible to everyone)
   const displayPhone = canViewData ? lead?.phone : maskPhone(lead?.phone);
   const displayAddress = canViewData ? lead?.address : (lead?.address ? '**********' : null);
+  const latestFollowup = followups[0];
+  const matchedPropertyCount = Array.isArray(lead.matched_properties) ? lead.matched_properties.length : 0;
+  const commandStats = [
+    { label: 'Status', value: safeStr(lead.lead_status) || 'New', color: '#2563EB' },
+    { label: 'Temp', value: safeStr(lead.lead_temperature) || 'N/A', color: '#EF4444' },
+    { label: isClientLead() ? 'Matches' : 'Files', value: isClientLead() ? String(matchedPropertyCount) : String(images.length + floorplans.length), color: '#059669' },
+  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -599,6 +606,72 @@ export default function LeadDetailScreen() {
             </TouchableOpacity>
           ) : null}
         </View>
+      </View>
+
+      {/* Command Center */}
+      <View style={styles.commandCenter}>
+        <View style={styles.commandHeader}>
+          <View>
+            <Text style={styles.commandTitle}>Command Center</Text>
+            <Text style={styles.commandSubtitle}>
+              {latestFollowup ? `Last touch: ${safeStr(latestFollowup.channel)} - ${safeStr(latestFollowup.outcome)}` : 'No conversation logged yet'}
+            </Text>
+          </View>
+          {lead.is_pending_sync ? (
+            <View style={styles.pendingSyncBadge}>
+              <Ionicons name="cloud-upload-outline" size={14} color="#D97706" />
+              <Text style={styles.pendingSyncText}>Queued</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.commandStats}>
+          {commandStats.map((item) => (
+            <View key={item.label} style={styles.commandStat}>
+              <Text style={[styles.commandStatValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+              <Text style={styles.commandStatLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.commandActions}>
+          <TouchableOpacity style={styles.commandAction} onPress={() => setShowLogModal(true)}>
+            <Ionicons name="chatbubbles-outline" size={18} color="#3B82F6" />
+            <Text style={styles.commandActionText}>Log</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.commandAction}
+            onPress={() => router.push(`/reminders/add?lead_id=${id}&lead_name=${encodeURIComponent(safeStr(lead.name))}` as any)}
+          >
+            <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
+            <Text style={styles.commandActionText}>Reminder</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.commandAction}
+            onPress={() => router.push(`/more?tab=visits&lead_id=${id}` as any)}
+          >
+            <Ionicons name="location-outline" size={18} color="#10B981" />
+            <Text style={styles.commandActionText}>Visit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.commandAction}
+            onPress={() => router.push(`/more?tab=deals&lead_id=${id}` as any)}
+          >
+            <Ionicons name="cash-outline" size={18} color="#8B5CF6" />
+            <Text style={styles.commandActionText}>Deal</Text>
+          </TouchableOpacity>
+        </View>
+
+        {isClientLead() ? (
+          <View style={styles.matchInsight}>
+            <Ionicons name="sparkles" size={18} color="#2563EB" />
+            <Text style={styles.matchInsightText}>
+              {matchedPropertyCount > 0
+                ? `${matchedPropertyCount} matched propert${matchedPropertyCount === 1 ? 'y' : 'ies'} ready for review`
+                : 'No matched properties yet. Add requirements or review inventory filters.'}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {/* Contact Info */}
@@ -1228,10 +1301,106 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginTop: 4,
   },
+  commandCenter: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  commandHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  commandTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  commandSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 3,
+  },
+  pendingSyncBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  pendingSyncText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  commandStats: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  commandStat: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 10,
+  },
+  commandStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  commandStatLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  commandActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  commandAction: {
+    flex: 1,
+    minWidth: '22%',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    gap: 4,
+  },
+  commandActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  matchInsight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 12,
+  },
+  matchInsightText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#1E40AF',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   section: {
     backgroundColor: '#FFFFFF',
     padding: 16,
     marginTop: 12,
+  },
+  bottomSpacing: {
+    height: 40,
   },
   sectionTitle: {
     fontSize: 18,
