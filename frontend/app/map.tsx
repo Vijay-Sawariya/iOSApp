@@ -102,6 +102,9 @@ export default function MapViewScreen() {
     const typeInfo = getTypeColor(item.lead_type);
     const budget = item.budget_max || item.budget_min;
     
+    // Combine address and location for display
+    const addressLocationText = [item.address, item.location].filter(Boolean).join(', ');
+    
     return (
       <View style={styles.propertyCard}>
         <TouchableOpacity
@@ -112,10 +115,10 @@ export default function MapViewScreen() {
           <View style={styles.cardHeader}>
             <View style={styles.nameSection}>
               <Text style={styles.propertyName} numberOfLines={1}>{item.name}</Text>
-              {item.location && (
+              {addressLocationText && (
                 <View style={styles.locationRow}>
                   <Ionicons name="location-outline" size={14} color="#6B7280" />
-                  <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
+                  <Text style={styles.locationText} numberOfLines={2}>{addressLocationText}</Text>
                 </View>
               )}
             </View>
