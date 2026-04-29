@@ -25,6 +25,7 @@ import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
 import MatchingLeadsModal from '../../components/MatchingLeadsModal';
+import { buildBuyerFollowupMessage, buildInventoryDetailsMessage, openWhatsapp } from '../../utils/whatsappMessages';
 
 // Import shared components and helpers
 import {
@@ -306,8 +307,10 @@ export default function LeadDetailScreen() {
 
   const handleWhatsApp = () => {
     if (lead?.phone) {
-      const cleanPhone = safeStr(lead.phone).replace(/[^0-9]/g, '');
-      Linking.openURL(`https://wa.me/${cleanPhone}`);
+      const message = isInventoryLead()
+        ? buildInventoryDetailsMessage(lead)
+        : buildBuyerFollowupMessage(user?.full_name);
+      openWhatsapp(lead.phone, message);
     }
   };
 
@@ -825,10 +828,7 @@ export default function LeadDetailScreen() {
                   {prop.property_phone && canViewPropertyData ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
-                      onPress={() => {
-                        const cleanPhone = (prop.property_phone || '').replace(/[^0-9]/g, '');
-                        Linking.openURL(`https://wa.me/91${cleanPhone}`);
-                      }}
+                      onPress={() => openWhatsapp(prop.property_phone, buildInventoryDetailsMessage(prop))}
                     >
                       <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                     </TouchableOpacity>

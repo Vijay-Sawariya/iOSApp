@@ -17,8 +17,13 @@ import re
 import base64
 import asyncio
 
-# Import for AI features
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+# Import for AI features. Keep optional so non-AI API routes can run locally
+# even when the Emergent integration package is unavailable.
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+except ModuleNotFoundError:
+    LlmChat = None
+    UserMessage = None
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -2166,7 +2171,7 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
 async def generate_ai_message(request: AIMessageRequest, current_user: dict = Depends(get_current_user)):
     """Generate AI-powered follow-up message for WhatsApp"""
     
-    if not EMERGENT_LLM_KEY:
+    if not EMERGENT_LLM_KEY or LlmChat is None or UserMessage is None:
         raise HTTPException(status_code=500, detail="AI features not configured")
     
     # Get lead details
@@ -2246,7 +2251,7 @@ ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'im
 ALLOWED_PDF_TYPES = ['application/pdf']
 
 # File upload directory - stored on server
-UPLOAD_DIR = Path("/app/backend/uploads/inventory")
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", ROOT_DIR / "uploads" / "inventory"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Base URL for accessing files

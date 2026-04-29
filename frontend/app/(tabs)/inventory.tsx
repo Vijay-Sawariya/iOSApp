@@ -22,6 +22,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
 import MatchingLeadsModal from '../../components/MatchingLeadsModal';
+import { buildInventoryDetailsMessage, openWhatsapp } from '../../utils/whatsappMessages';
 import {
   Lead,
   FloorPricing,
@@ -597,8 +598,7 @@ export default function InventoryLeadsScreen() {
                   <TouchableOpacity 
                     style={styles.whatsappButton}
                     onPress={() => {
-                      const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
-                      Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                      openWhatsapp(item.phone, buildInventoryDetailsMessage(item));
                     }}
                   >
                     <Ionicons name="logo-whatsapp" size={16} color="#25D366" />

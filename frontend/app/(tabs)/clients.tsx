@@ -31,6 +31,7 @@ import {
 } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MatchingLeadsModal from '../../components/MatchingLeadsModal';
+import { buildBuyerFollowupMessage, openWhatsapp } from '../../utils/whatsappMessages';
 
 interface Lead {
   id: number;
@@ -98,33 +99,10 @@ export default function ClientLeadsScreen() {
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
   const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
 
-  // Get time-based greeting
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 17) return 'Good Afternoon';
-    return 'Good Evening';
-  };
-
   // Share WhatsApp message (matching PHP ShareMessage function)
   const handleWhatsAppShare = (phoneNumber: string) => {
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-    const greeting = getGreeting();
     const senderName = user?.full_name || 'Team';
-    
-    const message = `*Hi Sir, ${greeting}*
-
-Have you already finalised a property or still exploring?
-I've got some excellent new options available. Please let me know if there have been any changes in your requirements or budget, so I can share the most relevant choices with you.
-
-Warm Regards
-${senderName}
-Sagar Home Developers
-www.sagarhome.com`;
-
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/91${cleanPhone}?text=${encodedMessage}`;
-    Linking.openURL(whatsappUrl);
+    openWhatsapp(phoneNumber, buildBuyerFollowupMessage(senderName));
   };
 
   // Memoized filtered lists for modals

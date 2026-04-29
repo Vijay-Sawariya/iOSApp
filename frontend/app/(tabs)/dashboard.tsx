@@ -14,6 +14,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
+import { buildBuyerFollowupMessage, openWhatsapp } from '../../utils/whatsappMessages';
 
 interface DashboardStats {
   total_leads: number;
@@ -103,10 +104,9 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleWhatsApp = (phone: string, name: string) => {
+  const handleWhatsApp = (phone: string) => {
     if (phone) {
-      const message = `Hi ${name}, `;
-      Linking.openURL(`whatsapp://send?phone=91${phone.replace(/\D/g, '')}&text=${encodeURIComponent(message)}`);
+      openWhatsapp(phone, buildBuyerFollowupMessage(user?.full_name));
     }
   };
 
@@ -216,7 +216,7 @@ export default function DashboardScreen() {
                 <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
                   <Ionicons name="call" size={18} color="#10B981" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
+                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone)}>
                   <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.nextActionButton} onPress={() => router.push(`/leads/${urgentFollowups[0].lead_id}` as any)}>
@@ -263,7 +263,7 @@ export default function DashboardScreen() {
                   <TouchableOpacity style={styles.actionBtn} onPress={() => handleCall(followup.lead_phone)}>
                     <Ionicons name="call" size={18} color="#10B981" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name)}>
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone)}>
                     <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                   </TouchableOpacity>
                 </View>

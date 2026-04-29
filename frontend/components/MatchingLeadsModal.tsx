@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LOCATIONS, FLOORS, formatFloorPricing, formatUnit } from '../constants/leadOptions';
 import { offlineApi } from '../services/offlineApi';
+import { buildInventoryDetailsMessage, buildSelectedInventoryMessage, openWhatsapp } from '../utils/whatsappMessages';
 
 type MatchMode = 'inventory' | 'clients';
 
@@ -54,6 +55,10 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
   const title = mode === 'inventory' ? 'Matching Inventories' : 'Matching Clients';
   const targetLabel = mode === 'inventory' ? 'inventory' : 'clients';
+  const selectedRows = useMemo(
+    () => matches.filter((item) => selectedIds.includes(item.id)),
+    [matches, selectedIds]
+  );
 
   const filteredLocations = useMemo(
     () => LOCATIONS.filter((item) => item.toLowerCase().includes(locationSearch.toLowerCase())),
@@ -139,6 +144,25 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
     } finally {
       setSaving(false);
     }
+  };
+
+  const sendSelectedWhatsapp = async () => {
+    if (selectedRows.length === 0) {
+      Alert.alert('Select Matches', `Select at least one ${targetLabel.slice(0, -1)}.`);
+      return;
+    }
+
+    if (mode === 'inventory') {
+      await openWhatsapp(lead?.phone, buildSelectedInventoryMessage(selectedRows));
+      return;
+    }
+
+    if (selectedRows.length > 1) {
+      Alert.alert('Select One Client', 'Please select one client at a time before sending WhatsApp.');
+      return;
+    }
+
+    await openWhatsapp(selectedRows[0]?.phone, buildInventoryDetailsMessage(lead));
   };
 
   const renderMatch = ({ item }: { item: any }) => {
@@ -268,6 +292,10 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
         <View style={styles.footer}>
           <TouchableOpacity style={styles.secondaryButton} onPress={onClose}>
             <Text style={styles.secondaryButtonText}>Close</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.whatsappButton, selectedIds.length === 0 && styles.saveButtonDisabled]} onPress={sendSelectedWhatsapp} disabled={selectedIds.length === 0}>
+            <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />
+            <Text style={styles.saveButtonText}>WhatsApp</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.saveButton, (saving || selectedIds.length === 0) && styles.saveButtonDisabled]} onPress={saveSelected} disabled={saving || selectedIds.length === 0}>
             {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="star" size={18} color="#FFFFFF" />}
@@ -532,6 +560,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     backgroundColor: '#2563EB',
+  },
+  whatsappButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#16A34A',
   },
   saveButtonDisabled: {
     backgroundColor: '#94A3B8',
