@@ -115,7 +115,7 @@ export default function MapViewScreen() {
               {item.location && (
                 <View style={styles.locationRow}>
                   <Ionicons name="location-outline" size={14} color="#6B7280" />
-                  <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
+                  <Text style={styles.locationText} numberOfLines={1}> {item.address} {item.location}</Text>
                 </View>
               )}
             </View>
