@@ -598,7 +598,7 @@ export default function InventoryLeadsScreen() {
                     style={styles.whatsappButton}
                     onPress={() => {
                       const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
-                      Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                      Linking.openURL(`https://web.whatsapp.com/send?phone=91${cleanPhone}`);
                     }}
                   >
                     <Ionicons name="logo-whatsapp" size={16} color="#25D366" />

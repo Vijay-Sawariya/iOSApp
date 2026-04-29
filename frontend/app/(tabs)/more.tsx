@@ -569,7 +569,7 @@ export default function MoreScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionBtn} onPress={() => {
               const cleanPhone = (item.lead_phone || '').replace(/[^0-9]/g, '');
-              Linking.openURL(`https://wa.me/91${cleanPhone}`);
+              Linking.openURL(`https://web.whatsapp.com/send?phone=91${cleanPhone}`);
             }}>
               <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
             </TouchableOpacity>

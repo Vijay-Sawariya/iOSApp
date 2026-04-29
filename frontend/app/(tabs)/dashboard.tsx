@@ -108,7 +108,7 @@ export default function DashboardScreen() {
       const cleanPhone = phone.replace(/\D/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
       const message = `Hi ${name}, `;
-      Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
+      Linking.openURL(`https://web.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodeURIComponent(message)}`);
     }
   };
 
