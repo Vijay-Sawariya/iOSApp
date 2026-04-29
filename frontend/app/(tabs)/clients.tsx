@@ -123,7 +123,7 @@ Sagar Home Developers
 www.sagarhome.com`;
 
     const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://web.whatsapp.com/send?phone=91${cleanPhone}&text=${encodedMessage}`;
+    const whatsappUrl = `https://wa.me/91${cleanPhone}?text=${encodedMessage}`;
     Linking.openURL(whatsappUrl);
   };
 

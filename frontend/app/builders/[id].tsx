@@ -92,7 +92,7 @@ export default function BuilderDetailScreen() {
     if (builder?.phone) {
       const cleanPhone = safeStr(builder.phone).replace(/[^0-9]/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-      Linking.openURL(`https://web.whatsapp.com/send?phone=${phoneWithCountry}`);
+      Linking.openURL(`https://wa.me/${phoneWithCountry}`);
     }
   };
 

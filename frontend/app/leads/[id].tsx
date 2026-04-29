@@ -308,7 +308,7 @@ export default function LeadDetailScreen() {
     if (lead?.phone) {
       const cleanPhone = safeStr(lead.phone).replace(/[^0-9]/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-      Linking.openURL(`https://web.whatsapp.com/send?phone=${phoneWithCountry}`);
+      Linking.openURL(`https://wa.me/${phoneWithCountry}`);
     }
   };
 
@@ -828,7 +828,7 @@ export default function LeadDetailScreen() {
                       style={styles.actionIcon}
                       onPress={() => {
                         const cleanPhone = (prop.property_phone || '').replace(/[^0-9]/g, '');
-                        Linking.openURL(`https://web.whatsapp.com/send?phone=91${cleanPhone}`);
+                        Linking.openURL(`https://wa.me/91${cleanPhone}`);
                       }}
                     >
                       <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
