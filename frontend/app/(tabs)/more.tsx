@@ -567,7 +567,10 @@ export default function MoreScreen() {
             <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${item.lead_phone}`)}>
               <Ionicons name="call" size={18} color="#10B981" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`whatsapp://send?phone=91${item.lead_phone.replace(/\D/g, '')}`)}>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => {
+              const cleanPhone = (item.lead_phone || '').replace(/[^0-9]/g, '');
+              Linking.openURL(`https://wa.me/91${cleanPhone}`);
+            }}>
               <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
             </TouchableOpacity>
           </>
