@@ -41,6 +41,12 @@ const formatDate = (dateString: string) => {
   return `${day}/${month}/${year}`;
 };
 
+// Format floor pricing for display like: GF: ₹6 Cr | FF: ₹6 Cr | SF: ₹6 Cr
+const formatFloorPricingInline = (floorPricing: any[], unit: string) => {
+  if (!floorPricing || floorPricing.length === 0) return '';
+  return floorPricing.map((fp: any) => `${fp.floor}: ₹${fp.price} ${unit || 'Cr'}`).join(' | ');
+};
+
 // Compose WhatsApp message for inventory details (matching PHP function)
 const composeInventoryWhatsappMessage = (data: any) => {
   const currentHour = new Date().getHours();
@@ -49,7 +55,6 @@ const composeInventoryWhatsappMessage = (data: any) => {
   let msg = `*Hi Sir, ${greeting}*\n\n`;
   msg += 'I\'m sharing a few premium residences with you that might be of interest. These homes offer good privacy, elegant design, and are in a prime neighbourhood.\n\n';
 
-  // Location (without address for privacy)
   msg += `Location: ${data.location || ''}\n`;
   msg += `Plot Area: ${data.area_size || ''} sq. yds\n`;
   
@@ -72,7 +77,6 @@ const composeInventoryWhatsappMessage = (data: any) => {
     msg += `Special Features: ${data.notes}\n`; 
   }
 
-  // Floor-wise pricing
   if (data.floor_pricing && data.floor_pricing.length > 0) {
     msg += `Floor-wise Pricing:\n`;
     data.floor_pricing.forEach((fp: any) => {
@@ -107,7 +111,6 @@ const composeMultipleInventoriesMessage = (inventories: any[]) => {
     msg += `🏠 Floor: ${data.floor || ''} | BHK: ${data.bhk || ''} | Parking: ${data.car_parking_number || '0'}\n`;
     msg += `📋 Status: ${data.lead_status || ''}\n`;
     
-    // Floor-wise pricing
     if (data.floor_pricing && data.floor_pricing.length > 0) {
       msg += `💰 Pricing:\n`;
       data.floor_pricing.forEach((fp: any) => {
@@ -150,7 +153,6 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
-  const [floorSearch, setFloorSearch] = useState('');
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showFloorDropdown, setShowFloorDropdown] = useState(false);
 
@@ -162,11 +164,6 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
     [locationSearch]
   );
 
-  const filteredFloors = useMemo(
-    () => FLOORS.filter((item) => item.toLowerCase().includes(floorSearch.toLowerCase())),
-    [floorSearch]
-  );
-
   // Reset state when modal opens
   useEffect(() => {
     if (visible && lead?.id) {
@@ -175,10 +172,8 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
       setSelectedIds([]);
       setMatches([]);
       setLocationSearch('');
-      setFloorSearch('');
       setShowLocationDropdown(false);
       setShowFloorDropdown(false);
-      // Small delay to ensure state is set before loading
       const timer = setTimeout(() => {
         loadMatches(nextFilters);
       }, 100);
@@ -239,10 +234,6 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
     }));
   };
 
-  const updateTextFilter = (key: 'area_min' | 'area_max' | 'budget_min' | 'budget_max', value: string) => {
-    setFilters((current) => ({ ...current, [key]: value }));
-  };
-
   const saveSelected = async () => {
     if (!lead?.id || selectedIds.length === 0) {
       Alert.alert('Select Matches', `Select at least one ${targetLabel.slice(0, -1)}.`);
@@ -275,10 +266,8 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
     setSharing(true);
     try {
-      // Get the selected inventory details
       const selectedInventories = matches.filter((m) => selectedIds.includes(m.id));
       
-      // Compose message
       let message: string;
       if (selectedInventories.length === 1) {
         message = composeInventoryWhatsappMessage(selectedInventories[0]);
@@ -286,11 +275,8 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
         message = composeMultipleInventoriesMessage(selectedInventories);
       }
 
-      // Format phone number
       const cleanPhone = toText(lead.phone).replace(/[^0-9]/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-
-      // Open WhatsApp
       const whatsappUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`;
       
       const canOpen = await Linking.canOpenURL(whatsappUrl);
@@ -309,68 +295,89 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
   const renderMatch = ({ item }: { item: any }) => {
     const checked = selectedIds.includes(item.id);
-    const priceText = item.floor_pricing?.length
-      ? formatFloorPricing(item.floor_pricing, item.unit)
-      : [item.budget_min, item.budget_max].filter(Boolean).length > 0
-        ? `Rs. ${[item.budget_min, item.budget_max].filter(Boolean).join(' - ')} ${formatUnit(item.unit)}`
+    
+    // Format floor pricing inline
+    const floorPricingText = item.floor_pricing?.length
+      ? formatFloorPricingInline(item.floor_pricing, item.unit)
+      : item.budget_max 
+        ? `₹${item.budget_max} ${formatUnit(item.unit)}`
         : 'Price on request';
 
     return (
-      <TouchableOpacity style={[styles.matchCard, checked && styles.matchCardSelected]} onPress={() => toggleSelected(item.id)}>
+      <TouchableOpacity 
+        style={[styles.matchCard, checked && styles.matchCardSelected]} 
+        onPress={() => toggleSelected(item.id)}
+        activeOpacity={0.7}
+      >
+        {/* Header Row */}
         <View style={styles.matchHeader}>
-          <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={24} color={checked ? '#2563EB' : '#94A3B8'} />
+          <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+            {checked && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+          </View>
           <View style={styles.matchTitleWrap}>
             <Text style={styles.matchName}>{toText(item.name) || `Lead ${item.id}`}</Text>
             <Text style={styles.matchMeta}>
               {[item.lead_type, item.created_by_name ? `Gen By ${item.created_by_name}` : null].filter(Boolean).join(' • ')}
             </Text>
           </View>
-          <TouchableOpacity style={styles.openButton} onPress={() => router.push(`/leads/${item.id}` as any)}>
+          <TouchableOpacity 
+            style={styles.openButton} 
+            onPress={(e) => {
+              e.stopPropagation();
+              router.push(`/leads/${item.id}` as any);
+            }}
+          >
             <Ionicons name="open-outline" size={18} color="#2563EB" />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.detailLine}>
-          <Ionicons name="location-outline" size={15} color="#64748B" />
-          <Text style={styles.detailText} numberOfLines={2}>{[item.address, item.location].filter(Boolean).join(', ') || 'No location'}</Text>
+        {/* Location Row */}
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={16} color="#64748B" />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {[item.address, item.location].filter(Boolean).join(', ') || 'No location'}
+          </Text>
         </View>
-        <View style={styles.tagRow}>
-          {[item.area_size ? `${item.area_size} sq yds` : null, item.floor, item.bhk, item.lead_status].filter(Boolean).map((tag, idx) => (
-            <View key={`${tag}-${idx}`} style={styles.tag}>
-              <Text style={styles.tagText}>{String(tag)}</Text>
-            </View>
-          ))}
-        </View>
-        <Text style={styles.priceText}>{priceText}</Text>
-        {Array.isArray(item.match_reasons) && item.match_reasons.length > 0 ? (
-          <Text style={styles.reasonsText}>{item.match_reasons.join(' • ')}</Text>
-        ) : null}
-      </TouchableOpacity>
-    );
-  };
 
-  // Render selected pills
-  const renderSelectedPills = (key: 'locations' | 'floors') => {
-    const items = filters[key];
-    if (items.length === 0) return null;
-    
-    return (
-      <View style={styles.selectedPillsContainer}>
-        {items.map((item) => (
-          <View key={item} style={styles.selectedPill}>
-            <Text style={styles.selectedPillText}>{item}</Text>
-            <TouchableOpacity onPress={() => removeFilterValue(key, item)} style={styles.pillRemoveBtn}>
-              <Ionicons name="close-circle" size={16} color="#2563EB" />
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
+        {/* Tags Row */}
+        <View style={styles.tagRow}>
+          {item.area_size && (
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>{item.area_size} sq yds</Text>
+            </View>
+          )}
+          {item.floor && (
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>{item.floor}</Text>
+            </View>
+          )}
+          {item.bhk && (
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>{item.bhk}</Text>
+            </View>
+          )}
+          {item.lead_status && (
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>{item.lead_status}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Price Row */}
+        <Text style={styles.priceText}>{floorPricingText}</Text>
+
+        {/* Match Reasons */}
+        {Array.isArray(item.match_reasons) && item.match_reasons.length > 0 && (
+          <Text style={styles.reasonsText}>{item.match_reasons.join(' • ')}</Text>
+        )}
+      </TouchableOpacity>
     );
   };
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
+        {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>{title}</Text>
@@ -381,132 +388,102 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.filters} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-          <Text style={styles.filterTitle}>Search Criteria</Text>
-          <View style={styles.inputRow}>
-            <View style={styles.inputHalf}>
-              <Text style={styles.label}>Area min</Text>
-              <TextInput style={styles.input} keyboardType="numeric" value={filters.area_min} onChangeText={(text) => updateTextFilter('area_min', text)} />
-            </View>
-            <View style={styles.inputHalf}>
-              <Text style={styles.label}>Area max</Text>
-              <TextInput style={styles.input} keyboardType="numeric" value={filters.area_max} onChangeText={(text) => updateTextFilter('area_max', text)} />
-            </View>
-          </View>
-          <View style={styles.inputRow}>
-            <View style={styles.inputHalf}>
-              <Text style={styles.label}>Budget min</Text>
-              <TextInput style={styles.input} keyboardType="numeric" value={filters.budget_min} onChangeText={(text) => updateTextFilter('budget_min', text)} />
-            </View>
-            <View style={styles.inputHalf}>
-              <Text style={styles.label}>Budget max</Text>
-              <TextInput style={styles.input} keyboardType="numeric" value={filters.budget_max} onChangeText={(text) => updateTextFilter('budget_max', text)} />
-            </View>
-          </View>
-
-          {/* Location Multi-select Dropdown */}
-          <Text style={styles.label}>Locations ({filters.locations.length} selected)</Text>
-          {renderSelectedPills('locations')}
+        {/* Filters Section */}
+        <View style={styles.filtersContainer}>
+          {/* Location Dropdown */}
           <TouchableOpacity 
-            style={styles.dropdownTrigger} 
+            style={styles.dropdownTrigger}
             onPress={() => {
               setShowLocationDropdown(!showLocationDropdown);
               setShowFloorDropdown(false);
             }}
           >
-            <Text style={styles.dropdownTriggerText}>
-              {filters.locations.length > 0 ? 'Tap to modify selections' : 'Select locations...'}
-            </Text>
+            <Text style={styles.dropdownLabel}>Locations</Text>
             <Ionicons name={showLocationDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#64748B" />
           </TouchableOpacity>
-          
+
           {showLocationDropdown && (
-            <View style={styles.dropdownContainer}>
-              <TextInput 
-                style={styles.dropdownSearch} 
-                placeholder="Search locations..." 
-                value={locationSearch} 
+            <View style={styles.dropdownContent}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search locations..."
+                placeholderTextColor="#94A3B8"
+                value={locationSearch}
                 onChangeText={setLocationSearch}
-                autoCapitalize="none"
               />
-              <ScrollView style={styles.dropdownList} nestedScrollEnabled>
+              <ScrollView style={styles.dropdownList} nestedScrollEnabled showsVerticalScrollIndicator>
                 {filteredLocations.map((item) => (
-                  <TouchableOpacity 
-                    key={item} 
-                    style={[styles.dropdownItem, filters.locations.includes(item) && styles.dropdownItemSelected]} 
+                  <TouchableOpacity
+                    key={item}
+                    style={styles.dropdownItem}
                     onPress={() => toggleFilterValue('locations', item)}
                   >
-                    <Ionicons 
-                      name={filters.locations.includes(item) ? 'checkbox' : 'square-outline'} 
-                      size={20} 
-                      color={filters.locations.includes(item) ? '#2563EB' : '#94A3B8'} 
-                    />
-                    <Text style={[styles.dropdownItemText, filters.locations.includes(item) && styles.dropdownItemTextSelected]}>
-                      {item}
-                    </Text>
+                    <View style={[styles.checkboxSmall, filters.locations.includes(item) && styles.checkboxSmallChecked]}>
+                      {filters.locations.includes(item) && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                    </View>
+                    <Text style={styles.dropdownItemText}>{item}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
           )}
 
-          {/* Floor Multi-select Dropdown */}
-          <Text style={[styles.label, { marginTop: 12 }]}>Floors ({filters.floors.length} selected)</Text>
-          {renderSelectedPills('floors')}
+          {/* Floors Section */}
+          <View style={styles.floorsSection}>
+            <Text style={styles.floorsLabel}>Floors ({filters.floors.length} selected)</Text>
+            {filters.floors.length > 0 && (
+              <View style={styles.pillsContainer}>
+                {filters.floors.map((floor) => (
+                  <View key={floor} style={styles.pill}>
+                    <Text style={styles.pillText}>{floor}</Text>
+                    <TouchableOpacity onPress={() => removeFilterValue('floors', floor)}>
+                      <Ionicons name="close-circle" size={18} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Floor Dropdown Trigger */}
           <TouchableOpacity 
-            style={styles.dropdownTrigger} 
+            style={styles.dropdownTrigger}
             onPress={() => {
               setShowFloorDropdown(!showFloorDropdown);
               setShowLocationDropdown(false);
             }}
           >
-            <Text style={styles.dropdownTriggerText}>
-              {filters.floors.length > 0 ? 'Tap to modify selections' : 'Select floors...'}
-            </Text>
+            <Text style={styles.dropdownPlaceholder}>Tap to modify selections</Text>
             <Ionicons name={showFloorDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#64748B" />
           </TouchableOpacity>
-          
+
           {showFloorDropdown && (
-            <View style={styles.dropdownContainer}>
-              <TextInput 
-                style={styles.dropdownSearch} 
-                placeholder="Search floors..." 
-                value={floorSearch} 
-                onChangeText={setFloorSearch}
-                autoCapitalize="none"
-              />
-              <ScrollView style={styles.dropdownList} nestedScrollEnabled>
-                {filteredFloors.map((item) => (
-                  <TouchableOpacity 
-                    key={item} 
-                    style={[styles.dropdownItem, filters.floors.includes(item) && styles.dropdownItemSelected]} 
+            <View style={styles.dropdownContent}>
+              <ScrollView style={styles.dropdownListSmall} nestedScrollEnabled>
+                {FLOORS.map((item) => (
+                  <TouchableOpacity
+                    key={item}
+                    style={styles.dropdownItem}
                     onPress={() => toggleFilterValue('floors', item)}
                   >
-                    <Ionicons 
-                      name={filters.floors.includes(item) ? 'checkbox' : 'square-outline'} 
-                      size={20} 
-                      color={filters.floors.includes(item) ? '#2563EB' : '#94A3B8'} 
-                    />
-                    <Text style={[styles.dropdownItemText, filters.floors.includes(item) && styles.dropdownItemTextSelected]}>
-                      {item}
-                    </Text>
+                    <View style={[styles.checkboxSmall, filters.floors.includes(item) && styles.checkboxSmallChecked]}>
+                      {filters.floors.includes(item) && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                    </View>
+                    <Text style={styles.dropdownItemText}>{item}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
           )}
+        </View>
 
-          <TouchableOpacity style={styles.applyButton} onPress={() => loadMatches()}>
-            <Ionicons name="search-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.applyButtonText}>Fetch Records</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
+        {/* Results Header */}
         <View style={styles.resultsHeader}>
           <Text style={styles.resultsText}>{matches.length} record(s)</Text>
           <Text style={styles.selectedText}>{selectedIds.length} selected</Text>
         </View>
 
+        {/* Results List */}
         {loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color="#2563EB" />
@@ -526,32 +503,36 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
           />
         )}
 
+        {/* Footer */}
         <View style={styles.footer}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={onClose}>
-            <Text style={styles.secondaryButtonText}>Close</Text>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <Text style={styles.closeBtnText}>Close</Text>
           </TouchableOpacity>
           
-          {/* Share Button */}
           <TouchableOpacity 
-            style={[styles.shareButton, (sharing || selectedIds.length === 0) && styles.shareButtonDisabled]} 
+            style={[styles.shareBtn, (sharing || selectedIds.length === 0) && styles.btnDisabled]} 
             onPress={shareViaWhatsApp} 
             disabled={sharing || selectedIds.length === 0}
           >
             {sharing ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />
+              <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
             )}
-            <Text style={styles.shareButtonText}>Share</Text>
+            <Text style={styles.shareBtnText}>Share</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.saveButton, (saving || selectedIds.length === 0) && styles.saveButtonDisabled]} 
+            style={[styles.addBtn, (saving || selectedIds.length === 0) && styles.btnDisabled]} 
             onPress={saveSelected} 
             disabled={saving || selectedIds.length === 0}
           >
-            {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="star" size={18} color="#FFFFFF" />}
-            <Text style={styles.saveButtonText}>Add</Text>
+            {saving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="star" size={18} color="#FFFFFF" />
+            )}
+            <Text style={styles.addBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -565,25 +546,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    paddingTop: 56,
-    paddingHorizontal: 18,
-    paddingBottom: 14,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   title: {
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#0F172A',
   },
   subtitle: {
-    marginTop: 3,
+    marginTop: 4,
     color: '#64748B',
-    fontSize: 13,
+    fontSize: 14,
   },
   closeButton: {
     width: 40,
@@ -593,150 +572,131 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#F1F5F9',
   },
-  filters: {
-    maxHeight: 380,
+  filtersContainer: {
     backgroundColor: '#FFFFFF',
-    padding: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  filterTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 10,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  inputHalf: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '700',
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  input: {
-    minHeight: 40,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: '#0F172A',
-    backgroundColor: '#FFFFFF',
-  },
-  // Selected Pills
-  selectedPillsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
-  },
-  selectedPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#DBEAFE',
-    paddingLeft: 10,
-    paddingRight: 4,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 4,
-  },
-  selectedPillText: {
-    color: '#1D4ED8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  pillRemoveBtn: {
-    padding: 2,
-  },
-  // Dropdown Styles
   dropdownTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    marginTop: 8,
   },
-  dropdownTriggerText: {
-    color: '#64748B',
+  dropdownLabel: {
+    fontSize: 15,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  dropdownPlaceholder: {
     fontSize: 14,
+    color: '#94A3B8',
   },
-  dropdownContainer: {
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
+  dropdownContent: {
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    marginTop: 4,
     maxHeight: 200,
   },
-  dropdownSearch: {
-    minHeight: 40,
+  searchInput: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    paddingHorizontal: 12,
+    fontSize: 14,
     color: '#0F172A',
   },
   dropdownList: {
     maxHeight: 150,
   },
+  dropdownListSmall: {
+    maxHeight: 120,
+  },
   dropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  dropdownItemSelected: {
-    backgroundColor: '#EFF6FF',
-  },
   dropdownItemText: {
-    color: '#334155',
     fontSize: 14,
+    color: '#334155',
+    marginLeft: 12,
   },
-  dropdownItemTextSelected: {
-    color: '#1D4ED8',
-    fontWeight: '600',
-  },
-  applyButton: {
-    marginTop: 14,
-    marginBottom: 18,
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    minHeight: 44,
+  checkboxSmall: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
   },
-  applyButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
+  checkboxSmallChecked: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  floorsSection: {
+    marginTop: 16,
+  },
+  floorsLabel: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  pillsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2563EB',
+    paddingLeft: 14,
+    paddingRight: 8,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  pillText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   resultsHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
   resultsText: {
-    color: '#475569',
-    fontWeight: '700',
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '600',
   },
   selectedText: {
     color: '#2563EB',
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
   },
   loadingWrap: {
     flex: 1,
@@ -744,93 +704,110 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    marginTop: 8,
+    marginTop: 12,
     color: '#64748B',
+    fontSize: 14,
   },
   listContent: {
-    padding: 14,
-    paddingBottom: 120,
+    padding: 16,
+    paddingBottom: 100,
   },
   emptyText: {
-    paddingVertical: 34,
+    paddingVertical: 40,
     textAlign: 'center',
     color: '#64748B',
+    fontSize: 15,
   },
   matchCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#E2E8F0',
   },
   matchCardSelected: {
     borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F8FAFF',
   },
   matchHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxChecked: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
   },
   matchTitleWrap: {
     flex: 1,
   },
   matchName: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#0F172A',
   },
   matchMeta: {
     marginTop: 2,
     color: '#64748B',
-    fontSize: 12,
+    fontSize: 13,
   },
   openButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
   },
-  detailLine: {
-    marginTop: 10,
+  locationRow: {
+    marginTop: 12,
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
   },
-  detailText: {
+  locationText: {
     flex: 1,
     color: '#475569',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    marginLeft: 6,
   },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
+    gap: 8,
+    marginTop: 12,
   },
   tag: {
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   tagText: {
     color: '#475569',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
   },
   priceText: {
-    marginTop: 10,
-    color: '#047857',
-    fontSize: 13,
-    fontWeight: '800',
+    marginTop: 12,
+    color: '#059669',
+    fontSize: 14,
+    fontWeight: '700',
   },
   reasonsText: {
-    marginTop: 6,
-    color: '#64748B',
+    marginTop: 8,
+    color: '#94A3B8',
     fontSize: 12,
   },
   footer: {
@@ -838,57 +815,60 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    padding: 14,
+    padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
-  secondaryButton: {
+  closeBtn: {
     flex: 1,
-    minHeight: 46,
-    borderRadius: 10,
+    height: 50,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  secondaryButtonText: {
+  closeBtnText: {
     color: '#334155',
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
   },
-  shareButton: {
+  shareBtn: {
     flex: 1,
-    minHeight: 46,
-    borderRadius: 10,
+    height: 50,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 6,
-    backgroundColor: '#25D366',
+    gap: 8,
+    backgroundColor: '#22C55E',
   },
-  shareButtonDisabled: {
-    backgroundColor: '#94A3B8',
-  },
-  shareButtonText: {
+  shareBtnText: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
   },
-  saveButton: {
+  addBtn: {
     flex: 1,
-    minHeight: 46,
-    borderRadius: 10,
+    height: 50,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
     backgroundColor: '#2563EB',
   },
-  saveButtonDisabled: {
-    backgroundColor: '#94A3B8',
-  },
-  saveButtonText: {
+  addBtnText: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  btnDisabled: {
+    backgroundColor: '#94A3B8',
   },
 });
