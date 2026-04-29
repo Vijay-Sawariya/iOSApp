@@ -105,8 +105,10 @@ export default function DashboardScreen() {
 
   const handleWhatsApp = (phone: string, name: string) => {
     if (phone) {
+      const cleanPhone = phone.replace(/\D/g, '');
+      const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
       const message = `Hi ${name}, `;
-      Linking.openURL(`whatsapp://send?phone=91${phone.replace(/\D/g, '')}&text=${encodeURIComponent(message)}`);
+      Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
     }
   };
 

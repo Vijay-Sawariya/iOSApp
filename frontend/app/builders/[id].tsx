@@ -91,7 +91,8 @@ export default function BuilderDetailScreen() {
   const handleWhatsApp = () => {
     if (builder?.phone) {
       const cleanPhone = safeStr(builder.phone).replace(/[^0-9]/g, '');
-      Linking.openURL(`https://wa.me/${cleanPhone}`);
+      const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+      Linking.openURL(`https://wa.me/${phoneWithCountry}`);
     }
   };
 

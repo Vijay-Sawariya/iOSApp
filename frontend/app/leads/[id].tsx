@@ -307,7 +307,8 @@ export default function LeadDetailScreen() {
   const handleWhatsApp = () => {
     if (lead?.phone) {
       const cleanPhone = safeStr(lead.phone).replace(/[^0-9]/g, '');
-      Linking.openURL(`https://wa.me/${cleanPhone}`);
+      const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+      Linking.openURL(`https://wa.me/${phoneWithCountry}`);
     }
   };
 
