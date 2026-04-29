@@ -144,6 +144,33 @@ backend:
           agent: "testing"
           comment: "Fixed critical bug in create_lead and update_lead functions. Changed database queries to use budget_min, budget_max, and lead_status instead of budget and status. All CRUD operations now working: GET /api/leads, GET /api/leads/clients, GET /api/leads/inventory, POST /api/leads, PUT /api/leads/{id}, DELETE /api/leads/{id}."
 
+  - task: "Lead Scoring and Aging Indicators"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Lead scoring system fully implemented and working. GET /api/leads/clients and GET /api/leads/inventory both return all required scoring fields: lead_score (0-100), days_since_contact, aging_label, aging_color (green/blue/orange/red/darkred/gray), aging_urgency (recent/good/attention/overdue/critical/unknown), and score_breakdown array. Score calculation includes Temperature, Recency, Budget, Status, and Completeness factors. Fixed routing conflict for map-data endpoint."
+
+  - task: "Map Data API"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "Initial testing failed due to routing conflict - /leads/{lead_id} route was catching /leads/map-data requests. Also had SQL query formatting issues with % characters in LIKE clause."
+        - working: true
+          agent: "testing"
+          comment: "Fixed routing conflict by moving /leads/map-data route before /leads/{lead_id} route. Fixed SQL query formatting issues. GET /api/leads/map-data now working correctly, returns all required fields: id, name, lead_type, location, address, Property_locationUrl, budget_min, budget_max. Optional lead_type filter parameter working. Handles missing latitude/longitude gracefully."
+
   - task: "Builders Management API"
     implemented: true
     working: true
@@ -210,3 +237,7 @@ test_plan:
 agent_communication:
     - agent: "testing"
       message: "Comprehensive backend API testing completed successfully. Found and fixed one critical bug in leads creation endpoint. All endpoints now working correctly with MySQL database. Database contains 1079 existing leads and 156 builders. Security, validation, and CRUD operations all functioning properly."
+    - agent: "main"
+      message: "Implemented Lead Scoring + Aging Indicators feature. Added score calculation (0-100) based on temperature, recency, budget, status, and completeness. Added aging labels with color-coded indicators. Updated GET /api/leads/clients and GET /api/leads/inventory to return scoring data. Also created Map View screen (/app/frontend/app/map.tsx) with Leaflet/OSM maps. Please test: 1) GET /api/leads/clients - verify lead_score, days_since_contact, aging_label, aging_color fields 2) GET /api/leads/inventory - same scoring fields 3) GET /api/leads/map-data - verify map data endpoint"
+    - agent: "testing"
+      message: "Lead Scoring and Map Data API testing completed successfully. All requested features are working correctly: 1) GET /api/leads/clients returns all required scoring fields (lead_score 0-100, days_since_contact, aging_label, aging_color, aging_urgency, score_breakdown) 2) GET /api/leads/inventory returns same scoring fields plus floor_pricing 3) GET /api/leads/map-data returns all required map fields (id, name, lead_type, location, address, Property_locationUrl, budget_min, budget_max) with optional lead_type filter. Fixed routing conflict and SQL formatting issues. Score calculation logic working with Temperature, Recency, Budget, Status, and Completeness factors."

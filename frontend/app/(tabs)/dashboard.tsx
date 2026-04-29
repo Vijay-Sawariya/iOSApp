@@ -120,6 +120,44 @@ export default function DashboardScreen() {
   }
 
   const funnelTotal = (stats?.new_leads || 0) + (stats?.contacted_leads || 0) + (stats?.qualified_leads || 0) + (stats?.negotiating_leads || 0) + (stats?.won_leads || 0);
+  const todayWorkItems = [
+    {
+      key: 'missed',
+      title: 'Missed follow-ups',
+      count: stats?.missed_followups || 0,
+      icon: 'alert-circle',
+      color: '#DC2626',
+      bg: '#FEF2F2',
+      route: '/reminders',
+    },
+    {
+      key: 'today',
+      title: 'Due today',
+      count: stats?.today_reminders || urgentFollowups.filter((item) => !item.is_missed).length || 0,
+      icon: 'today',
+      color: '#D97706',
+      bg: '#FFFBEB',
+      route: '/reminders',
+    },
+    {
+      key: 'hot',
+      title: 'Hot leads',
+      count: stats?.hot_leads || 0,
+      icon: 'flame',
+      color: '#EF4444',
+      bg: '#FFF1F2',
+      route: '/clients',
+    },
+    {
+      key: 'matches',
+      title: 'Smart matches',
+      count: smartMatches.length,
+      icon: 'sparkles',
+      color: '#2563EB',
+      bg: '#EFF6FF',
+      route: smartMatches[0] ? `/leads/${smartMatches[0].inventory_id}` : '/inventory',
+    },
+  ];
 
   return (
     <View style={styles.container}>
@@ -139,6 +177,67 @@ export default function DashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
+        {/* Work Today */}
+        <View style={styles.todayWorkWidget}>
+          <View style={styles.todayWorkHeader}>
+            <View>
+              <Text style={styles.todayWorkTitle}>Work Today</Text>
+              <Text style={styles.todayWorkSubtitle}>Start with the leads most likely to need action.</Text>
+            </View>
+            <TouchableOpacity style={styles.todayWorkRefresh} onPress={onRefresh}>
+              <Ionicons name="refresh" size={18} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.todayWorkGrid}>
+            {todayWorkItems.map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.todayWorkCard, { backgroundColor: item.bg }]}
+                onPress={() => router.push(item.route as any)}
+              >
+                <View style={[styles.todayWorkIcon, { backgroundColor: item.color }]}>
+                  <Ionicons name={item.icon as any} size={18} color="#FFFFFF" />
+                </View>
+                <Text style={[styles.todayWorkCount, { color: item.color }]}>{item.count}</Text>
+                <Text style={styles.todayWorkLabel}>{item.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {urgentFollowups.length > 0 ? (
+            <View style={styles.nextActionPanel}>
+              <View style={styles.nextActionCopy}>
+                <Text style={styles.nextActionLabel}>Next best action</Text>
+                <Text style={styles.nextActionName}>{urgentFollowups[0].lead_name}</Text>
+                <Text style={styles.nextActionTitle} numberOfLines={1}>{urgentFollowups[0].title}</Text>
+              </View>
+              <View style={styles.nextActionButtons}>
+                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
+                  <Ionicons name="call" size={18} color="#10B981" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
+                  <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.nextActionButton} onPress={() => router.push(`/leads/${urgentFollowups[0].lead_id}` as any)}>
+                  <Ionicons name="open-outline" size={18} color="#3B82F6" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.nextActionPanel}>
+              <View style={styles.nextActionCopy}>
+                <Text style={styles.nextActionLabel}>Next best action</Text>
+                <Text style={styles.nextActionName}>No urgent follow-ups</Text>
+                <Text style={styles.nextActionTitle}>Review hot leads or add new inventory.</Text>
+              </View>
+              <TouchableOpacity style={styles.nextActionCta} onPress={() => router.push('/leads/add?type=client' as any)}>
+                <Text style={styles.nextActionCtaText}>Add Lead</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         {/* Urgent Follow-ups Widget */}
         {urgentFollowups.length > 0 && (
           <View style={styles.urgentWidget}>
@@ -177,9 +276,9 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* This Week's Performance */}
+        {/* Weekly Performance */}
         <View style={styles.performanceWidget}>
-          <Text style={styles.widgetTitle}>📊 This Week's Performance</Text>
+          <Text style={styles.widgetTitle}>📊 Weekly Performance</Text>
           <View style={styles.performanceGrid}>
             <View style={styles.performanceItem}>
               <Text style={styles.performanceValue}>{stats?.leads_this_week || 0}</Text>
@@ -445,6 +544,119 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#3B82F6',
+  },
+  // Work Today
+  todayWorkWidget: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  todayWorkHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  todayWorkTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  todayWorkSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 3,
+  },
+  todayWorkRefresh: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  todayWorkGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  todayWorkCard: {
+    width: '48%',
+    borderRadius: 12,
+    padding: 12,
+    minHeight: 100,
+  },
+  todayWorkIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  todayWorkCount: {
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  todayWorkLabel: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  nextActionPanel: {
+    marginTop: 14,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  nextActionCopy: {
+    flex: 1,
+    marginRight: 10,
+  },
+  nextActionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+  },
+  nextActionName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 3,
+  },
+  nextActionTitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  nextActionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  nextActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextActionCta: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  nextActionCtaText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   // Performance Widget
   performanceWidget: {

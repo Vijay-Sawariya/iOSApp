@@ -246,7 +246,40 @@ export interface Lead {
   created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
   Property_locationUrl?: string | null;
+  // Lead Scoring fields
+  lead_score?: number | null;
+  days_since_contact?: number | null;
+  aging_label?: string | null;
+  aging_color?: string | null;
+  aging_urgency?: string | null;
+  score_breakdown?: Array<[string, number, string]> | null;
 }
+
+// Helper functions for lead scoring UI
+export const getScoreColor = (score: number | null | undefined): string => {
+  if (score === null || score === undefined) return '#9CA3AF';
+  if (score >= 80) return '#10B981'; // green
+  if (score >= 60) return '#3B82F6'; // blue
+  if (score >= 40) return '#F59E0B'; // amber
+  return '#EF4444'; // red
+};
+
+export const getAgingStyles = (agingColor: string | null | undefined): { bg: string; text: string } => {
+  switch (agingColor) {
+    case 'green':
+      return { bg: '#D1FAE5', text: '#059669' };
+    case 'blue':
+      return { bg: '#DBEAFE', text: '#2563EB' };
+    case 'orange':
+      return { bg: '#FEF3C7', text: '#D97706' };
+    case 'red':
+      return { bg: '#FEE2E2', text: '#DC2626' };
+    case 'darkred':
+      return { bg: '#FCA5A5', text: '#991B1B' };
+    default:
+      return { bg: '#F3F4F6', text: '#6B7280' };
+  }
+};
 
 // Helper function to check if current user can view sensitive data (phone/address) for a lead
 export const canViewSensitiveData = (
