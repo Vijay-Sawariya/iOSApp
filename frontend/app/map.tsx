@@ -5,14 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
   FlatList,
   TextInput,
   ScrollView,
   Linking,
-  Platform,
+  RefreshControl,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -31,19 +29,14 @@ interface MapLead {
   budget_max: number | null;
   bhk: string | null;
   area_size: string | null;
-  latitude: number | null;
-  longitude: number | null;
 }
 
-// Delhi NCR default center
-const DEFAULT_CENTER = { lat: 28.6139, lng: 77.2090 };
-
 export default function MapViewScreen() {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const [leads, setLeads] = useState<MapLead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedLead, setSelectedLead] = useState<MapLead | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   
   // Filters
@@ -54,7 +47,6 @@ export default function MapViewScreen() {
   const loadMapData = useCallback(async () => {
     if (!token) return;
     
-    setLoading(true);
     setError(null);
     try {
       const data = await api.getMapData(typeFilter || undefined);
@@ -64,6 +56,7 @@ export default function MapViewScreen() {
       setError(err.message || 'Failed to load properties');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [token, typeFilter]);
 
@@ -71,137 +64,32 @@ export default function MapViewScreen() {
     loadMapData();
   }, [loadMapData]);
 
-  // Filter leads based on location
-  const filteredLeads = locationFilter 
-    ? leads.filter(l => l.location?.toLowerCase().includes(locationFilter.toLowerCase()))
-    : leads;
-
-  // Leads with valid coordinates for map
-  const mappableLeads = filteredLeads.filter(l => l.latitude && l.longitude);
-
-  // Generate HTML for the map
-  const generateMapHtml = () => {
-    const markers = mappableLeads.map(lead => {
-      const color = lead.lead_type === 'seller' ? '#10B981' 
-                  : lead.lead_type === 'landlord' ? '#F59E0B' 
-                  : '#8B5CF6';
-      const budget = lead.budget_max || lead.budget_min;
-      const budgetStr = budget ? `₹${budget} Cr` : '';
-      
-      return `
-        L.circleMarker([${lead.latitude}, ${lead.longitude}], {
-          radius: 10,
-          fillColor: '${color}',
-          color: '#fff',
-          weight: 2,
-          opacity: 1,
-          fillOpacity: 0.8
-        }).addTo(map)
-        .bindPopup(\`
-          <div style="min-width: 180px;">
-            <strong style="font-size: 14px; color: #1F2937;">${lead.name}</strong><br/>
-            <span style="color: ${color}; font-weight: 600;">${lead.lead_type === 'seller' ? 'For Sale' : lead.lead_type === 'landlord' ? 'For Rent' : 'Builder'}</span><br/>
-            <span style="color: #6B7280;">${lead.location || 'N/A'}</span><br/>
-            ${lead.area_size ? `<span style="color: #374151;"><strong>${lead.area_size}</strong> sq.yds</span><br/>` : ''}
-            ${budgetStr ? `<span style="color: #10B981; font-weight: 600;">${budgetStr}</span><br/>` : ''}
-            <a href="javascript:void(0)" onclick="window.ReactNativeWebView.postMessage(JSON.stringify({type:'select', id: ${lead.id}}))" style="color: #3B82F6; text-decoration: none;">View Details →</a>
-          </div>
-        \`);
-      `;
-    }).join('\n');
-
-    const center = mappableLeads.length > 0 
-      ? { lat: mappableLeads[0].latitude!, lng: mappableLeads[0].longitude! }
-      : DEFAULT_CENTER;
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-        <style>
-          body { margin: 0; padding: 0; }
-          #map { width: 100vw; height: 100vh; }
-          .leaflet-popup-content { margin: 10px; }
-          .legend {
-            background: white;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-          }
-          .legend-item {
-            display: flex;
-            align-items: center;
-            margin: 4px 0;
-            font-size: 12px;
-          }
-          .legend-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-          }
-        </style>
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map').setView([${center.lat}, ${center.lng}], 12);
-          
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-          }).addTo(map);
-          
-          ${markers}
-          
-          // Add legend
-          var legend = L.control({position: 'bottomright'});
-          legend.onAdd = function(map) {
-            var div = L.DomUtil.create('div', 'legend');
-            div.innerHTML = '<div class="legend-item"><div class="legend-dot" style="background:#10B981"></div>For Sale</div>' +
-                           '<div class="legend-item"><div class="legend-dot" style="background:#F59E0B"></div>For Rent</div>' +
-                           '<div class="legend-item"><div class="legend-dot" style="background:#8B5CF6"></div>Builder</div>';
-            return div;
-          };
-          legend.addTo(map);
-          
-          // Fit bounds if we have markers
-          ${mappableLeads.length > 1 ? `
-            var bounds = L.latLngBounds([
-              ${mappableLeads.map(l => `[${l.latitude}, ${l.longitude}]`).join(',')}
-            ]);
-            map.fitBounds(bounds, { padding: [50, 50] });
-          ` : ''}
-        </script>
-      </body>
-      </html>
-    `;
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadMapData();
   };
 
-  const handleWebViewMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'select' && data.id) {
-        const lead = leads.find(l => l.id === data.id);
-        if (lead) {
-          setSelectedLead(lead);
-        }
-      }
-    } catch (e) {
-      console.error('Error parsing WebView message:', e);
-    }
+  // Filter leads - only show those with Property_locationUrl
+  const filteredLeads = leads.filter(l => {
+    const hasMapUrl = l.Property_locationUrl && l.Property_locationUrl.trim() !== '';
+    const matchesLocation = !locationFilter || 
+      l.location?.toLowerCase().includes(locationFilter.toLowerCase());
+    return hasMapUrl && matchesLocation;
+  });
+
+  // Leads without map URL (for stats)
+  const leadsWithoutMapUrl = leads.filter(l => !l.Property_locationUrl || l.Property_locationUrl.trim() === '');
+
+  const openInMaps = (url: string) => {
+    Linking.openURL(url).catch(err => console.error('Failed to open map:', err));
   };
 
-  const openInMaps = (lead: MapLead) => {
-    if (lead.Property_locationUrl) {
-      Linking.openURL(lead.Property_locationUrl);
-    } else if (lead.latitude && lead.longitude) {
-      const url = Platform.OS === 'ios'
-        ? `maps://app?daddr=${lead.latitude},${lead.longitude}`
-        : `geo:${lead.latitude},${lead.longitude}?q=${lead.latitude},${lead.longitude}`;
-      Linking.openURL(url);
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'seller': return { bg: '#DCFCE7', text: '#16A34A', label: 'For Sale' };
+      case 'landlord': return { bg: '#FEF3C7', text: '#D97706', label: 'For Rent' };
+      case 'builder': return { bg: '#F3E8FF', text: '#7C3AED', label: 'Builder' };
+      default: return { bg: '#F3F4F6', text: '#6B7280', label: type };
     }
   };
 
@@ -209,6 +97,65 @@ export default function MapViewScreen() {
   const filteredLocations = LOCATIONS.filter(loc => 
     loc.toLowerCase().includes(locationSearch.toLowerCase())
   );
+
+  const renderPropertyCard = ({ item }: { item: MapLead }) => {
+    const typeInfo = getTypeColor(item.lead_type);
+    const budget = item.budget_max || item.budget_min;
+    
+    return (
+      <View style={styles.propertyCard}>
+        <TouchableOpacity
+          style={styles.cardContent}
+          onPress={() => router.push(`/leads/${item.id}` as any)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cardHeader}>
+            <View style={styles.nameSection}>
+              <Text style={styles.propertyName} numberOfLines={1}>{item.name}</Text>
+              {item.location && (
+                <View style={styles.locationRow}>
+                  <Ionicons name="location-outline" size={14} color="#6B7280" />
+                  <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
+                </View>
+              )}
+            </View>
+            <View style={[styles.typeBadge, { backgroundColor: typeInfo.bg }]}>
+              <Text style={[styles.typeBadgeText, { color: typeInfo.text }]}>{typeInfo.label}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.detailsRow}>
+            {item.area_size && (
+              <View style={styles.detailChip}>
+                <Ionicons name="resize-outline" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{item.area_size} sq.yds</Text>
+              </View>
+            )}
+            {item.bhk && (
+              <View style={styles.detailChip}>
+                <Ionicons name="bed-outline" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{item.bhk}</Text>
+              </View>
+            )}
+            {budget && (
+              <View style={styles.detailChip}>
+                <Text style={styles.budgetText}>₹{budget} Cr</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+        
+        {/* Map Button */}
+        <TouchableOpacity
+          style={styles.mapButton}
+          onPress={() => openInMaps(item.Property_locationUrl!)}
+        >
+          <Ionicons name="navigate" size={20} color="#FFFFFF" />
+          <Text style={styles.mapButtonText}>Open in Maps</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -233,19 +180,16 @@ export default function MapViewScreen() {
 
       {/* Stats Bar */}
       <View style={styles.statsBar}>
-        <Text style={styles.statsText}>
-          {mappableLeads.length} of {filteredLeads.length} properties on map
-        </Text>
-        {(typeFilter || locationFilter) && (
-          <TouchableOpacity 
-            style={styles.clearBtn}
-            onPress={() => {
-              setTypeFilter('');
-              setLocationFilter('');
-            }}
-          >
-            <Text style={styles.clearBtnText}>Clear Filters</Text>
-          </TouchableOpacity>
+        <View style={styles.statItem}>
+          <Ionicons name="location" size={18} color="#10B981" />
+          <Text style={styles.statsText}>
+            {filteredLeads.length} properties with map location
+          </Text>
+        </View>
+        {leadsWithoutMapUrl.length > 0 && (
+          <Text style={styles.statsSubtext}>
+            {leadsWithoutMapUrl.length} without location
+          </Text>
         )}
       </View>
 
@@ -327,11 +271,23 @@ export default function MapViewScreen() {
               </TouchableOpacity>
             </View>
           )}
+
+          {(typeFilter || locationFilter) && (
+            <TouchableOpacity 
+              style={styles.clearFiltersBtn}
+              onPress={() => {
+                setTypeFilter('');
+                setLocationFilter('');
+              }}
+            >
+              <Text style={styles.clearFiltersBtnText}>Clear All Filters</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
-      {/* Map */}
-      <View style={styles.mapContainer}>
+      {/* Properties List */}
+      <View style={styles.listContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#3B82F6" />
@@ -345,100 +301,29 @@ export default function MapViewScreen() {
               <Text style={styles.retryBtnText}>Retry</Text>
             </TouchableOpacity>
           </View>
-        ) : mappableLeads.length === 0 ? (
+        ) : filteredLeads.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="map-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No properties with location data</Text>
+            <Text style={styles.emptyText}>No properties with map location</Text>
             <Text style={styles.emptySubtext}>
-              {filteredLeads.length > 0 
-                ? `${filteredLeads.length} properties found but missing coordinates`
+              {leads.length > 0 
+                ? `${leads.length} properties found but missing Google Maps URL`
                 : 'Try adjusting your filters'}
             </Text>
           </View>
         ) : (
-          <WebView
-            source={{ html: generateMapHtml() }}
-            style={styles.webview}
-            onMessage={handleWebViewMessage}
-            javaScriptEnabled
-            domStorageEnabled
-            startInLoadingState
-            renderLoading={() => (
-              <View style={styles.webviewLoading}>
-                <ActivityIndicator size="large" color="#3B82F6" />
-              </View>
-            )}
+          <FlatList
+            data={filteredLeads}
+            renderItem={renderPropertyCard}
+            keyExtractor={(item) => item.id.toString()}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
+            }
+            showsVerticalScrollIndicator={false}
           />
         )}
       </View>
-
-      {/* Selected Lead Card */}
-      {selectedLead && (
-        <View style={styles.selectedCard}>
-          <TouchableOpacity 
-            style={styles.closeCardBtn}
-            onPress={() => setSelectedLead(null)}
-          >
-            <Ionicons name="close" size={20} color="#6B7280" />
-          </TouchableOpacity>
-          
-          <Text style={styles.selectedName}>{selectedLead.name}</Text>
-          <View style={styles.selectedInfo}>
-            <View style={[styles.typeBadge, { 
-              backgroundColor: selectedLead.lead_type === 'seller' ? '#DCFCE7' 
-                            : selectedLead.lead_type === 'landlord' ? '#FEF3C7' 
-                            : '#F3E8FF' 
-            }]}>
-              <Text style={[styles.typeBadgeText, {
-                color: selectedLead.lead_type === 'seller' ? '#16A34A' 
-                     : selectedLead.lead_type === 'landlord' ? '#D97706' 
-                     : '#7C3AED'
-              }]}>
-                {selectedLead.lead_type === 'seller' ? 'For Sale' 
-                 : selectedLead.lead_type === 'landlord' ? 'For Rent' 
-                 : 'Builder'}
-              </Text>
-            </View>
-            {selectedLead.area_size && (
-              <Text style={styles.selectedDetail}>{selectedLead.area_size} sq.yds</Text>
-            )}
-            {(selectedLead.budget_max || selectedLead.budget_min) && (
-              <Text style={styles.selectedBudget}>
-                ₹{selectedLead.budget_max || selectedLead.budget_min} Cr
-              </Text>
-            )}
-          </View>
-          
-          {selectedLead.location && (
-            <View style={styles.locationRow}>
-              <Ionicons name="location" size={16} color="#6B7280" />
-              <Text style={styles.selectedLocation}>{selectedLead.location}</Text>
-            </View>
-          )}
-          
-          <View style={styles.cardActions}>
-            <TouchableOpacity 
-              style={styles.viewBtn}
-              onPress={() => {
-                setSelectedLead(null);
-                router.push(`/leads/${selectedLead.id}` as any);
-              }}
-            >
-              <Ionicons name="eye" size={18} color="#FFFFFF" />
-              <Text style={styles.viewBtnText}>View Details</Text>
-            </TouchableOpacity>
-            
-            {(selectedLead.Property_locationUrl || (selectedLead.latitude && selectedLead.longitude)) && (
-              <TouchableOpacity 
-                style={styles.directionsBtn}
-                onPress={() => openInMaps(selectedLead)}
-              >
-                <Ionicons name="navigate" size={18} color="#3B82F6" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
     </View>
   );
 }
@@ -487,24 +372,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   statsText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#374151',
+    fontWeight: '500',
   },
-  clearBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: '#EF4444',
-    borderRadius: 4,
-  },
-  clearBtnText: {
+  statsSubtext: {
     fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: '#9CA3AF',
   },
   filtersPanel: {
     backgroundColor: '#FFFFFF',
@@ -600,21 +484,106 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
     fontWeight: '500',
   },
-  mapContainer: {
-    flex: 1,
-  },
-  webview: {
-    flex: 1,
-  },
-  webviewLoading: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
+  clearFiltersBtn: {
+    marginTop: 12,
+    paddingVertical: 8,
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+  },
+  clearFiltersBtnText: {
+    color: '#EF4444',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  listContainer: {
+    flex: 1,
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  propertyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  cardContent: {
+    padding: 16,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  nameSection: {
+    flex: 1,
+    marginRight: 12,
+  },
+  propertyName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  locationText: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  typeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  typeBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  detailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  detailChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  detailText: {
+    fontSize: 13,
+    color: '#374151',
+  },
+  budgetText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  mapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B82F6',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  mapButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -667,94 +636,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
     textAlign: 'center',
-  },
-  selectedCard: {
-    position: 'absolute',
-    bottom: 20,
-    left: 16,
-    right: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  closeCardBtn: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    zIndex: 1,
-  },
-  selectedName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 8,
-    paddingRight: 30,
-  },
-  selectedInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
-  },
-  typeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  typeBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  selectedDetail: {
-    fontSize: 14,
-    color: '#374151',
-  },
-  selectedBudget: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
-  },
-  selectedLocation: {
-    fontSize: 14,
-    color: '#6B7280',
-    flex: 1,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  viewBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3B82F6',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  viewBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  directionsBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

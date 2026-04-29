@@ -648,7 +648,10 @@ export default function LeadDetailScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.commandAction}
-            onPress={() => router.push(`/more?tab=visits&lead_id=${id}` as any)}
+            onPress={() => router.push({
+              pathname: '/site-visit/add',
+              params: { lead_id: id, lead_name: lead?.name }
+            } as any)}
           >
             <Ionicons name="location-outline" size={18} color="#10B981" />
             <Text style={styles.commandActionText}>Visit</Text>
@@ -679,8 +682,44 @@ export default function LeadDetailScreen() {
         <Text style={styles.sectionTitle}>{'Contact Information'}</Text>
         {renderDetailRow('call', 'Phone', displayPhone)}
         {renderDetailRow('mail', 'Email', lead.email)}
-        {renderDetailRow('location', 'Location', lead.location)}
-        {renderDetailRow('home', 'Address', displayAddress)}
+        
+        {/* Location - Hyperlinked if Property_locationUrl exists */}
+        {lead.location && (
+          <View style={styles.detailRow}>
+            <Ionicons name="location" size={20} color="#6B7280" />
+            <Text style={styles.detailLabel}>Location</Text>
+            {lead.Property_locationUrl ? (
+              <TouchableOpacity 
+                onPress={() => Linking.openURL(lead.Property_locationUrl)}
+                style={styles.mapLinkContainer}
+              >
+                <Text style={styles.mapLinkText}>{lead.location}</Text>
+                <Ionicons name="open-outline" size={16} color="#3B82F6" />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.detailValue}>{lead.location}</Text>
+            )}
+          </View>
+        )}
+        
+        {/* Address - Hyperlinked if Property_locationUrl exists */}
+        {displayAddress && (
+          <View style={styles.detailRow}>
+            <Ionicons name="home" size={20} color="#6B7280" />
+            <Text style={styles.detailLabel}>Address</Text>
+            {lead.Property_locationUrl ? (
+              <TouchableOpacity 
+                onPress={() => Linking.openURL(lead.Property_locationUrl)}
+                style={styles.mapLinkContainer}
+              >
+                <Text style={styles.mapLinkText}>{displayAddress}</Text>
+                <Ionicons name="open-outline" size={16} color="#3B82F6" />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.detailValue}>{displayAddress}</Text>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Property Details */}
@@ -1427,6 +1466,20 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     textAlign: 'right',
     flex: 1,
+  },
+  mapLinkContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  mapLinkText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#3B82F6',
+    textDecorationLine: 'underline',
+    textAlign: 'right',
   },
   featuresGrid: {
     flexDirection: 'row',

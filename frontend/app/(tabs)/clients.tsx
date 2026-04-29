@@ -27,7 +27,6 @@ import {
   canViewSensitiveData, 
   maskPhone, 
   maskAddress,
-  getScoreColor,
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -492,23 +491,13 @@ www.sagarhome.com`;
     // Get followup status
     const followupStatus = getFollowupStatus(item);
     
-    // Get lead score and aging info
-    const leadScore = item.lead_score ?? 0;
-    const scoreColor = getScoreColor(leadScore);
+    // Get aging info
     const agingStyles = getAgingStyles(item.aging_color);
     
     return (
       <View style={styles.leadCard}>
-        {/* Lead Score & Aging Banner */}
-        <View style={styles.scoreBanner}>
-          {/* Score Badge */}
-          <View style={styles.scoreSection}>
-            <View style={[styles.scoreBadge, { backgroundColor: scoreColor }]}>
-              <Text style={styles.scoreText}>{leadScore}</Text>
-            </View>
-            <Text style={styles.scoreLabel}>Score</Text>
-          </View>
-          
+        {/* Aging & Temperature Banner */}
+        <View style={styles.agingBanner}>
           {/* Aging Indicator */}
           <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
             <Ionicons 
@@ -1310,7 +1299,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: 'hidden',
   },
-  scoreBanner: {
+  agingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
@@ -1319,28 +1308,6 @@ const styles = StyleSheet.create({
     gap: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
-  },
-  scoreSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  scoreBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scoreText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  scoreLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '500',
   },
   agingBadge: {
     flexDirection: 'row',
