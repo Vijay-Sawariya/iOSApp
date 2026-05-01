@@ -46,9 +46,8 @@ const STATUS_OPTIONS = [...INVENTORY_STATUSES];
 const FACING_OPTIONS = [...FACINGS];
 const TYPE_OPTIONS = [
   { label: 'All', value: '' },
-  { label: 'Sell', value: 'seller' },
+  { label: 'Sell', value: 'sell' },  // 'sell' will match both seller and builder
   { label: 'Rent', value: 'landlord' },
-  { label: 'Builder', value: 'builder' },
 ];
 
 export default function InventoryLeadsScreen() {
@@ -129,12 +128,11 @@ export default function InventoryLeadsScreen() {
     ), [clients, clientSearch]
   );
 
-  // Stats calculations
+  // Stats calculations - combine seller and builder into "sell"
   const stats = useMemo(() => ({
     total: leads.length,
-    sellers: leads.filter(l => l.lead_type === 'seller').length,
+    sell: leads.filter(l => l.lead_type === 'seller' || l.lead_type === 'builder').length,
     landlords: leads.filter(l => l.lead_type === 'landlord').length,
-    builders: leads.filter(l => l.lead_type === 'builder').length,
   }), [leads]);
 
   // Load clients (buyers/tenants) for the dropdown
@@ -217,9 +215,13 @@ export default function InventoryLeadsScreen() {
       filtered = [];
     }
     
-    // Stat tile filter (from clicking the count tiles)
+    // Stat tile filter (from clicking the count tiles) - 'sell' matches both seller and builder
     if (statTile && statTile !== 'total') {
-      filtered = filtered.filter((lead) => lead.lead_type === statTile);
+      if (statTile === 'sell') {
+        filtered = filtered.filter((lead) => lead.lead_type === 'seller' || lead.lead_type === 'builder');
+      } else {
+        filtered = filtered.filter((lead) => lead.lead_type === statTile);
+      }
     }
     
     // Search filter
@@ -251,9 +253,13 @@ export default function InventoryLeadsScreen() {
       );
     }
 
-    // Type filter
+    // Type filter - 'sell' matches both 'seller' and 'builder'
     if (type) {
-      filtered = filtered.filter((lead) => lead.lead_type === type);
+      if (type === 'sell') {
+        filtered = filtered.filter((lead) => lead.lead_type === 'seller' || lead.lead_type === 'builder');
+      } else {
+        filtered = filtered.filter((lead) => lead.lead_type === type);
+      }
     }
 
     // Location filter
@@ -860,25 +866,18 @@ export default function InventoryLeadsScreen() {
                   <Text style={[styles.statLabel, selectedStatTile === 'total' && styles.statLabelActive]}>Total</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.statItem, selectedStatTile === 'seller' && styles.statItemActive]}
-                  onPress={() => handleStatTileClick('seller')}
+                  style={[styles.statItem, selectedStatTile === 'sell' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('sell')}
                 >
-                  <Text style={[styles.statNumber, selectedStatTile === 'seller' && styles.statNumberActive]}>{stats.sellers}</Text>
-                  <Text style={[styles.statLabel, selectedStatTile === 'seller' && styles.statLabelActive]}>Sellers</Text>
+                  <Text style={[styles.statNumber, selectedStatTile === 'sell' && styles.statNumberActive]}>{stats.sell}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'sell' && styles.statLabelActive]}>Sell</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.statItem, selectedStatTile === 'landlord' && styles.statItemActive]}
                   onPress={() => handleStatTileClick('landlord')}
                 >
                   <Text style={[styles.statNumber, selectedStatTile === 'landlord' && styles.statNumberActive]}>{stats.landlords}</Text>
-                  <Text style={[styles.statLabel, selectedStatTile === 'landlord' && styles.statLabelActive]}>Landlords</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.statItem, selectedStatTile === 'builder' && styles.statItemActive]}
-                  onPress={() => handleStatTileClick('builder')}
-                >
-                  <Text style={[styles.statNumber, selectedStatTile === 'builder' && styles.statNumberActive]}>{stats.builders}</Text>
-                  <Text style={[styles.statLabel, selectedStatTile === 'builder' && styles.statLabelActive]}>Builders</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'landlord' && styles.statLabelActive]}>Rent</Text>
                 </TouchableOpacity>
               </View>
 
