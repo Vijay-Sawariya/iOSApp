@@ -31,41 +31,62 @@ interface MatchingLeadsModalProps {
 const toText = (value: any) => (value === null || value === undefined ? '' : String(value));
 const splitCsv = (value: any) => toText(value).split(',').map((item) => item.trim()).filter(Boolean);
 
-// Extract block name from address (e.g., "A-12" → "A Block", "C-10/23" → "C-10 Block")
+// Extract block name from address with specific masking rules:
+// C-1 → C-Block
+// C1 → C-Block  
+// C-1/3 → C-1 Block
+// C-1A → C-Block
 const extractBlockName = (address: string): string => {
   if (!address) return '';
   const addr = address.trim();
   
-  // If address contains "/", take everything before the last "/"
-  // e.g., "C-10/23" → "C-10 Block"
+  // Rule 3: If address contains "/" (e.g., "C-1/3" → "C-1 Block")
   if (addr.includes('/')) {
     const parts = addr.split('/');
     const blockPart = parts[0].trim();
     return blockPart ? `${blockPart} Block` : '';
   }
   
-  // If address is like "A-12", extract the letter/alphanumeric prefix
-  // e.g., "A-12" → "A Block", "M-16" → "M Block"
-  const match = addr.match(/^([A-Za-z]+(?:-\d+)?)/);
-  if (match) {
-    // Check if it's just a letter followed by number (A-12 → A Block)
-    const simpleMatch = addr.match(/^([A-Za-z]+)-?\d+$/);
-    if (simpleMatch) {
-      return `${simpleMatch[1]} Block`;
-    }
-    return `${match[1]} Block`;
+  // Rule 4: If address ends with letter after number (e.g., "C-1A" → "C-Block")
+  const letterSuffixMatch = addr.match(/^([A-Za-z]+)-?\d+[A-Za-z]+$/);
+  if (letterSuffixMatch) {
+    return `${letterSuffixMatch[1]}-Block`;
+  }
+  
+  // Rule 1 & 2: C-1 or C1 → C-Block (letter followed by optional dash and number)
+  const simpleMatch = addr.match(/^([A-Za-z]+)-?\d+$/);
+  if (simpleMatch) {
+    return `${simpleMatch[1]}-Block`;
+  }
+  
+  // Fallback: just return first letter part if exists
+  const letterMatch = addr.match(/^([A-Za-z]+)/);
+  if (letterMatch) {
+    return `${letterMatch[1]}-Block`;
   }
   
   return '';
 };
 
-// Format location with block name for WhatsApp message
+// Format location with block name for WhatsApp message (masked for external sharing)
 const formatLocationWithBlock = (address: string, location: string): string => {
   const blockName = extractBlockName(address);
   if (blockName && location) {
     return `${blockName}, ${location}`;
   } else if (blockName) {
     return blockName;
+  } else if (location) {
+    return location;
+  }
+  return '';
+};
+
+// Format location with full address for internal sharing (no masking)
+const formatLocationFull = (address: string, location: string): string => {
+  if (address && location) {
+    return `${address}, ${location}`;
+  } else if (address) {
+    return address;
   } else if (location) {
     return location;
   }
@@ -232,6 +253,48 @@ const composeMultipleInventoriesMessage = (inventories: any[]) => {
   return msg;
 };
 
+// Compose INTERNAL message for multiple inventories (full address, no masking, no greeting)
+const composeInternalInventoriesMessage = (inventories: any[]) => {
+  let msg = `*Internal Sharing - ${inventories.length} Properties*\n\n`;
+  
+  inventories.forEach((data, index) => {
+    msg += `*Property ${index + 1} - (${data.id}):*\n`;
+    
+    // Full address with location (no masking)
+    const fullLocation = formatLocationFull(data.address, data.location);
+    msg += `📍 Address: ${fullLocation || data.location || ''}\n`;
+    
+    msg += `📞 Phone: ${data.phone || 'N/A'}\n`;
+    msg += `📐 Plot Area: ${data.area_size || ''} sq. yds\n`;
+    
+    if (data.building_facing) {
+      msg += `🧭 Facing: ${data.building_facing}\n`;
+    }
+    
+    msg += `🏠 Floor: ${data.floor || ''} | BHK: ${data.bhk || ''} | Parking: ${data.car_parking_number || '0'}\n`;
+    msg += `📋 Status: ${data.lead_status || ''}\n`;
+    
+    if (data.floor_pricing && data.floor_pricing.length > 0) {
+      msg += `💰 Pricing:\n`;
+      data.floor_pricing.forEach((fp: any) => {
+        const floorLabel = fp.floor_label || fp.floor || '';
+        const floorAmount = fp.floor_amount || fp.price || '';
+        msg += `   • ${floorLabel}: ₹${floorAmount} ${data.unit || 'CR'}\n`;
+      });
+    } else if (data.budget_max) {
+      msg += `💰 Price: ${data.budget_max} ${formatUnit(data.unit)}\n`;
+    }
+    
+    if (data.notes) {
+      msg += `📝 Notes: ${data.notes}\n`;
+    }
+    
+    msg += `\n`;
+  });
+  
+  return msg;
+};
+
 const defaultFiltersFromLead = (lead: any) => {
   const area = Number.parseFloat(toText(lead?.area_size));
   const budgetMin = Number.parseFloat(toText(lead?.budget_min));
@@ -253,6 +316,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [internalSharing, setInternalSharing] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -406,6 +470,46 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
       Alert.alert('Share Failed', error?.message || 'Could not share via WhatsApp.');
     } finally {
       setSharing(false);
+    }
+  };
+
+  // Internal sharing - full address, no masking, no recipient
+  const shareInternal = async () => {
+    if (selectedIds.length === 0) {
+      Alert.alert('Select Properties', 'Please select at least one property to share.');
+      return;
+    }
+
+    setInternalSharing(true);
+    try {
+      const selectedInventories = matches.filter((m) => selectedIds.includes(m.id));
+      const message = composeInternalInventoriesMessage(selectedInventories);
+
+      // Open WhatsApp without recipient number - user can forward to anyone
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+      
+      const canOpen = await Linking.canOpenURL(whatsappUrl);
+      if (canOpen) {
+        await Linking.openURL(whatsappUrl);
+      } else {
+        // Fallback to store
+        const storeUrl = Platform.OS === 'ios' 
+          ? 'https://apps.apple.com/app/whatsapp-messenger/id310633997'
+          : 'https://play.google.com/store/apps/details?id=com.whatsapp';
+        
+        Alert.alert(
+          'WhatsApp Not Installed',
+          'WhatsApp is not installed on your device. Would you like to install it?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Install WhatsApp', onPress: () => Linking.openURL(storeUrl) }
+          ]
+        );
+      }
+    } catch (error: any) {
+      Alert.alert('Share Failed', error?.message || 'Could not share via WhatsApp.');
+    } finally {
+      setInternalSharing(false);
     }
   };
 
@@ -763,6 +867,21 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
             <Text style={styles.closeBtnText}>Close</Text>
           </TouchableOpacity>
           
+          {/* Internal Sharing - Full address, no recipient */}
+          <TouchableOpacity 
+            style={[styles.internalShareBtn, (internalSharing || selectedIds.length === 0) && styles.btnDisabled]} 
+            onPress={shareInternal} 
+            disabled={internalSharing || selectedIds.length === 0}
+          >
+            {internalSharing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="share-outline" size={18} color="#FFFFFF" />
+            )}
+            <Text style={styles.internalShareBtnText}>Internal</Text>
+          </TouchableOpacity>
+          
+          {/* External Share to Lead */}
           <TouchableOpacity 
             style={[styles.shareBtn, (sharing || selectedIds.length === 0) && styles.btnDisabled]} 
             onPress={shareViaWhatsApp} 
@@ -1215,6 +1334,21 @@ const styles = StyleSheet.create({
   closeBtnText: {
     color: '#334155',
     fontSize: 15,
+    fontWeight: '700',
+  },
+  internalShareBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: '#6366F1',
+  },
+  internalShareBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '700',
   },
   shareBtn: {
