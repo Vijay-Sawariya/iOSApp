@@ -31,6 +31,47 @@ interface MatchingLeadsModalProps {
 const toText = (value: any) => (value === null || value === undefined ? '' : String(value));
 const splitCsv = (value: any) => toText(value).split(',').map((item) => item.trim()).filter(Boolean);
 
+// Extract block name from address (e.g., "A-12" → "A Block", "C-10/23" → "C-10 Block")
+const extractBlockName = (address: string): string => {
+  if (!address) return '';
+  const addr = address.trim();
+  
+  // If address contains "/", take everything before the last "/"
+  // e.g., "C-10/23" → "C-10 Block"
+  if (addr.includes('/')) {
+    const parts = addr.split('/');
+    const blockPart = parts[0].trim();
+    return blockPart ? `${blockPart} Block` : '';
+  }
+  
+  // If address is like "A-12", extract the letter/alphanumeric prefix
+  // e.g., "A-12" → "A Block", "M-16" → "M Block"
+  const match = addr.match(/^([A-Za-z]+(?:-\d+)?)/);
+  if (match) {
+    // Check if it's just a letter followed by number (A-12 → A Block)
+    const simpleMatch = addr.match(/^([A-Za-z]+)-?\d+$/);
+    if (simpleMatch) {
+      return `${simpleMatch[1]} Block`;
+    }
+    return `${match[1]} Block`;
+  }
+  
+  return '';
+};
+
+// Format location with block name for WhatsApp message
+const formatLocationWithBlock = (address: string, location: string): string => {
+  const blockName = extractBlockName(address);
+  if (blockName && location) {
+    return `${blockName}, ${location}`;
+  } else if (blockName) {
+    return blockName;
+  } else if (location) {
+    return location;
+  }
+  return '';
+};
+
 // Format date as dd/mm/yy
 const formatDate = (dateString: string) => {
   if (!dateString) return '';
@@ -112,7 +153,11 @@ const composeInventoryWhatsappMessage = (data: any) => {
   msg += 'I\'m sharing a premium residence with you that might be of interest. This home offers good privacy, elegant design, and is in a prime neighbourhood.\n\n';
   
   msg += `*Property 1 - (${data.id}):*\n`;
-  msg += `📍 Location: ${data.location || ''}\n`;
+  
+  // Location with block name (e.g., "A Block, Saket")
+  const locationWithBlock = formatLocationWithBlock(data.address, data.location);
+  msg += `📍 Location: ${locationWithBlock || data.location || ''}\n`;
+  
   msg += `📐 Plot Area: ${data.area_size || ''} sq. yds\n`;
   
   if (data.building_facing) { 
@@ -160,7 +205,11 @@ const composeMultipleInventoriesMessage = (inventories: any[]) => {
   
   inventories.forEach((data, index) => {
     msg += `*Property ${index + 1} - (${data.id}):*\n`;
-    msg += `📍 Location: ${data.location || ''}\n`;
+    
+    // Location with block name (e.g., "A Block, Saket")
+    const locationWithBlock = formatLocationWithBlock(data.address, data.location);
+    msg += `📍 Location: ${locationWithBlock || data.location || ''}\n`;
+    
     msg += `📐 Plot Area: ${data.area_size || ''} sq. yds\n`;
     msg += `🏠 Floor: ${data.floor || ''} | BHK: ${data.bhk || ''}\n`;
     msg += `📋 Status: ${data.lead_status || ''}\n`;
@@ -746,7 +795,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 }
 
 // Export helper functions for use in other components
-export { openWhatsApp, makeCall, composeInventoryWhatsappMessage, composeMultipleInventoriesMessage };
+export { openWhatsApp, makeCall, composeInventoryWhatsappMessage, composeMultipleInventoriesMessage, formatLocationWithBlock };
 
 const styles = StyleSheet.create({
   container: {
