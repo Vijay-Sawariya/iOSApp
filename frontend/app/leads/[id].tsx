@@ -24,7 +24,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
-import MatchingLeadsModal from '../../components/MatchingLeadsModal';
+import MatchingLeadsModal, { openWhatsApp, makeCall, composeMultipleInventoriesMessage } from '../../components/MatchingLeadsModal';
 
 // Import shared components and helpers
 import {
@@ -70,6 +70,10 @@ export default function LeadDetailScreen() {
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [showMatchingModal, setShowMatchingModal] = useState(false);
+  
+  // Selected matched properties state (for sharing)
+  const [selectedMatchedIds, setSelectedMatchedIds] = useState<number[]>([]);
+  const [sharingMatched, setSharingMatched] = useState(false);
 
   // Refresh data when screen comes into focus (e.g., returning from edit)
   useFocusEffect(
@@ -539,6 +543,53 @@ export default function LeadDetailScreen() {
     { label: isClientLead() ? 'Matches' : 'Files', value: isClientLead() ? String(matchedPropertyCount) : String(images.length + floorplans.length), color: '#059669' },
   ];
 
+  // Toggle selection of matched property
+  const toggleMatchedSelection = (propId: number) => {
+    setSelectedMatchedIds((current) =>
+      current.includes(propId) ? current.filter((id) => id !== propId) : [...current, propId]
+    );
+  };
+
+  // Share selected matched properties via WhatsApp
+  const shareSelectedMatched = async () => {
+    if (selectedMatchedIds.length === 0) {
+      Alert.alert('Select Properties', 'Please select at least one property to share.');
+      return;
+    }
+
+    if (!lead?.phone) {
+      Alert.alert('No Phone Number', 'Lead does not have a phone number to send WhatsApp message.');
+      return;
+    }
+
+    setSharingMatched(true);
+    try {
+      // Convert matched properties to the format expected by composeMultipleInventoriesMessage
+      const selectedProps = (lead.matched_properties || []).filter((p: any) => 
+        selectedMatchedIds.includes(p.property_id || p.id)
+      ).map((p: any) => ({
+        id: p.property_id || p.id,
+        name: p.property_name,
+        location: p.property_location,
+        address: p.property_address,
+        area_size: p.property_size,
+        floor: p.property_floor,
+        bhk: p.property_bhk,
+        lead_status: p.property_status,
+        floor_pricing: p.floor_pricing,
+        unit: p.property_unit,
+        notes: p.property_notes,
+      }));
+
+      const message = composeMultipleInventoriesMessage(selectedProps);
+      await openWhatsApp(lead.phone, message);
+    } catch (error: any) {
+      Alert.alert('Share Failed', error?.message || 'Could not share via WhatsApp.');
+    } finally {
+      setSharingMatched(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header with Back Button */}
@@ -798,17 +849,45 @@ export default function LeadDetailScreen() {
       {/* Matched Property List - For Client Leads */}
       {isClientLead() && lead.matched_properties && lead.matched_properties.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
+          <View style={styles.matchedHeaderRow}>
+            <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
+            {selectedMatchedIds.length > 0 && (
+              <TouchableOpacity 
+                style={styles.shareMatchedBtn}
+                onPress={shareSelectedMatched}
+                disabled={sharingMatched}
+              >
+                {sharingMatched ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="logo-whatsapp" size={16} color="#FFFFFF" />
+                    <Text style={styles.shareMatchedBtnText}>Share ({selectedMatchedIds.length})</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
           {lead.matched_properties.map((prop: any, index: number) => {
             // Check if user can view sensitive data for this matched property
             const canViewPropertyData = canViewSensitiveData(user?.role, user?.id, prop.property_created_by || prop.created_by);
             const displayPropertyPhone = canViewPropertyData ? prop.property_phone : (prop.property_phone ? '**********' : null);
             const displayPropertyAddress = canViewPropertyData ? prop.property_address : (prop.property_address ? '**********' : null);
+            const propId = prop.property_id || prop.id || index;
+            const isSelected = selectedMatchedIds.includes(propId);
             
             return (
-            <View key={index} style={styles.matchedPropertyCard}>
-              {/* Property Header with Action Icons */}
+            <TouchableOpacity 
+              key={index} 
+              style={[styles.matchedPropertyCard, isSelected && styles.matchedPropertyCardSelected]}
+              onPress={() => toggleMatchedSelection(propId)}
+              activeOpacity={0.7}
+            >
+              {/* Checkbox and Property Header with Action Icons */}
               <View style={styles.matchedPropertyHeader}>
+                <View style={[styles.matchedCheckbox, isSelected && styles.matchedCheckboxChecked]}>
+                  {isSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                </View>
                 <View style={styles.matchedPropertyNameContainer}>
                   <Text style={styles.matchedPropertyName}>{safeStr(prop.property_name)}</Text>
                   <Text style={styles.matchedPropertyType}>{` (${getTypeLabel(prop.property_type)})`}</Text>
@@ -818,7 +897,10 @@ export default function LeadDetailScreen() {
                   {prop.property_phone && canViewPropertyData ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
-                      onPress={() => Linking.openURL(`tel:${prop.property_phone}`)}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        makeCall(prop.property_phone);
+                      }}
                     >
                       <Ionicons name="call" size={18} color="#22C55E" />
                     </TouchableOpacity>
@@ -826,9 +908,9 @@ export default function LeadDetailScreen() {
                   {prop.property_phone && canViewPropertyData ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
-                      onPress={() => {
-                        const cleanPhone = (prop.property_phone || '').replace(/[^0-9]/g, '');
-                        Linking.openURL(`https://wa.me/91${cleanPhone}`);
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        openWhatsApp(prop.property_phone);
                       }}
                     >
                       <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
@@ -837,7 +919,10 @@ export default function LeadDetailScreen() {
                   {prop.property_map_url ? (
                     <TouchableOpacity 
                       style={styles.actionIcon}
-                      onPress={() => Linking.openURL(prop.property_map_url)}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        Linking.openURL(prop.property_map_url);
+                      }}
                     >
                       <Ionicons name="location" size={18} color="#3B82F6" />
                     </TouchableOpacity>
@@ -899,7 +984,7 @@ export default function LeadDetailScreen() {
                   <Text style={styles.negotiableText}>{'(All prices are negotiable)'}</Text>
                 </View>
               ) : null}
-            </View>
+            </TouchableOpacity>
             );
           })}
         </View>
@@ -1555,13 +1640,51 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 20,
   },
+  matchedHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  shareMatchedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#22C55E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  shareMatchedBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   matchedPropertyCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#E2E8F0',
+  },
+  matchedPropertyCardSelected: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  matchedCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  matchedCheckboxChecked: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
   },
   matchedPropertyHeader: {
     flexDirection: 'row',

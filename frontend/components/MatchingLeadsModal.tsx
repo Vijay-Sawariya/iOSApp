@@ -45,60 +45,112 @@ const formatDate = (dateString: string) => {
 const formatFloorPricingInline = (floorPricing: any[], unit: string) => {
   if (!floorPricing || floorPricing.length === 0) return '';
   return floorPricing.map((fp: any) => {
-    // Handle both possible data structures
     const floorLabel = fp.floor_label || fp.floor || '';
     const floorAmount = fp.floor_amount || fp.price || fp.amount || '';
     return `${floorLabel}: ₹${floorAmount} ${unit || 'Cr'}`;
   }).join(' | ');
 };
 
-// Compose WhatsApp message for inventory details
+// Open WhatsApp - handles case when WhatsApp is not installed
+const openWhatsApp = async (phone: string, message?: string) => {
+  const cleanPhone = toText(phone).replace(/[^0-9]/g, '');
+  const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+  
+  // Try WhatsApp deep link first
+  const whatsappUrl = message 
+    ? `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/${phoneWithCountry}`;
+  
+  try {
+    const canOpen = await Linking.canOpenURL(whatsappUrl);
+    if (canOpen) {
+      await Linking.openURL(whatsappUrl);
+    } else {
+      // Redirect to WhatsApp install page
+      const storeUrl = Platform.OS === 'ios' 
+        ? 'https://apps.apple.com/app/whatsapp-messenger/id310633997'
+        : 'https://play.google.com/store/apps/details?id=com.whatsapp';
+      
+      Alert.alert(
+        'WhatsApp Not Installed',
+        'WhatsApp is not installed on your device. Would you like to install it?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Install WhatsApp', onPress: () => Linking.openURL(storeUrl) }
+        ]
+      );
+    }
+  } catch (error) {
+    // Fallback to store
+    const storeUrl = Platform.OS === 'ios' 
+      ? 'https://apps.apple.com/app/whatsapp-messenger/id310633997'
+      : 'https://play.google.com/store/apps/details?id=com.whatsapp';
+    
+    Alert.alert(
+      'WhatsApp Not Available',
+      'Unable to open WhatsApp. Would you like to install it?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Install WhatsApp', onPress: () => Linking.openURL(storeUrl) }
+      ]
+    );
+  }
+};
+
+// Make a phone call
+const makeCall = (phone: string) => {
+  const cleanPhone = toText(phone).replace(/[^0-9]/g, '');
+  Linking.openURL(`tel:${cleanPhone}`);
+};
+
+// Compose WhatsApp message for single inventory with leadId
 const composeInventoryWhatsappMessage = (data: any) => {
   const currentHour = new Date().getHours();
   const greeting = currentHour >= 17 ? 'Good Evening' : (currentHour >= 12 ? 'Good Afternoon' : 'Good Morning');
   
   let msg = `*Hi Sir, ${greeting}*\n\n`;
-  msg += 'I\'m sharing a few premium residences with you that might be of interest. These homes offer good privacy, elegant design, and are in a prime neighbourhood.\n\n';
-
-  msg += `Location: ${data.location || ''}\n`;
-  msg += `Plot Area: ${data.area_size || ''} sq. yds\n`;
+  msg += 'I\'m sharing a premium residence with you that might be of interest. This home offers good privacy, elegant design, and is in a prime neighbourhood.\n\n';
+  
+  msg += `*Property 1 - (${data.id}):*\n`;
+  msg += `📍 Location: ${data.location || ''}\n`;
+  msg += `📐 Plot Area: ${data.area_size || ''} sq. yds\n`;
   
   if (data.building_facing) { 
-    msg += `Plot Facing: ${data.building_facing}\n`; 
+    msg += `🧭 Plot Facing: ${data.building_facing}\n`; 
   }
   
-  msg += `Floor: ${data.floor || ''} | Total BHKs: It has ${data.bhk || ''} | Parking: ${data.car_parking_number || '0'} cars parking available\n`;
-  msg += `Development Status: It is ${data.lead_status || ''} property\n`;
+  msg += `🏠 Floor: ${data.floor || ''} | BHK: ${data.bhk || ''} | Parking: ${data.car_parking_number || '0'}\n`;
+  msg += `📋 Status: ${data.lead_status || ''}\n`;
   
   if (data.possession_on && data.possession_on !== '0000-00-00') { 
-    msg += `Possession On: ${formatDate(data.possession_on)}\n`; 
+    msg += `📅 Possession On: ${formatDate(data.possession_on)}\n`; 
   }
   
   if (data.property_age) { 
-    msg += `Property Age: ${data.property_age} years\n`; 
+    msg += `🏗️ Property Age: ${data.property_age} years\n`; 
   }
   
   if (data.notes) { 
-    msg += `Special Features: ${data.notes}\n`; 
+    msg += `✨ Special Features: ${data.notes}\n`; 
   }
 
   if (data.floor_pricing && data.floor_pricing.length > 0) {
-    msg += `Floor-wise Pricing:\n`;
+    msg += `💰 Floor-wise Pricing:\n`;
     data.floor_pricing.forEach((fp: any) => {
       const floorLabel = fp.floor_label || fp.floor || '';
       const floorAmount = fp.floor_amount || fp.price || '';
-      msg += `• ${floorLabel}: ₹${floorAmount} ${data.unit || 'CR'}\n`;
+      msg += `   • ${floorLabel}: ₹${floorAmount} ${data.unit || 'CR'}\n`;
     });
     msg += `(All prices are negotiable)\n\n`;
   } else if (data.budget_max) {
-    msg += `Asking Price: ${data.budget_max} ${formatUnit(data.unit)} (Negotiable)\n\n`;
+    msg += `💰 Asking Price: ${data.budget_max} ${formatUnit(data.unit)} (Negotiable)\n\n`;
   }
   
   msg += '*Would be happy to arrange a site visit at your convenience. Please let me know a suitable day and time.*';
   return msg;
 };
 
-// Compose message for multiple inventories
+// Compose message for multiple inventories with leadId
 const composeMultipleInventoriesMessage = (inventories: any[]) => {
   const currentHour = new Date().getHours();
   const greeting = currentHour >= 17 ? 'Good Evening' : (currentHour >= 12 ? 'Good Afternoon' : 'Good Morning');
@@ -107,7 +159,7 @@ const composeMultipleInventoriesMessage = (inventories: any[]) => {
   msg += `I'm sharing ${inventories.length} premium residences with you that might be of interest.\n\n`;
   
   inventories.forEach((data, index) => {
-    msg += `*Property ${index + 1}:*\n`;
+    msg += `*Property ${index + 1} - (${data.id}):*\n`;
     msg += `📍 Location: ${data.location || ''}\n`;
     msg += `📐 Plot Area: ${data.area_size || ''} sq. yds\n`;
     msg += `🏠 Floor: ${data.floor || ''} | BHK: ${data.bhk || ''}\n`;
@@ -300,16 +352,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
         message = composeMultipleInventoriesMessage(selectedInventories);
       }
 
-      const cleanPhone = toText(lead.phone).replace(/[^0-9]/g, '');
-      const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-      const whatsappUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`;
-      
-      const canOpen = await Linking.canOpenURL(whatsappUrl);
-      if (canOpen) {
-        await Linking.openURL(whatsappUrl);
-      } else {
-        Alert.alert('WhatsApp Error', 'Could not open WhatsApp.');
-      }
+      await openWhatsApp(lead.phone, message);
     } catch (error: any) {
       Alert.alert('Share Failed', error?.message || 'Could not share via WhatsApp.');
     } finally {
@@ -356,6 +399,32 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
             <Ionicons name="open-outline" size={18} color="#2563EB" />
           </TouchableOpacity>
         </View>
+
+        {/* Phone with Call and WhatsApp icons */}
+        {item.phone && (
+          <View style={styles.phoneRow}>
+            <Ionicons name="call-outline" size={14} color="#64748B" />
+            <Text style={styles.phoneText}>{item.phone}</Text>
+            <TouchableOpacity 
+              style={styles.phoneAction}
+              onPress={(e) => {
+                e.stopPropagation();
+                makeCall(item.phone);
+              }}
+            >
+              <Ionicons name="call" size={18} color="#2563EB" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.phoneAction}
+              onPress={(e) => {
+                e.stopPropagation();
+                openWhatsApp(item.phone);
+              }}
+            >
+              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.locationRow}>
           <Ionicons name="location-outline" size={16} color="#64748B" />
@@ -675,6 +744,9 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
     </Modal>
   );
 }
+
+// Export helper functions for use in other components
+export { openWhatsApp, makeCall, composeInventoryWhatsappMessage, composeMultipleInventoriesMessage };
 
 const styles = StyleSheet.create({
   container: {
@@ -1007,8 +1079,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DBEAFE',
   },
+  // Phone Row with Call and WhatsApp
+  phoneRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  phoneText: {
+    flex: 1,
+    color: '#2563EB',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  phoneAction: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
   locationRow: {
-    marginTop: 12,
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
   },
