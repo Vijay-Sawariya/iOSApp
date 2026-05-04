@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -322,6 +323,11 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showFloorDropdown, setShowFloorDropdown] = useState(false);
 
+  // Responsive layout for tablets
+  const { width: screenWidth } = useWindowDimensions();
+  const isTablet = screenWidth >= 768;
+  const numColumns = isTablet ? 2 : 1;
+
   const title = mode === 'inventory' ? 'Matching Inventory' : 'Matching Clients';
   const targetLabel = mode === 'inventory' ? 'inventory' : 'clients';
 
@@ -513,7 +519,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
     }
   };
 
-  const renderMatch = ({ item }: { item: any }) => {
+  const renderMatch = ({ item, index, isTablet }: { item: any; index?: number; isTablet?: boolean }) => {
     const checked = selectedIds.includes(item.id);
     
     // Format floor pricing inline - handle the correct data structure
@@ -526,9 +532,15 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
       floorPricingText = 'Price on request';
     }
 
+    const cardStyle = [
+      styles.matchCard, 
+      checked && styles.matchCardSelected,
+      isTablet && styles.matchCardTablet
+    ];
+
     return (
       <TouchableOpacity 
-        style={[styles.matchCard, checked && styles.matchCardSelected]} 
+        style={cardStyle} 
         onPress={() => toggleSelected(item.id)}
         activeOpacity={0.7}
       >
@@ -851,8 +863,11 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
           <FlatList
             data={matches}
             keyExtractor={(item) => String(item.id)}
-            renderItem={renderMatch}
+            renderItem={({ item, index }) => renderMatch({ item, index, isTablet })}
+            numColumns={numColumns}
+            key={numColumns}
             contentContainerStyle={styles.listContent}
+            columnWrapperStyle={isTablet ? styles.columnWrapper : undefined}
             ListEmptyComponent={<Text style={styles.emptyText}>No matching records found.</Text>}
             removeClippedSubviews={Platform.OS === 'ios'}
             initialNumToRender={10}
@@ -1187,6 +1202,10 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   emptyText: {
     paddingVertical: 40,
     textAlign: 'center',
@@ -1201,6 +1220,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 2,
     borderColor: '#E2E8F0',
+    flex: 1,
+  },
+  matchCardTablet: {
+    flex: 0.48,
+    maxWidth: '49%',
   },
   matchCardSelected: {
     borderColor: '#2563EB',
