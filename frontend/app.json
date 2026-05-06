@@ -3,15 +3,14 @@
     "name": "Sagar Home",
     "slug": "sagar-home",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "sagarhome",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sagarhome.lms",
-      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Take photos of properties",
         "NSPhotoLibraryUsageDescription": "Upload property images",
@@ -45,7 +44,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000"
