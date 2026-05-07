@@ -18,10 +18,7 @@ import { router } from 'expo-router';
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const { login, register, loading } = useAuth();
+  const { login, loading } = useAuth();
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -30,18 +27,6 @@ export default function LoginScreen() {
     }
 
     const success = await login(username, password);
-    if (success) {
-      router.replace('/(tabs)/dashboard');
-    }
-  };
-
-  const handleRegister = async () => {
-    if (!username || !password || !fullName || !email) {
-      Alert.alert('Error', 'Please fill all fields');
-      return;
-    }
-
-    const success = await register(username, password, fullName, email);
     if (success) {
       router.replace('/(tabs)/dashboard');
     }
@@ -60,39 +45,10 @@ export default function LoginScreen() {
             resizeMode="contain"
           />
           <Text style={styles.title}>Sagar Home</Text>
-          <Text style={styles.subtitle}>
-            {isRegistering ? 'Create Account' : 'Sign in to continue'}
-          </Text>
+          <Text style={styles.subtitle}>Sign in to continue</Text>
         </View>
 
         <View style={styles.form}>
-          {isRegistering && (
-            <>
-              <View style={styles.inputContainer}>
-                <Ionicons name="person-outline" size={20} color="#6B7280" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Full Name"
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color="#6B7280" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-            </>
-          )}
-
           <View style={styles.inputContainer}>
             <Ionicons name="person-circle-outline" size={20} color="#6B7280" />
             <TextInput
@@ -117,22 +73,11 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={isRegistering ? handleRegister : handleLogin}
+            onPress={handleLogin}
             disabled={loading}
           >
             <Text style={styles.buttonText}>
-              {loading ? 'Please wait...' : isRegistering ? 'Register' : 'Login'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => setIsRegistering(!isRegistering)}
-          >
-            <Text style={styles.switchText}>
-              {isRegistering
-                ? 'Already have an account? Login'
-                : "Don't have an account? Register"}
+              {loading ? 'Please wait...' : 'Login'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -213,13 +158,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  switchButton: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  switchText: {
-    color: '#3B82F6',
-    fontSize: 14,
   },
 });
