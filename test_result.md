@@ -219,6 +219,18 @@ backend:
           agent: "testing"
           comment: "Security working correctly. All protected endpoints require authentication (401/403 for unauthorized access). Input validation working (422 for invalid data). Error handling for non-existent resources returns proper 404 status codes."
 
+  - task: "Phone/Address Masking Security Feature"
+    implemented: false
+    working: false
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "CRITICAL SECURITY ISSUE: Phone masking is NOT implemented. Non-admin users can see full phone numbers for ALL leads, including those created by other users. Testing revealed: 1) /api/leads/clients - created_by field present but NO masking logic applied. Non-admin user 'shweta' (ID=2, role=caller) can see full phone numbers for leads created by other users (vsawariya ID=1, kaushal ID=6). 2) /api/ai/urgent-followups - created_by field is MISSING from response (returns None), cannot implement masking without this field. 3) /api/reminders - lead_created_by field present for admin but no masking applied. Expected behavior: Non-admin users should only see full phone for their own leads, masked phone (e.g., 98XXXXXX20) for others. Admin should see all phones unmasked. Current behavior: All users see all phones unmasked. Requires implementation of: a) Masking helper function, b) Role-based masking logic in all three endpoints, c) Fix created_by field in urgent-followups endpoint."
+
 frontend:
   # No frontend testing performed as per instructions
 
@@ -229,9 +241,10 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Phone/Address Masking Security Feature"
   stuck_tasks: []
-  test_all: true
+  test_all: false
   test_priority: "high_first"
 
 agent_communication:
@@ -241,3 +254,5 @@ agent_communication:
       message: "Implemented Lead Scoring + Aging Indicators feature. Added score calculation (0-100) based on temperature, recency, budget, status, and completeness. Added aging labels with color-coded indicators. Updated GET /api/leads/clients and GET /api/leads/inventory to return scoring data. Also created Map View screen (/app/frontend/app/map.tsx) with Leaflet/OSM maps. Please test: 1) GET /api/leads/clients - verify lead_score, days_since_contact, aging_label, aging_color fields 2) GET /api/leads/inventory - same scoring fields 3) GET /api/leads/map-data - verify map data endpoint"
     - agent: "testing"
       message: "Lead Scoring and Map Data API testing completed successfully. All requested features are working correctly: 1) GET /api/leads/clients returns all required scoring fields (lead_score 0-100, days_since_contact, aging_label, aging_color, aging_urgency, score_breakdown) 2) GET /api/leads/inventory returns same scoring fields plus floor_pricing 3) GET /api/leads/map-data returns all required map fields (id, name, lead_type, location, address, Property_locationUrl, budget_min, budget_max) with optional lead_type filter. Fixed routing conflict and SQL formatting issues. Score calculation logic working with Temperature, Recency, Budget, Status, and Completeness factors."
+    - agent: "testing"
+      message: "CRITICAL: Phone/Address Masking Security Feature testing completed. SECURITY VULNERABILITY FOUND - Phone masking is NOT implemented. Non-admin users can see full phone numbers for ALL leads, including those created by other users. Detailed findings: 1) GET /api/leads/clients - created_by field is present but NO masking logic applied. Non-admin user 'shweta' (ID=2, role=caller) can see full unmasked phone numbers for leads created by vsawariya (ID=1) and kaushal (ID=6). 2) GET /api/ai/urgent-followups - created_by field is MISSING from API response (returns None), making it impossible to implement masking logic. 3) GET /api/reminders - lead_created_by field present but no masking applied. REQUIRED IMPLEMENTATION: a) Create masking helper function to mask phone numbers (format: 98XXXXXX20), b) Implement role-based masking logic in all three endpoints (admin sees all phones, non-admin sees only their own leads' phones unmasked), c) Fix created_by field in urgent-followups endpoint to return actual lead creator ID. Test file created: /app/masking_test.py for verification after implementation."
