@@ -23,10 +23,7 @@
 // ===========================================
 $API_KEY = 'SagarHome_Upload_2024_Secret'; // Change this to a secure key
 $ALLOWED_ORIGINS = [
-    'https://property-audit-suite.preview.emergentagent.com',
-    'http://localhost:3000',
-    'http://localhost:8081',
-    '*' // Allow all for development - remove in production
+
 ];
 
 // ===========================================
