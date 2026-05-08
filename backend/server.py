@@ -1724,7 +1724,7 @@ def get_reminders(
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT a.*, l.name as lead_name, l.phone as lead_phone
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
                FROM actions a
                LEFT JOIN leads l ON a.lead_id = l.id
                WHERE a.user_id = %s
@@ -2128,7 +2128,7 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
         # Get missed and today's follow-ups
         cursor.execute("""
             SELECT a.id, a.lead_id, a.title, a.due_date, a.due_time, a.status,
-                   l.name as lead_name, l.phone as lead_phone, l.lead_type
+                   l.name as lead_name, l.phone as lead_phone, l.lead_type, l.created_by
             FROM actions a
             JOIN leads l ON a.lead_id = l.id
             WHERE a.status IN ('Pending', 'Up Coming')
@@ -2157,7 +2157,8 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
                 'due_date': str(due_date) if due_date else None,
                 'due_time': str(f['due_time']) if f['due_time'] else None,
                 'status': 'Missed' if is_missed else 'Due Today',
-                'is_missed': is_missed
+                'is_missed': is_missed,
+                'created_by': f['created_by']
             })
         
         return result
@@ -2692,7 +2693,7 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
             
             query = """
                 SELECT sv.*, 
-                       l.name as lead_name, l.phone as lead_phone,
+                       l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
                        p.name as property_name, p.location as property_location
                 FROM site_visits sv
                 LEFT JOIN leads l ON sv.lead_id = l.id

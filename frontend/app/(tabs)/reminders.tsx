@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../services/api';
 import { notificationService } from '../../services/notificationService';
 import { router, useFocusEffect } from 'expo-router';
+import { useAuth } from '../../contexts/AuthContext';
+import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
 interface Reminder {
   id: number;
@@ -24,6 +26,7 @@ interface Reminder {
   lead_id: number | null;
   lead_name?: string;
   lead_phone?: string;
+  lead_created_by?: number | null;
 }
 
 // India timezone offset (UTC+5:30)
@@ -127,6 +130,7 @@ const getDateInfo = (dateString: string) => {
 };
 
 export default function RemindersScreen() {
+  const { user } = useAuth();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
@@ -250,7 +254,12 @@ export default function RemindersScreen() {
                 <Ionicons name="person" size={12} color="#6B7280" />
                 <Text style={styles.clientText}>{item.lead_name}</Text>
                 {item.lead_phone && (
-                  <Text style={styles.clientPhone}> • {item.lead_phone}</Text>
+                  <Text style={styles.clientPhone}>
+                    {' • '}
+                    {canViewSensitiveData(user?.role, user?.id, item.lead_created_by)
+                      ? item.lead_phone
+                      : maskPhone(item.lead_phone)}
+                  </Text>
                 )}
               </View>
             )}
