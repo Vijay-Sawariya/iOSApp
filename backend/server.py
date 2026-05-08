@@ -962,6 +962,10 @@ def get_matching_inventory(
                 ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
             ] if ok
         ]
+        # Apply masking based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        item = apply_lead_masking(item, user_role, user_id)
         matches.append(item)
 
     return {"lead_id": lead_id, "defaults": defaults, "filters": {
@@ -1060,6 +1064,10 @@ def get_matching_clients(
                 ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
             ] if ok
         ]
+        # Apply masking based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        item = apply_lead_masking(item, user_role, user_id)
         matches.append(item)
 
     return {"lead_id": lead_id, "defaults": defaults, "filters": {
