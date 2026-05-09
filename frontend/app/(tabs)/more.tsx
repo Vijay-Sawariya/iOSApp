@@ -35,6 +35,16 @@ interface SiteVisit {
   visit_date: string;
   visit_time: string;
   location: string;
+  visit_type?: string;
+  meeting_point?: string;
+  location_url?: string;
+  client_feedback?: string;
+  outcome?: string;
+  interest_level?: string;
+  objections?: string;
+  quoted_price?: number;
+  next_followup_date?: string;
+  next_followup_time?: string;
   notes: string;
   status: string;
 }
@@ -83,6 +93,10 @@ const TIME_OPTIONS = [
   '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
   '18:00', '18:30', '19:00', '19:30', '20:00'
 ];
+
+const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
+const VISIT_OUTCOMES = ['Interested', 'Needs Follow-up', 'Negotiation', 'Not Interested', 'Deal Likely'];
+const INTEREST_LEVELS = ['Hot', 'Warm', 'Cold'];
 
 export default function MoreScreen() {
   const { user, token } = useAuth();
@@ -133,7 +147,7 @@ export default function MoreScreen() {
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [filteredLocations, setFilteredLocations] = useState<string[]>(LOCATIONS);
+  const [filteredLocations, setFilteredLocations] = useState<string[]>([...LOCATIONS]);
   
   // Form states
   const [visitForm, setVisitForm] = useState({
@@ -142,6 +156,17 @@ export default function MoreScreen() {
     visit_date: '',
     visit_time: '',
     location: '',
+    visit_type: 'Property Visit',
+    meeting_point: '',
+    location_url: '',
+    client_feedback: '',
+    outcome: '',
+    interest_level: '',
+    objections: '',
+    quoted_price: '',
+    next_followup_date: '',
+    next_followup_time: '',
+    status: 'Scheduled',
     notes: '',
   });
   
@@ -253,7 +278,7 @@ export default function MoreScreen() {
   const filterLocations = (query: string) => {
     setVisitForm({ ...visitForm, location: query });
     if (query.length === 0) {
-      setFilteredLocations(LOCATIONS);
+      setFilteredLocations([...LOCATIONS]);
     } else {
       const filtered = LOCATIONS.filter(loc => 
         loc.toLowerCase().includes(query.toLowerCase())
@@ -333,6 +358,17 @@ export default function MoreScreen() {
           visit_date: visitForm.visit_date,
           visit_time: visitForm.visit_time || null,
           location: visitForm.location,
+          visit_type: visitForm.visit_type,
+          meeting_point: visitForm.meeting_point,
+          location_url: visitForm.location_url,
+          client_feedback: visitForm.client_feedback,
+          outcome: visitForm.outcome,
+          interest_level: visitForm.interest_level,
+          objections: visitForm.objections,
+          quoted_price: visitForm.quoted_price ? parseFloat(visitForm.quoted_price) : null,
+          next_followup_date: visitForm.next_followup_date || null,
+          next_followup_time: visitForm.next_followup_time || null,
+          status: visitForm.status,
           notes: visitForm.notes,
         }),
       });
@@ -340,7 +376,25 @@ export default function MoreScreen() {
       if (response.ok) {
         Alert.alert('Success', 'Site visit scheduled');
         setShowAddVisitModal(false);
-        setVisitForm({ lead_id: '', visit_date: '', visit_time: '', location: '', notes: '' });
+        setVisitForm({
+          lead_id: '',
+          lead_name: '',
+          visit_date: '',
+          visit_time: '',
+          location: '',
+          visit_type: 'Property Visit',
+          meeting_point: '',
+          location_url: '',
+          client_feedback: '',
+          outcome: '',
+          interest_level: '',
+          objections: '',
+          quoted_price: '',
+          next_followup_date: '',
+          next_followup_time: '',
+          status: 'Scheduled',
+          notes: '',
+        });
         fetchData();
       } else {
         Alert.alert('Error', 'Failed to schedule visit');
@@ -375,7 +429,7 @@ export default function MoreScreen() {
       if (response.ok) {
         Alert.alert('Success', 'Deal created');
         setShowAddDealModal(false);
-        setDealForm({ lead_id: '', deal_amount: '', commission_percent: '', expected_closing_date: '', notes: '' });
+        setDealForm({ lead_id: '', lead_name: '', deal_amount: '', commission_percent: '', expected_closing_date: '', notes: '' });
         fetchData();
       } else {
         Alert.alert('Error', 'Failed to create deal');
@@ -468,8 +522,9 @@ export default function MoreScreen() {
         Alert.alert('Success', `Exported ${leads.length} leads`);
       } else {
         // Mobile - save and share
-        const fileUri = FileSystem.documentDirectory + fileName;
-        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        const legacyFileSystem = FileSystem as any;
+        const fileUri = legacyFileSystem.documentDirectory + fileName;
+        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
         
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Leads' });
@@ -525,8 +580,9 @@ export default function MoreScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', `Exported ${deals_data.length} deals`);
       } else {
-        const fileUri = FileSystem.documentDirectory + fileName;
-        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        const legacyFileSystem = FileSystem as any;
+        const fileUri = legacyFileSystem.documentDirectory + fileName;
+        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
         
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Deals' });
@@ -561,6 +617,46 @@ export default function MoreScreen() {
             <Ionicons name="calendar" size={16} color="#6B7280" />
             <Text style={styles.infoText}>{item.visit_date} {item.visit_time ? `at ${item.visit_time}` : ''}</Text>
           </View>
+          {item.visit_type && (
+            <View style={styles.infoRow}>
+              <Ionicons name="flag" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>{item.visit_type}</Text>
+            </View>
+          )}
+          {item.meeting_point && (
+            <View style={styles.infoRow}>
+              <Ionicons name="navigate" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>Meet at: {item.meeting_point}</Text>
+            </View>
+          )}
+          {(item.outcome || item.interest_level) && (
+            <View style={styles.infoRow}>
+              <Ionicons name="trending-up" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>
+                {[item.outcome, item.interest_level].filter(Boolean).join(' • ')}
+              </Text>
+            </View>
+          )}
+          {item.quoted_price != null && (
+            <View style={styles.infoRow}>
+              <Ionicons name="cash" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>Quoted: ₹{item.quoted_price} Cr</Text>
+            </View>
+          )}
+          {item.next_followup_date && (
+            <View style={styles.infoRow}>
+              <Ionicons name="alarm" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>
+                Next follow-up: {item.next_followup_date} {item.next_followup_time || ''}
+              </Text>
+            </View>
+          )}
+          {item.client_feedback && (
+            <Text style={styles.notesText}>Feedback: {item.client_feedback}</Text>
+          )}
+          {item.objections && (
+            <Text style={styles.notesText}>Objections: {item.objections}</Text>
+          )}
           {item.notes && (
             <Text style={styles.notesText}>{item.notes}</Text>
           )}
@@ -578,6 +674,11 @@ export default function MoreScreen() {
                 <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
               </TouchableOpacity>
             </>
+          )}
+          {item.location_url && (
+            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(item.location_url as string)}>
+              <Ionicons name="map" size={18} color="#3B82F6" />
+            </TouchableOpacity>
           )}
           {item.status === 'Scheduled' && (
             <TouchableOpacity 
@@ -898,6 +999,21 @@ export default function MoreScreen() {
                   </ScrollView>
                 </View>
               )}
+
+              <Text style={styles.inputLabel}>Visit Purpose</Text>
+              <View style={styles.optionRow}>
+                {VISIT_TYPES.map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.optionChip, visitForm.visit_type === type && styles.optionChipActive]}
+                    onPress={() => setVisitForm({ ...visitForm, visit_type: type })}
+                  >
+                    <Text style={[styles.optionChipText, visitForm.visit_type === type && styles.optionChipTextActive]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               
               <Text style={styles.inputLabel}>Location</Text>
               <View style={styles.searchContainer}>
@@ -913,7 +1029,7 @@ export default function MoreScreen() {
                     style={styles.clearButton}
                     onPress={() => {
                       setVisitForm({ ...visitForm, location: '' });
-                      setFilteredLocations(LOCATIONS);
+                      setFilteredLocations([...LOCATIONS]);
                     }}
                   >
                     <Ionicons name="close-circle" size={20} color="#9CA3AF" />
@@ -935,6 +1051,99 @@ export default function MoreScreen() {
                   </ScrollView>
                 </View>
               )}
+
+              <Text style={styles.inputLabel}>Meeting Point</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.meeting_point}
+                onChangeText={(text) => setVisitForm({ ...visitForm, meeting_point: text })}
+                placeholder="Example: property gate, site office, broker office"
+              />
+
+              <Text style={styles.inputLabel}>Map / Location URL</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.location_url}
+                onChangeText={(text) => setVisitForm({ ...visitForm, location_url: text })}
+                placeholder="Paste Google Maps link"
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+
+              <Text style={styles.inputLabel}>Expected / Quoted Price (Cr)</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.quoted_price}
+                onChangeText={(text) => setVisitForm({ ...visitForm, quoted_price: text })}
+                placeholder="Example: 4.25"
+                keyboardType="decimal-pad"
+              />
+
+              <Text style={styles.inputLabel}>Interest Level</Text>
+              <View style={styles.optionRow}>
+                {INTEREST_LEVELS.map((level) => (
+                  <TouchableOpacity
+                    key={level}
+                    style={[styles.optionChip, visitForm.interest_level === level && styles.optionChipActive]}
+                    onPress={() => setVisitForm({ ...visitForm, interest_level: level })}
+                  >
+                    <Text style={[styles.optionChipText, visitForm.interest_level === level && styles.optionChipTextActive]}>
+                      {level}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Outcome</Text>
+              <View style={styles.optionRow}>
+                {VISIT_OUTCOMES.map((outcome) => (
+                  <TouchableOpacity
+                    key={outcome}
+                    style={[styles.optionChip, visitForm.outcome === outcome && styles.optionChipActive]}
+                    onPress={() => setVisitForm({ ...visitForm, outcome })}
+                  >
+                    <Text style={[styles.optionChipText, visitForm.outcome === outcome && styles.optionChipTextActive]}>
+                      {outcome}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Client Feedback</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={visitForm.client_feedback}
+                onChangeText={(text) => setVisitForm({ ...visitForm, client_feedback: text })}
+                placeholder="What did the client like/dislike?"
+                multiline
+                numberOfLines={3}
+              />
+
+              <Text style={styles.inputLabel}>Objections / Concerns</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={visitForm.objections}
+                onChangeText={(text) => setVisitForm({ ...visitForm, objections: text })}
+                placeholder="Budget gap, location concern, possession, floor, parking..."
+                multiline
+                numberOfLines={3}
+              />
+
+              <Text style={styles.inputLabel}>Next Follow-up Date</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.next_followup_date}
+                onChangeText={(text) => setVisitForm({ ...visitForm, next_followup_date: text })}
+                placeholder="YYYY-MM-DD"
+              />
+
+              <Text style={styles.inputLabel}>Next Follow-up Time</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.next_followup_time}
+                onChangeText={(text) => setVisitForm({ ...visitForm, next_followup_time: text })}
+                placeholder="HH:MM"
+              />
               
               <Text style={styles.inputLabel}>Notes</Text>
               <TextInput
@@ -1865,6 +2074,32 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  optionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  optionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  optionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  optionChipTextActive: {
+    color: '#2563EB',
   },
   // Tabs container for horizontal scroll
   tabsContainer: {

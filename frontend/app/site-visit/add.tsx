@@ -26,6 +26,10 @@ const TIME_OPTIONS = [
   '18:00', '18:30', '19:00', '19:30', '20:00'
 ];
 
+const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
+const VISIT_OUTCOMES = ['Interested', 'Needs Follow-up', 'Negotiation', 'Not Interested', 'Deal Likely'];
+const INTEREST_LEVELS = ['Hot', 'Warm', 'Cold'];
+
 export default function AddSiteVisitScreen() {
   const { token } = useAuth();
   const params = useLocalSearchParams();
@@ -43,7 +47,7 @@ export default function AddSiteVisitScreen() {
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [filteredLocations, setFilteredLocations] = useState<string[]>(LOCATIONS);
+  const [filteredLocations, setFilteredLocations] = useState<string[]>([...LOCATIONS]);
   
   // Form state
   const [visitForm, setVisitForm] = useState({
@@ -55,6 +59,17 @@ export default function AddSiteVisitScreen() {
     visit_date: new Date().toISOString().split('T')[0],
     visit_time: '10:00',
     location: '',
+    visit_type: 'Property Visit',
+    meeting_point: '',
+    location_url: '',
+    client_feedback: '',
+    outcome: '',
+    interest_level: '',
+    objections: '',
+    quoted_price: '',
+    next_followup_date: '',
+    next_followup_time: '',
+    status: 'Scheduled',
     notes: '',
   });
 
@@ -79,6 +94,7 @@ export default function AddSiteVisitScreen() {
           property_name: data.name || '',
           property_location: data.location || '',
           location: data.location || '',
+          location_url: data.Property_locationUrl || '',
         }));
       }
     } catch (error) {
@@ -120,7 +136,7 @@ export default function AddSiteVisitScreen() {
       setFilteredLocations(filtered);
       setShowLocationDropdown(true);
     } else {
-      setFilteredLocations(LOCATIONS);
+      setFilteredLocations([...LOCATIONS]);
       setShowLocationDropdown(false);
     }
   };
@@ -151,6 +167,9 @@ export default function AddSiteVisitScreen() {
         body: JSON.stringify({
           ...visitForm,
           lead_id: parseInt(visitForm.lead_id) || null,
+          quoted_price: visitForm.quoted_price ? parseFloat(visitForm.quoted_price) : null,
+          next_followup_date: visitForm.next_followup_date || null,
+          next_followup_time: visitForm.next_followup_time || null,
         }),
       });
 
@@ -300,6 +319,143 @@ export default function AddSiteVisitScreen() {
                 onChange={handleTimeChange}
               />
             )}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Visit Purpose</Text>
+            <View style={styles.optionRow}>
+              {VISIT_TYPES.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.optionChip, visitForm.visit_type === type && styles.optionChipActive]}
+                  onPress={() => setVisitForm(prev => ({ ...prev, visit_type: type }))}
+                >
+                  <Text style={[styles.optionChipText, visitForm.visit_type === type && styles.optionChipTextActive]}>
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Meeting Point</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.meeting_point}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, meeting_point: text }))}
+              placeholder="Example: property gate, site office, broker office"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Map / Location URL</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.location_url}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, location_url: text }))}
+              placeholder="Paste Google Maps link"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Expected / Quoted Price (Cr)</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.quoted_price}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, quoted_price: text }))}
+              placeholder="Example: 4.25"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="decimal-pad"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Interest Level</Text>
+            <View style={styles.optionRow}>
+              {INTEREST_LEVELS.map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[styles.optionChip, visitForm.interest_level === level && styles.optionChipActive]}
+                  onPress={() => setVisitForm(prev => ({ ...prev, interest_level: level }))}
+                >
+                  <Text style={[styles.optionChipText, visitForm.interest_level === level && styles.optionChipTextActive]}>
+                    {level}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Outcome</Text>
+            <View style={styles.optionRow}>
+              {VISIT_OUTCOMES.map((outcome) => (
+                <TouchableOpacity
+                  key={outcome}
+                  style={[styles.optionChip, visitForm.outcome === outcome && styles.optionChipActive]}
+                  onPress={() => setVisitForm(prev => ({ ...prev, outcome }))}
+                >
+                  <Text style={[styles.optionChipText, visitForm.outcome === outcome && styles.optionChipTextActive]}>
+                    {outcome}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Client Feedback</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={visitForm.client_feedback}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, client_feedback: text }))}
+              placeholder="What did the client like/dislike?"
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Objections / Concerns</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={visitForm.objections}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, objections: text }))}
+              placeholder="Budget gap, location concern, possession, floor, parking..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Next Follow-up Date</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.next_followup_date}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, next_followup_date: text }))}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Next Follow-up Time</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.next_followup_time}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, next_followup_time: text }))}
+              placeholder="HH:MM"
+              placeholderTextColor="#9CA3AF"
+            />
           </View>
 
           {/* Notes */}
@@ -487,6 +643,31 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 15,
     color: '#1F2937',
+  },
+  optionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  optionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  optionChipTextActive: {
+    color: '#2563EB',
   },
   saveButton: {
     flexDirection: 'row',

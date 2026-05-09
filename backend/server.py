@@ -2845,11 +2845,21 @@ def get_all_locations(current_user: dict = Depends(get_current_user)):
 # ============= Site Visit Scheduler =============
 
 class SiteVisitCreate(BaseModel):
-    lead_id: int
+    lead_id: Optional[int] = None
     property_lead_id: Optional[int] = None  # The inventory/property to visit
-    visit_date: str
+    visit_date: Optional[str] = None
     visit_time: Optional[str] = None
     location: Optional[str] = None
+    visit_type: Optional[str] = "Property Visit"
+    meeting_point: Optional[str] = None
+    location_url: Optional[str] = None
+    client_feedback: Optional[str] = None
+    outcome: Optional[str] = None
+    interest_level: Optional[str] = None
+    objections: Optional[str] = None
+    quoted_price: Optional[float] = None
+    next_followup_date: Optional[str] = None
+    next_followup_time: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = "Scheduled"  # Scheduled, Completed, Cancelled, Rescheduled
 
@@ -2862,10 +2872,54 @@ class SiteVisitResponse(BaseModel):
     location: Optional[str]
     notes: Optional[str]
     status: str
+    visit_type: Optional[str]
+    meeting_point: Optional[str]
+    location_url: Optional[str]
+    client_feedback: Optional[str]
+    outcome: Optional[str]
+    interest_level: Optional[str]
+    objections: Optional[str]
+    quoted_price: Optional[float]
+    next_followup_date: Optional[str]
+    next_followup_time: Optional[str]
     lead_name: Optional[str]
     property_name: Optional[str]
     created_by: Optional[int]
     created_at: Optional[str]
+
+def ensure_site_visits_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS site_visits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT,
+            property_lead_id INT,
+            visit_date DATE,
+            visit_time TIME,
+            location VARCHAR(255),
+            notes TEXT,
+            status VARCHAR(50) DEFAULT 'Scheduled',
+            created_by INT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    optional_columns = [
+        ("visit_type", "VARCHAR(100) DEFAULT 'Property Visit'"),
+        ("meeting_point", "VARCHAR(255) NULL"),
+        ("location_url", "TEXT NULL"),
+        ("client_feedback", "TEXT NULL"),
+        ("outcome", "VARCHAR(100) NULL"),
+        ("interest_level", "VARCHAR(50) NULL"),
+        ("objections", "TEXT NULL"),
+        ("quoted_price", "DECIMAL(15,2) NULL"),
+        ("next_followup_date", "DATE NULL"),
+        ("next_followup_time", "TIME NULL"),
+        ("updated_at", "DATETIME NULL"),
+    ]
+    for column, definition in optional_columns:
+        try:
+            cursor.execute(f"ALTER TABLE site_visits ADD COLUMN {column} {definition}")
+        except Exception:
+            pass
 
 @api_router.get("/site-visits")
 def get_site_visits(current_user: dict = Depends(get_current_user), status: Optional[str] = None):
@@ -2873,21 +2927,7 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            # First check if table exists, create if not
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS site_visits (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    lead_id INT,
-                    property_lead_id INT,
-                    visit_date DATE,
-                    visit_time TIME,
-                    location VARCHAR(255),
-                    notes TEXT,
-                    status VARCHAR(50) DEFAULT 'Scheduled',
-                    created_by INT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            ensure_site_visits_table(cursor)
             conn.commit()
             
             query = """
@@ -2916,13 +2956,27 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
 @api_router.post("/site-visits")
 def create_site_visit(visit: SiteVisitCreate, current_user: dict = Depends(get_current_user)):
     """Create a new site visit"""
+    if not visit.lead_id or not visit.visit_date:
+        raise HTTPException(status_code=400, detail="Lead and visit date are required")
+
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_site_visits_table(cursor)
         cursor.execute("""
-            INSERT INTO site_visits (lead_id, property_lead_id, visit_date, visit_time, location, notes, status, created_by, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        """, (visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time, 
-              visit.location, visit.notes, visit.status or 'Scheduled', current_user['id']))
+            INSERT INTO site_visits (
+                lead_id, property_lead_id, visit_date, visit_time, location, visit_type,
+                meeting_point, location_url, client_feedback, outcome, interest_level,
+                objections, quoted_price, next_followup_date, next_followup_time,
+                notes, status, created_by, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """, (
+            visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time,
+            visit.location, visit.visit_type or 'Property Visit', visit.meeting_point,
+            visit.location_url, visit.client_feedback, visit.outcome, visit.interest_level,
+            visit.objections, visit.quoted_price, visit.next_followup_date, visit.next_followup_time,
+            visit.notes, visit.status or 'Scheduled', current_user['id']
+        ))
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Site visit scheduled successfully"}
 
@@ -2931,12 +2985,33 @@ def update_site_visit(visit_id: int, visit: SiteVisitCreate, current_user: dict 
     """Update a site visit"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE site_visits SET lead_id=%s, property_lead_id=%s, visit_date=%s, visit_time=%s, 
-            location=%s, notes=%s, status=%s WHERE id=%s AND created_by=%s
-        """, (visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time,
-              visit.location, visit.notes, visit.status, visit_id, current_user['id']))
+        ensure_site_visits_table(cursor)
+        update_data = visit.dict(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        allowed_fields = [
+            'lead_id', 'property_lead_id', 'visit_date', 'visit_time', 'location',
+            'visit_type', 'meeting_point', 'location_url', 'client_feedback',
+            'outcome', 'interest_level', 'objections', 'quoted_price',
+            'next_followup_date', 'next_followup_time', 'notes', 'status'
+        ]
+        set_parts = []
+        values = []
+        for field in allowed_fields:
+            if field in update_data:
+                set_parts.append(f"{field}=%s")
+                values.append(update_data[field])
+
+        set_parts.append("updated_at=NOW()")
+        values.extend([visit_id, current_user['id']])
+        cursor.execute(
+            f"UPDATE site_visits SET {', '.join(set_parts)} WHERE id=%s AND created_by=%s",
+            values
+        )
         conn.commit()
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Site visit not found")
         return {"message": "Site visit updated successfully"}
 
 @api_router.delete("/site-visits/{visit_id}")
