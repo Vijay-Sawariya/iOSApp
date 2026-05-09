@@ -193,7 +193,12 @@ const TIME_OPTIONS = [
 
 const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
 
-const formatDateValue = (date: Date) => date.toISOString().split('T')[0];
+const formatDateValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const getVisitDateOptions = () => {
   const labels = ['Today', 'Tomorrow'];
@@ -449,6 +454,10 @@ export default function MoreScreen() {
       Alert.alert('Select lead', 'Please select a buyer/tenant before adding matched inventory.');
       return;
     }
+    setShowDatePicker(false);
+    setShowTimePicker(false);
+    setShowLeadDropdown(false);
+    setShowLocationDropdown(false);
     setLoadingMatches(true);
     setShowMatchingModal(true);
     try {
@@ -589,10 +598,10 @@ export default function MoreScreen() {
 
   // Handle date picker change
   const handleDateChange = (event: any, date?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
+    setShowDatePicker(false);
     if (date) {
       setSelectedDate(date);
-      const formattedDate = date.toISOString().split('T')[0];
+      const formattedDate = formatDateValue(date);
       setVisitForm({ ...visitForm, visit_date: formattedDate });
     }
   };
@@ -1103,7 +1112,7 @@ export default function MoreScreen() {
   const renderModals = () => (
     <>
       {/* Add Site Visit Modal */}
-      <Modal visible={showAddVisitModal} animationType="slide" transparent>
+      <Modal visible={showAddVisitModal} animationType="slide" transparent presentationStyle="overFullScreen">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -1180,7 +1189,7 @@ export default function MoreScreen() {
                 <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
               </TouchableOpacity>
               {showDatePicker && (
-                Platform.OS === 'web' ? (
+                Platform.OS === 'web' || Platform.OS === 'ios' ? (
                   <View style={[styles.dropdownContainer, { maxHeight: 230 }]}>
                     <ScrollView nestedScrollEnabled>
                       {visitDateOptions.map((dateOption) => (
@@ -1201,20 +1210,27 @@ export default function MoreScreen() {
                     </ScrollView>
                   </View>
                 ) : (
+                  <View style={styles.nativeDatePickerBox}>
                     <DateTimePicker
                       value={selectedDate}
                       mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      display="default"
                       onChange={handleDateChange}
                       minimumDate={new Date()}
                     />
+                  </View>
                 )
               )}
 
               <View style={styles.routeActionRow}>
-                <TouchableOpacity style={styles.secondaryRouteButton} onPress={openMatchingInventory}>
+                <TouchableOpacity
+                  style={[styles.secondaryRouteButton, !visitForm.lead_id && styles.secondaryRouteButtonDisabled]}
+                  onPress={openMatchingInventory}
+                >
                   <Ionicons name="git-compare" size={18} color="#2563EB" />
-                  <Text style={styles.secondaryRouteButtonText}>Add Matched Inventory</Text>
+                  <Text style={styles.secondaryRouteButtonText}>
+                    {visitForm.lead_id ? 'Add Matched Inventory' : 'Select Lead to Add Inventory'}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -1371,7 +1387,7 @@ export default function MoreScreen() {
         </View>
       </Modal>
 
-      <Modal visible={showMatchingModal} animationType="slide" transparent>
+      <Modal visible={showMatchingModal} animationType="slide" transparent presentationStyle="overFullScreen">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -2379,6 +2395,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 12,
   },
+  secondaryRouteButtonDisabled: {
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F8FAFC',
+  },
   secondaryRouteButtonText: {
     color: '#2563EB',
     fontSize: 13,
@@ -2766,6 +2786,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1F2937',
     flex: 1,
+  },
+  nativeDatePickerBox: {
+    marginBottom: 16,
   },
   placeholderText: {
     color: '#9CA3AF',
