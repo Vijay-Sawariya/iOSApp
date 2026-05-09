@@ -14,6 +14,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
+import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
 interface DashboardStats {
   total_leads: number;
@@ -48,6 +49,7 @@ interface UrgentFollowup {
   due_time: string;
   status: string;
   is_missed: boolean;
+  created_by?: number | null;
 }
 
 interface SmartMatch {
@@ -215,12 +217,16 @@ export default function DashboardScreen() {
                 <Text style={styles.nextActionTitle} numberOfLines={1}>{urgentFollowups[0].title}</Text>
               </View>
               <View style={styles.nextActionButtons}>
-                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
-                  <Ionicons name="call" size={18} color="#10B981" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
-                  <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                </TouchableOpacity>
+                {canViewSensitiveData(user?.role, user?.id, urgentFollowups[0].created_by) && urgentFollowups[0].lead_phone && (
+                  <>
+                    <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
+                      <Ionicons name="call" size={18} color="#10B981" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
+                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                    </TouchableOpacity>
+                  </>
+                )}
                 <TouchableOpacity style={styles.nextActionButton} onPress={() => router.push(`/leads/${urgentFollowups[0].lead_id}` as any)}>
                   <Ionicons name="open-outline" size={18} color="#3B82F6" />
                 </TouchableOpacity>
@@ -252,25 +258,32 @@ export default function DashboardScreen() {
                 <Text style={styles.urgentBadgeText}>{stats?.missed_followups || 0} missed</Text>
               </View>
             </View>
-            {urgentFollowups.slice(0, 3).map((followup) => (
-              <View key={followup.id} style={[styles.urgentItem, followup.is_missed && styles.missedItem]}>
-                <View style={styles.urgentItemContent}>
-                  <Text style={styles.urgentItemName}>{followup.lead_name}</Text>
-                  <Text style={styles.urgentItemTitle}>{followup.title}</Text>
-                  <Text style={[styles.urgentItemStatus, followup.is_missed ? styles.missedText : styles.todayText]}>
-                    {followup.status} • {followup.due_date} {followup.due_time ? `at ${followup.due_time.slice(0, 5)}` : ''}
-                  </Text>
+            {urgentFollowups.slice(0, 3).map((followup) => {
+              const canView = canViewSensitiveData(user?.role, user?.id, followup.created_by);
+              return (
+                <View key={followup.id} style={[styles.urgentItem, followup.is_missed && styles.missedItem]}>
+                  <View style={styles.urgentItemContent}>
+                    <Text style={styles.urgentItemName}>{followup.lead_name}</Text>
+                    <Text style={styles.urgentItemTitle}>{followup.title}</Text>
+                    <Text style={[styles.urgentItemStatus, followup.is_missed ? styles.missedText : styles.todayText]}>
+                      {followup.status} • {followup.due_date} {followup.due_time ? `at ${followup.due_time.slice(0, 5)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.urgentActions}>
+                    {canView && followup.lead_phone && (
+                      <>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleCall(followup.lead_phone)}>
+                          <Ionicons name="call" size={18} color="#10B981" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name)}>
+                          <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.urgentActions}>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleCall(followup.lead_phone)}>
-                    <Ionicons name="call" size={18} color="#10B981" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name)}>
-                    <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
+              );
+            })}
             <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/reminders' as any)}>
               <Text style={styles.viewAllText}>View All Follow-ups</Text>
               <Ionicons name="chevron-forward" size={16} color="#3B82F6" />

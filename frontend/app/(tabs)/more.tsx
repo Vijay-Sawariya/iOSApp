@@ -20,7 +20,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { LOCATIONS } from '../../constants/leadOptions';
+import { LOCATIONS, canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -29,6 +29,7 @@ interface SiteVisit {
   lead_id: number;
   lead_name: string;
   lead_phone: string;
+  lead_created_by?: number | null;
   property_name: string;
   property_location: string;
   visit_date: string;
@@ -541,51 +542,55 @@ export default function MoreScreen() {
     }
   };
 
-  const renderSiteVisit = ({ item }: { item: SiteVisit }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View>
-          <Text style={styles.cardTitle}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
-          <Text style={styles.cardSubtitle}>{item.location || item.property_location || 'No location'}</Text>
+  const renderSiteVisit = ({ item }: { item: SiteVisit }) => {
+    const canView = canViewSensitiveData(user?.role, user?.id, item.lead_created_by);
+    
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.cardTitle}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
+            <Text style={styles.cardSubtitle}>{item.location || item.property_location || 'No location'}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+          </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+        <View style={styles.cardBody}>
+          <View style={styles.infoRow}>
+            <Ionicons name="calendar" size={16} color="#6B7280" />
+            <Text style={styles.infoText}>{item.visit_date} {item.visit_time ? `at ${item.visit_time}` : ''}</Text>
+          </View>
+          {item.notes && (
+            <Text style={styles.notesText}>{item.notes}</Text>
+          )}
         </View>
-      </View>
-      <View style={styles.cardBody}>
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar" size={16} color="#6B7280" />
-          <Text style={styles.infoText}>{item.visit_date} {item.visit_time ? `at ${item.visit_time}` : ''}</Text>
-        </View>
-        {item.notes && (
-          <Text style={styles.notesText}>{item.notes}</Text>
-        )}
-      </View>
-      <View style={styles.cardActions}>
-        {item.lead_phone && (
-          <>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${item.lead_phone}`)}>
-              <Ionicons name="call" size={18} color="#10B981" />
+        <View style={styles.cardActions}>
+          {canView && item.lead_phone && (
+            <>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${item.lead_phone}`)}>
+                <Ionicons name="call" size={18} color="#10B981" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => {
+                const cleanPhone = (item.lead_phone || '').replace(/[^0-9]/g, '');
+                Linking.openURL(`https://wa.me/91${cleanPhone}`);
+              }}>
+                <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+              </TouchableOpacity>
+            </>
+          )}
+          {item.status === 'Scheduled' && (
+            <TouchableOpacity 
+              style={[styles.actionBtn, { backgroundColor: '#D1FAE5' }]} 
+              onPress={() => updateVisitStatus(item.id, 'Completed')}
+            >
+              <Ionicons name="checkmark" size={18} color="#059669" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => {
-              const cleanPhone = (item.lead_phone || '').replace(/[^0-9]/g, '');
-              Linking.openURL(`https://wa.me/91${cleanPhone}`);
-            }}>
-              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-            </TouchableOpacity>
-          </>
-        )}
-        {item.status === 'Scheduled' && (
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: '#D1FAE5' }]} 
-            onPress={() => updateVisitStatus(item.id, 'Completed')}
-          >
-            <Ionicons name="checkmark" size={18} color="#059669" />
-          </TouchableOpacity>
-        )}
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderDeal = ({ item }: { item: Deal }) => (
     <TouchableOpacity style={styles.card} onPress={() => router.push(`/leads/${item.lead_id}` as any)}>

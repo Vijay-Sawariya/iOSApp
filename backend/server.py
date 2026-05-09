@@ -23,6 +23,49 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Phone/Address masking helper functions
+def mask_phone(phone: str) -> str:
+    """Mask phone number showing first 2 and last 2 digits"""
+    if not phone:
+        return phone
+    # Remove all non-numeric characters for masking
+    clean_phone = re.sub(r'[^0-9]', '', phone)
+    if len(clean_phone) <= 4:
+        return phone
+    # Show first 2 and last 2 digits, mask the rest
+    masked = clean_phone[:2] + 'X' * (len(clean_phone) - 4) + clean_phone[-2:]
+    return masked
+
+def mask_address(address: str) -> str:
+    """Mask address - show only area/locality, hide specific details"""
+    if not address:
+        return address
+    # Mask specific plot/house numbers but keep general area
+    # Pattern: hide numbers like C-10, A-123, Plot-5, etc.
+    masked = re.sub(r'\b[A-Za-z]?-?\d+[A-Za-z]?\b', '***', address)
+    return masked
+
+def should_mask_data(user_role: str, user_id: int, created_by: int) -> bool:
+    """Determine if data should be masked based on user role and ownership"""
+    # Admin can see everything
+    if user_role and user_role.lower() == 'admin':
+        return False
+    # Owner can see their own data
+    if created_by is not None and user_id == created_by:
+        return False
+    # Everyone else gets masked data
+    return True
+
+def apply_lead_masking(lead: dict, user_role: str, user_id: int) -> dict:
+    """Apply masking to a lead based on user permissions"""
+    created_by = lead.get('created_by')
+    if should_mask_data(user_role, user_id, created_by):
+        if lead.get('phone'):
+            lead['phone'] = mask_phone(lead['phone'])
+        if lead.get('address'):
+            lead['address'] = mask_address(lead['address'])
+    return lead
+
 # MySQL connection config
 MYSQL_CONFIG = {
     'host': os.environ.get('MYSQL_HOST'),
@@ -701,7 +744,12 @@ def get_client_leads(
                 lead['aging_color'] = aging['color']
                 lead['aging_urgency'] = aging['urgency']
     
-    return leads
+    # Apply masking based on user permissions
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    masked_leads = [apply_lead_masking(dict(lead), user_role, user_id) for lead in leads]
+    
+    return masked_leads
 
 @api_router.get("/leads/{lead_id}/preferred-inventory")
 def get_preferred_inventory_ids(
@@ -914,6 +962,10 @@ def get_matching_inventory(
                 ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
             ] if ok
         ]
+        # Apply masking based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        item = apply_lead_masking(item, user_role, user_id)
         matches.append(item)
 
     return {"lead_id": lead_id, "defaults": defaults, "filters": {
@@ -1012,6 +1064,10 @@ def get_matching_clients(
                 ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
             ] if ok
         ]
+        # Apply masking based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        item = apply_lead_masking(item, user_role, user_id)
         matches.append(item)
 
     return {"lead_id": lead_id, "defaults": defaults, "filters": {
@@ -1140,7 +1196,12 @@ def get_inventory_leads(
                 lead['aging_color'] = aging['color']
                 lead['aging_urgency'] = aging['urgency']
     
-    return leads
+    # Apply masking based on user permissions
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    masked_leads = [apply_lead_masking(dict(lead), user_role, user_id) for lead in leads]
+    
+    return masked_leads
 
 @api_router.get("/leads/search")
 def search_leads(q: str, current_user: dict = Depends(get_current_user)):
@@ -1724,7 +1785,7 @@ def get_reminders(
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT a.*, l.name as lead_name, l.phone as lead_phone
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
                FROM actions a
                LEFT JOIN leads l ON a.lead_id = l.id
                WHERE a.user_id = %s
@@ -1751,6 +1812,15 @@ def get_reminders(
             a_dict['notes'] = a_dict.get('description')
             
             result.append(a_dict)
+    
+    # Apply masking to phone numbers based on user permissions
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    for item in result:
+        lead_created_by = item.get('lead_created_by')
+        if should_mask_data(user_role, user_id, lead_created_by):
+            if item.get('lead_phone'):
+                item['lead_phone'] = mask_phone(item['lead_phone'])
     
     return result
 
@@ -2128,7 +2198,7 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
         # Get missed and today's follow-ups
         cursor.execute("""
             SELECT a.id, a.lead_id, a.title, a.due_date, a.due_time, a.status,
-                   l.name as lead_name, l.phone as lead_phone, l.lead_type
+                   l.name as lead_name, l.phone as lead_phone, l.lead_type, l.created_by
             FROM actions a
             JOIN leads l ON a.lead_id = l.id
             WHERE a.status IN ('Pending', 'Up Coming')
@@ -2157,8 +2227,18 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
                 'due_date': str(due_date) if due_date else None,
                 'due_time': str(f['due_time']) if f['due_time'] else None,
                 'status': 'Missed' if is_missed else 'Due Today',
-                'is_missed': is_missed
+                'is_missed': is_missed,
+                'created_by': f['created_by']
             })
+        
+        # Apply masking to phone numbers based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        for item in result:
+            created_by = item.get('created_by')
+            if should_mask_data(user_role, user_id, created_by):
+                if item.get('lead_phone'):
+                    item['lead_phone'] = mask_phone(item['lead_phone'])
         
         return result
 
@@ -2692,7 +2772,7 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
             
             query = """
                 SELECT sv.*, 
-                       l.name as lead_name, l.phone as lead_phone,
+                       l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
                        p.name as property_name, p.location as property_location
                 FROM site_visits sv
                 LEFT JOIN leads l ON sv.lead_id = l.id
