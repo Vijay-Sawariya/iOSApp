@@ -27,8 +27,6 @@ const TIME_OPTIONS = [
 ];
 
 const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
-const VISIT_OUTCOMES = ['Interested', 'Needs Follow-up', 'Negotiation', 'Not Interested', 'Deal Likely'];
-const INTEREST_LEVELS = ['Hot', 'Warm', 'Cold'];
 
 const formatDateValue = (date: Date) => date.toISOString().split('T')[0];
 
@@ -77,13 +75,6 @@ export default function AddSiteVisitScreen() {
     visit_type: 'Property Visit',
     meeting_point: '',
     location_url: '',
-    client_feedback: '',
-    outcome: '',
-    interest_level: '',
-    objections: '',
-    quoted_price: '',
-    next_followup_date: '',
-    next_followup_time: '',
     status: 'Scheduled',
     notes: '',
   });
@@ -182,9 +173,6 @@ export default function AddSiteVisitScreen() {
         body: JSON.stringify({
           ...visitForm,
           lead_id: parseInt(visitForm.lead_id) || null,
-          quoted_price: visitForm.quoted_price ? parseFloat(visitForm.quoted_price) : null,
-          next_followup_date: visitForm.next_followup_date || null,
-          next_followup_time: visitForm.next_followup_time || null,
         }),
       });
 
@@ -395,102 +383,6 @@ export default function AddSiteVisitScreen() {
               placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
               keyboardType="url"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Expected / Quoted Price (Cr)</Text>
-            <TextInput
-              style={styles.input}
-              value={visitForm.quoted_price}
-              onChangeText={(text) => setVisitForm(prev => ({ ...prev, quoted_price: text }))}
-              placeholder="Example: 4.25"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Interest Level</Text>
-            <View style={styles.optionRow}>
-              {INTEREST_LEVELS.map((level) => (
-                <TouchableOpacity
-                  key={level}
-                  style={[styles.optionChip, visitForm.interest_level === level && styles.optionChipActive]}
-                  onPress={() => setVisitForm(prev => ({ ...prev, interest_level: level }))}
-                >
-                  <Text style={[styles.optionChipText, visitForm.interest_level === level && styles.optionChipTextActive]}>
-                    {level}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Outcome</Text>
-            <View style={styles.optionRow}>
-              {VISIT_OUTCOMES.map((outcome) => (
-                <TouchableOpacity
-                  key={outcome}
-                  style={[styles.optionChip, visitForm.outcome === outcome && styles.optionChipActive]}
-                  onPress={() => setVisitForm(prev => ({ ...prev, outcome }))}
-                >
-                  <Text style={[styles.optionChipText, visitForm.outcome === outcome && styles.optionChipTextActive]}>
-                    {outcome}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Client Feedback</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={visitForm.client_feedback}
-              onChangeText={(text) => setVisitForm(prev => ({ ...prev, client_feedback: text }))}
-              placeholder="What did the client like/dislike?"
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Objections / Concerns</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={visitForm.objections}
-              onChangeText={(text) => setVisitForm(prev => ({ ...prev, objections: text }))}
-              placeholder="Budget gap, location concern, possession, floor, parking..."
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Next Follow-up Date</Text>
-            <TextInput
-              style={styles.input}
-              value={visitForm.next_followup_date}
-              onChangeText={(text) => setVisitForm(prev => ({ ...prev, next_followup_date: text }))}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Next Follow-up Time</Text>
-            <TextInput
-              style={styles.input}
-              value={visitForm.next_followup_time}
-              onChangeText={(text) => setVisitForm(prev => ({ ...prev, next_followup_time: text }))}
-              placeholder="HH:MM"
-              placeholderTextColor="#9CA3AF"
             />
           </View>
 

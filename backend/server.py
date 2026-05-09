@@ -2936,7 +2936,9 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
             query = """
                 SELECT sv.*, 
                        l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
-                       p.name as property_name, p.location as property_location
+                       p.name as property_name, p.location as property_location,
+                       p.Property_locationUrl as property_map_url,
+                       COALESCE(sv.location_url, p.Property_locationUrl) as location_url
                 FROM site_visits sv
                 LEFT JOIN leads l ON sv.lead_id = l.id
                 LEFT JOIN leads p ON sv.property_lead_id = p.id

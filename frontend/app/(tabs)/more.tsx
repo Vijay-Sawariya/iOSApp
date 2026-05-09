@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   TextInput,
   FlatList,
   Linking,
+  PanResponder,
   Platform,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
@@ -36,17 +37,11 @@ interface SiteVisit {
   visit_time: string;
   location: string;
   property_lead_id?: number | null;
+  property_map_url?: string | null;
   visit_type?: string;
   meeting_point?: string;
   location_url?: string;
   visit_order?: number;
-  client_feedback?: string;
-  outcome?: string;
-  interest_level?: string;
-  objections?: string;
-  quoted_price?: number;
-  next_followup_date?: string;
-  next_followup_time?: string;
   notes: string;
   status: string;
 }
@@ -65,6 +60,90 @@ interface VisitStop {
   unit?: string;
   floor_pricing?: any[];
   lead_status?: string;
+}
+
+interface VisitStopRowProps {
+  stop: VisitStop;
+  index: number;
+  total: number;
+  onMove: (index: number, direction: -1 | 1) => void;
+  onRemove: (id: number) => void;
+  formatStopLocation: (stop: VisitStop) => string;
+  formatStopPrice: (stop: VisitStop) => string;
+}
+
+function VisitStopRow({
+  stop,
+  index,
+  total,
+  onMove,
+  onRemove,
+  formatStopLocation,
+  formatStopPrice,
+}: VisitStopRowProps) {
+  const [dragging, setDragging] = useState(false);
+  const hasMovedRef = useRef(false);
+  const indexRef = useRef(index);
+  const totalRef = useRef(total);
+  const onMoveRef = useRef(onMove);
+
+  indexRef.current = index;
+  totalRef.current = total;
+  onMoveRef.current = onMove;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 8,
+      onPanResponderGrant: () => {
+        hasMovedRef.current = false;
+        setDragging(true);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (hasMovedRef.current) return;
+        const currentIndex = indexRef.current;
+        const currentTotal = totalRef.current;
+        if (gestureState.dy < -44 && currentIndex > 0) {
+          hasMovedRef.current = true;
+          onMoveRef.current(currentIndex, -1);
+        } else if (gestureState.dy > 44 && currentIndex < currentTotal - 1) {
+          hasMovedRef.current = true;
+          onMoveRef.current(currentIndex, 1);
+        }
+      },
+      onPanResponderRelease: () => setDragging(false),
+      onPanResponderTerminate: () => setDragging(false),
+    })
+  ).current;
+
+  return (
+    <View style={[styles.visitStopCard, dragging && styles.visitStopCardDragging]}>
+      <View style={styles.visitStopDragHandle} {...panResponder.panHandlers}>
+        <Ionicons name="reorder-three" size={24} color="#64748B" />
+      </View>
+      <View style={styles.visitStopIndex}>
+        <Text style={styles.visitStopIndexText}>{index + 1}</Text>
+      </View>
+      <View style={styles.visitStopContent}>
+        <Text style={styles.visitStopTitle}>{stop.name || `Inventory #${stop.id}`}</Text>
+        <Text style={styles.visitStopMeta} numberOfLines={2}>{formatStopLocation(stop)}</Text>
+        <Text style={styles.visitStopMeta}>
+          {[stop.area_size ? `${stop.area_size} sq.yds` : '', stop.floor, formatStopPrice(stop)].filter(Boolean).join(' • ')}
+        </Text>
+      </View>
+      <View style={styles.visitStopActions}>
+        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onMove(index, -1)} disabled={index === 0}>
+          <Ionicons name="chevron-up" size={17} color={index === 0 ? '#CBD5E1' : '#4B5563'} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onMove(index, 1)} disabled={index === total - 1}>
+          <Ionicons name="chevron-down" size={17} color={index === total - 1 ? '#CBD5E1' : '#4B5563'} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onRemove(stop.id)}>
+          <Ionicons name="trash" size={16} color="#DC2626" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 }
 
 interface Deal {
@@ -113,8 +192,6 @@ const TIME_OPTIONS = [
 ];
 
 const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
-const VISIT_OUTCOMES = ['Interested', 'Needs Follow-up', 'Negotiation', 'Not Interested', 'Deal Likely'];
-const INTEREST_LEVELS = ['Hot', 'Warm', 'Cold'];
 
 const formatDateValue = (date: Date) => date.toISOString().split('T')[0];
 
@@ -197,13 +274,6 @@ export default function MoreScreen() {
     visit_type: 'Property Visit',
     meeting_point: '',
     location_url: '',
-    client_feedback: '',
-    outcome: '',
-    interest_level: '',
-    objections: '',
-    quoted_price: '',
-    next_followup_date: '',
-    next_followup_time: '',
     status: 'Scheduled',
     notes: '',
   });
@@ -321,10 +391,46 @@ export default function MoreScreen() {
     return parts.length ? parts.join(', ') : stop.name;
   };
 
+  const getLeadMapUrl = (stop: VisitStop) => {
+    return (stop.Property_locationUrl || stop.property_location_url || '').trim();
+  };
+
+  const extractGoogleRoutePoint = (mapUrl: string) => {
+    const directUrl = mapUrl.trim();
+    if (!directUrl) return '';
+
+    const coordinateMatch = directUrl.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/)
+      || directUrl.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+    if (coordinateMatch) {
+      return `${coordinateMatch[1]},${coordinateMatch[2]}`;
+    }
+
+    const queryMatch = directUrl.match(/[?&](?:q|query|destination)=([^&]+)/);
+    if (queryMatch) {
+      return decodeURIComponent(queryMatch[1].replace(/\+/g, ' '));
+    }
+
+    const placeMatch = directUrl.match(/\/place\/([^/?]+)/);
+    if (placeMatch) {
+      return decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+    }
+
+    return directUrl;
+  };
+
+  const getStopRoutePoint = (stop: VisitStop) => {
+    const leadMapUrl = getLeadMapUrl(stop);
+    return extractGoogleRoutePoint(leadMapUrl) || formatStopLocation(stop);
+  };
+
   const getStopMapUrl = (stop: VisitStop) => {
-    const directUrl = stop.Property_locationUrl || stop.property_location_url;
+    const directUrl = getLeadMapUrl(stop);
     if (directUrl) return directUrl;
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatStopLocation(stop))}`;
+  };
+
+  const getVisitMapUrl = (visit: SiteVisit) => {
+    return (visit.location_url || visit.property_map_url || '').trim();
   };
 
   const formatStopPrice = (stop: VisitStop) => {
@@ -384,7 +490,7 @@ export default function MoreScreen() {
   };
 
   const buildRouteUrl = () => {
-    const stops = visitStops.map(formatStopLocation).filter(Boolean);
+    const stops = visitStops.map(getStopRoutePoint).filter(Boolean);
     if (stops.length === 0) return '';
     const destination = encodeURIComponent(stops[stops.length - 1]);
     const waypoints = stops.slice(0, -1).map((stop) => encodeURIComponent(stop)).join('%7C');
@@ -504,13 +610,6 @@ export default function MoreScreen() {
         visit_time: visitForm.visit_time || null,
         visit_type: visitForm.visit_type,
         meeting_point: visitForm.meeting_point,
-        client_feedback: visitForm.client_feedback,
-        outcome: visitForm.outcome,
-        interest_level: visitForm.interest_level,
-        objections: visitForm.objections,
-        quoted_price: visitForm.quoted_price ? parseFloat(visitForm.quoted_price) : null,
-        next_followup_date: visitForm.next_followup_date || null,
-        next_followup_time: visitForm.next_followup_time || null,
         status: visitForm.status,
         notes: visitForm.notes,
       };
@@ -551,13 +650,6 @@ export default function MoreScreen() {
           visit_type: 'Property Visit',
           meeting_point: '',
           location_url: '',
-          client_feedback: '',
-          outcome: '',
-          interest_level: '',
-          objections: '',
-          quoted_price: '',
-          next_followup_date: '',
-          next_followup_time: '',
           status: 'Scheduled',
           notes: '',
         });
@@ -795,34 +887,6 @@ export default function MoreScreen() {
               <Text style={styles.infoText}>Meet at: {item.meeting_point}</Text>
             </View>
           )}
-          {(item.outcome || item.interest_level) && (
-            <View style={styles.infoRow}>
-              <Ionicons name="trending-up" size={16} color="#6B7280" />
-              <Text style={styles.infoText}>
-                {[item.outcome, item.interest_level].filter(Boolean).join(' • ')}
-              </Text>
-            </View>
-          )}
-          {item.quoted_price != null && (
-            <View style={styles.infoRow}>
-              <Ionicons name="cash" size={16} color="#6B7280" />
-              <Text style={styles.infoText}>Quoted: ₹{item.quoted_price} Cr</Text>
-            </View>
-          )}
-          {item.next_followup_date && (
-            <View style={styles.infoRow}>
-              <Ionicons name="alarm" size={16} color="#6B7280" />
-              <Text style={styles.infoText}>
-                Next follow-up: {item.next_followup_date} {item.next_followup_time || ''}
-              </Text>
-            </View>
-          )}
-          {item.client_feedback && (
-            <Text style={styles.notesText}>Feedback: {item.client_feedback}</Text>
-          )}
-          {item.objections && (
-            <Text style={styles.notesText}>Objections: {item.objections}</Text>
-          )}
           {item.notes && (
             <Text style={styles.notesText}>{item.notes}</Text>
           )}
@@ -841,8 +905,8 @@ export default function MoreScreen() {
               </TouchableOpacity>
             </>
           )}
-          {item.location_url && (
-            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(item.location_url as string)}>
+          {getVisitMapUrl(item) && (
+            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(getVisitMapUrl(item))}>
               <Ionicons name="map" size={18} color="#3B82F6" />
             </TouchableOpacity>
           )}
@@ -1157,33 +1221,23 @@ export default function MoreScreen() {
               {visitStops.length > 0 && (
                 <View style={styles.visitPlanBox}>
                   <View style={styles.visitPlanHeader}>
-                    <Text style={styles.visitPlanTitle}>Visit Order</Text>
+                    <View>
+                      <Text style={styles.visitPlanTitle}>Visit Order</Text>
+                      <Text style={styles.visitPlanHint}>Drag handle to arrange route</Text>
+                    </View>
                     <Text style={styles.visitPlanCount}>{visitStops.length} stops</Text>
                   </View>
                   {visitStops.map((stop, index) => (
-                    <View key={stop.id} style={styles.visitStopCard}>
-                      <View style={styles.visitStopIndex}>
-                        <Text style={styles.visitStopIndexText}>{index + 1}</Text>
-                      </View>
-                      <View style={styles.visitStopContent}>
-                        <Text style={styles.visitStopTitle}>{stop.name || `Inventory #${stop.id}`}</Text>
-                        <Text style={styles.visitStopMeta} numberOfLines={2}>{formatStopLocation(stop)}</Text>
-                        <Text style={styles.visitStopMeta}>
-                          {[stop.area_size ? `${stop.area_size} sq.yds` : '', stop.floor, formatStopPrice(stop)].filter(Boolean).join(' • ')}
-                        </Text>
-                      </View>
-                      <View style={styles.visitStopActions}>
-                        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => moveVisitStop(index, -1)}>
-                          <Ionicons name="chevron-up" size={17} color="#4B5563" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => moveVisitStop(index, 1)}>
-                          <Ionicons name="chevron-down" size={17} color="#4B5563" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => removeVisitStop(stop.id)}>
-                          <Ionicons name="trash" size={16} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    <VisitStopRow
+                      key={stop.id}
+                      stop={stop}
+                      index={index}
+                      total={visitStops.length}
+                      onMove={moveVisitStop}
+                      onRemove={removeVisitStop}
+                      formatStopLocation={formatStopLocation}
+                      formatStopPrice={formatStopPrice}
+                    />
                   ))}
                   <View style={styles.routeActionRow}>
                     <TouchableOpacity style={styles.routeButton} onPress={openVisitRoute}>
@@ -1299,81 +1353,6 @@ export default function MoreScreen() {
                 keyboardType="url"
               />
 
-              <Text style={styles.inputLabel}>Expected / Quoted Price (Cr)</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.quoted_price}
-                onChangeText={(text) => setVisitForm({ ...visitForm, quoted_price: text })}
-                placeholder="Example: 4.25"
-                keyboardType="decimal-pad"
-              />
-
-              <Text style={styles.inputLabel}>Interest Level</Text>
-              <View style={styles.optionRow}>
-                {INTEREST_LEVELS.map((level) => (
-                  <TouchableOpacity
-                    key={level}
-                    style={[styles.optionChip, visitForm.interest_level === level && styles.optionChipActive]}
-                    onPress={() => setVisitForm({ ...visitForm, interest_level: level })}
-                  >
-                    <Text style={[styles.optionChipText, visitForm.interest_level === level && styles.optionChipTextActive]}>
-                      {level}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.inputLabel}>Outcome</Text>
-              <View style={styles.optionRow}>
-                {VISIT_OUTCOMES.map((outcome) => (
-                  <TouchableOpacity
-                    key={outcome}
-                    style={[styles.optionChip, visitForm.outcome === outcome && styles.optionChipActive]}
-                    onPress={() => setVisitForm({ ...visitForm, outcome })}
-                  >
-                    <Text style={[styles.optionChipText, visitForm.outcome === outcome && styles.optionChipTextActive]}>
-                      {outcome}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.inputLabel}>Client Feedback</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={visitForm.client_feedback}
-                onChangeText={(text) => setVisitForm({ ...visitForm, client_feedback: text })}
-                placeholder="What did the client like/dislike?"
-                multiline
-                numberOfLines={3}
-              />
-
-              <Text style={styles.inputLabel}>Objections / Concerns</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={visitForm.objections}
-                onChangeText={(text) => setVisitForm({ ...visitForm, objections: text })}
-                placeholder="Budget gap, location concern, possession, floor, parking..."
-                multiline
-                numberOfLines={3}
-              />
-
-              <Text style={styles.inputLabel}>Next Follow-up Date</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.next_followup_date}
-                onChangeText={(text) => setVisitForm({ ...visitForm, next_followup_date: text })}
-                placeholder="YYYY-MM-DD"
-              />
-
-              <Text style={styles.inputLabel}>Next Follow-up Time</Text>
-              <TextInput
-                style={styles.input}
-                value={visitForm.next_followup_time}
-                onChangeText={(text) => setVisitForm({ ...visitForm, next_followup_time: text })}
-                placeholder="HH:MM"
-              />
-              
               <Text style={styles.inputLabel}>Notes</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
@@ -2424,6 +2403,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#111827',
   },
+  visitPlanHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
   visitPlanCount: {
     fontSize: 12,
     color: '#6B7280',
@@ -2438,6 +2422,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+  },
+  visitStopCardDragging: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+    transform: [{ scale: 1.01 }],
+  },
+  visitStopDragHandle: {
+    width: 32,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   visitStopIndex: {
     width: 28,
