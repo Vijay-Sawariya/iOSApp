@@ -35,9 +35,11 @@ interface SiteVisit {
   visit_date: string;
   visit_time: string;
   location: string;
+  property_lead_id?: number | null;
   visit_type?: string;
   meeting_point?: string;
   location_url?: string;
+  visit_order?: number;
   client_feedback?: string;
   outcome?: string;
   interest_level?: string;
@@ -47,6 +49,22 @@ interface SiteVisit {
   next_followup_time?: string;
   notes: string;
   status: string;
+}
+
+interface VisitStop {
+  id: number;
+  name: string;
+  address?: string;
+  location?: string;
+  Property_locationUrl?: string;
+  property_location_url?: string;
+  area_size?: string;
+  floor?: string;
+  bhk?: string;
+  budget_max?: number;
+  unit?: string;
+  floor_pricing?: any[];
+  lead_status?: string;
 }
 
 interface Deal {
@@ -98,6 +116,20 @@ const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Rev
 const VISIT_OUTCOMES = ['Interested', 'Needs Follow-up', 'Negotiation', 'Not Interested', 'Deal Likely'];
 const INTEREST_LEVELS = ['Hot', 'Warm', 'Cold'];
 
+const formatDateValue = (date: Date) => date.toISOString().split('T')[0];
+
+const getVisitDateOptions = () => {
+  const labels = ['Today', 'Tomorrow'];
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    return {
+      label: labels[index] || date.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }),
+      value: formatDateValue(date),
+    };
+  });
+};
+
 export default function MoreScreen() {
   const { user, token } = useAuth();
   const params = useLocalSearchParams();
@@ -114,6 +146,7 @@ export default function MoreScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const visitDateOptions = getVisitDateOptions();
   
   // Update active tab when params change
   useEffect(() => {
@@ -132,12 +165,17 @@ export default function MoreScreen() {
   // Modal states
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [showAddDealModal, setShowAddDealModal] = useState(false);
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
+  const [loadingMatches, setLoadingMatches] = useState(false);
   
   // Lead search states for Site Visit
   const [leadSearchQuery, setLeadSearchQuery] = useState('');
   const [leadSearchResults, setLeadSearchResults] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [showLeadDropdown, setShowLeadDropdown] = useState(false);
+  const [matchingInventory, setMatchingInventory] = useState<VisitStop[]>([]);
+  const [selectedStopIds, setSelectedStopIds] = useState<number[]>([]);
+  const [visitStops, setVisitStops] = useState<VisitStop[]>([]);
   
   // Lead search states for Deal
   const [dealLeadSearchQuery, setDealLeadSearchQuery] = useState('');
@@ -268,10 +306,123 @@ export default function MoreScreen() {
     setVisitForm({ 
       ...visitForm, 
       lead_id: lead.id.toString(), 
-      lead_name: lead.name 
+      lead_name: lead.name,
+      location: lead.location || visitForm.location,
     });
     setLeadSearchQuery(lead.name);
     setShowLeadDropdown(false);
+    setVisitStops([]);
+    setSelectedStopIds([]);
+    setMatchingInventory([]);
+  };
+
+  const formatStopLocation = (stop: VisitStop) => {
+    const parts = [stop.address, stop.location].filter(Boolean);
+    return parts.length ? parts.join(', ') : stop.name;
+  };
+
+  const getStopMapUrl = (stop: VisitStop) => {
+    const directUrl = stop.Property_locationUrl || stop.property_location_url;
+    if (directUrl) return directUrl;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatStopLocation(stop))}`;
+  };
+
+  const formatStopPrice = (stop: VisitStop) => {
+    if (Array.isArray(stop.floor_pricing) && stop.floor_pricing.length > 0) {
+      return stop.floor_pricing.map((fp: any) => {
+        const floor = fp.floor_label || fp.floor || '';
+        const amount = fp.floor_amount || fp.amount || fp.price || '';
+        return `${floor}: ${amount} Cr`;
+      }).filter(Boolean).join(' | ');
+    }
+    return stop.budget_max ? `${stop.budget_max} ${stop.unit || 'Cr'}` : 'N/A';
+  };
+
+  const openMatchingInventory = async () => {
+    if (!visitForm.lead_id) {
+      Alert.alert('Select lead', 'Please select a buyer/tenant before adding matched inventory.');
+      return;
+    }
+    setLoadingMatches(true);
+    setShowMatchingModal(true);
+    try {
+      const result = await api.getMatchingInventory(parseInt(visitForm.lead_id));
+      const matches = Array.isArray(result) ? result : (result?.matches || []);
+      setMatchingInventory(matches);
+      setSelectedStopIds(visitStops.map((stop) => stop.id));
+    } catch (error) {
+      console.error('Matching inventory error:', error);
+      Alert.alert('Error', 'Unable to fetch matching inventory');
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
+  const toggleMatchedStop = (id: number) => {
+    setSelectedStopIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+  };
+
+  const addSelectedStopsToPlan = () => {
+    const existingIds = new Set(visitStops.map((stop) => stop.id));
+    const stopsToAdd = matchingInventory.filter((item) => selectedStopIds.includes(item.id) && !existingIds.has(item.id));
+    setVisitStops((prev) => [...prev, ...stopsToAdd]);
+    setShowMatchingModal(false);
+  };
+
+  const moveVisitStop = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= visitStops.length) return;
+    const nextStops = [...visitStops];
+    const [moved] = nextStops.splice(index, 1);
+    nextStops.splice(targetIndex, 0, moved);
+    setVisitStops(nextStops);
+  };
+
+  const removeVisitStop = (id: number) => {
+    setVisitStops((prev) => prev.filter((stop) => stop.id !== id));
+    setSelectedStopIds((prev) => prev.filter((stopId) => stopId !== id));
+  };
+
+  const buildRouteUrl = () => {
+    const stops = visitStops.map(formatStopLocation).filter(Boolean);
+    if (stops.length === 0) return '';
+    const destination = encodeURIComponent(stops[stops.length - 1]);
+    const waypoints = stops.slice(0, -1).map((stop) => encodeURIComponent(stop)).join('%7C');
+    return `https://www.google.com/maps/dir/?api=1&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+  };
+
+  const openVisitRoute = () => {
+    if (visitStops.length === 0) {
+      Alert.alert('Add stops', 'Please add matched inventory before opening route.');
+      return;
+    }
+    Linking.openURL(buildRouteUrl());
+  };
+
+  const shareVisitPlan = () => {
+    if (visitStops.length === 0) {
+      Alert.alert('Add stops', 'Please add matched inventory before sharing a visit plan.');
+      return;
+    }
+    const lines = [
+      '*Proposed Site Visit Plan*',
+      selectedLead?.name ? `Client: ${selectedLead.name}` : '',
+      visitForm.visit_date ? `Date: ${visitForm.visit_date}${visitForm.visit_time ? ` at ${visitForm.visit_time}` : ''}` : '',
+      '',
+    ].filter(Boolean);
+    visitStops.forEach((stop, index) => {
+      lines.push(`${index + 1}. *${formatStopLocation(stop)}* (${stop.name || `Inventory #${stop.id}`})`);
+      lines.push(`Size: ${stop.area_size || '-'} sq.yds | Floor: ${stop.floor || '-'} | BHK: ${stop.bhk || '-'}`);
+      lines.push(`Price: ${formatStopPrice(stop)}`);
+      lines.push(`Link: ${getStopMapUrl(stop)}`);
+      lines.push('______________________');
+    });
+    const routeUrl = buildRouteUrl();
+    if (routeUrl) {
+      lines.push('*Trip Map*');
+      lines.push(routeUrl);
+    }
+    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`);
   };
   
   // Filter locations as user types
@@ -347,35 +498,50 @@ export default function MoreScreen() {
     }
     
     try {
-      const response = await fetch(`${API_URL}/api/site-visits`, {
+      const basePayload = {
+        lead_id: parseInt(visitForm.lead_id),
+        visit_date: visitForm.visit_date,
+        visit_time: visitForm.visit_time || null,
+        visit_type: visitForm.visit_type,
+        meeting_point: visitForm.meeting_point,
+        client_feedback: visitForm.client_feedback,
+        outcome: visitForm.outcome,
+        interest_level: visitForm.interest_level,
+        objections: visitForm.objections,
+        quoted_price: visitForm.quoted_price ? parseFloat(visitForm.quoted_price) : null,
+        next_followup_date: visitForm.next_followup_date || null,
+        next_followup_time: visitForm.next_followup_time || null,
+        status: visitForm.status,
+        notes: visitForm.notes,
+      };
+      const payloads = visitStops.length > 0
+        ? visitStops.map((stop, index) => ({
+            ...basePayload,
+            property_lead_id: stop.id,
+            visit_order: index + 1,
+            location: formatStopLocation(stop),
+            location_url: getStopMapUrl(stop),
+          }))
+        : [{
+            ...basePayload,
+            location: visitForm.location,
+            location_url: visitForm.location_url,
+          }];
+
+      const responses = await Promise.all(payloads.map((payload) => fetch(`${API_URL}/api/site-visits`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          lead_id: parseInt(visitForm.lead_id),
-          visit_date: visitForm.visit_date,
-          visit_time: visitForm.visit_time || null,
-          location: visitForm.location,
-          visit_type: visitForm.visit_type,
-          meeting_point: visitForm.meeting_point,
-          location_url: visitForm.location_url,
-          client_feedback: visitForm.client_feedback,
-          outcome: visitForm.outcome,
-          interest_level: visitForm.interest_level,
-          objections: visitForm.objections,
-          quoted_price: visitForm.quoted_price ? parseFloat(visitForm.quoted_price) : null,
-          next_followup_date: visitForm.next_followup_date || null,
-          next_followup_time: visitForm.next_followup_time || null,
-          status: visitForm.status,
-          notes: visitForm.notes,
-        }),
-      });
-      
-      if (response.ok) {
+        body: JSON.stringify(payload),
+      })));
+
+      if (responses.every((response) => response.ok)) {
         Alert.alert('Success', 'Site visit scheduled');
         setShowAddVisitModal(false);
+        setVisitStops([]);
+        setSelectedStopIds([]);
         setVisitForm({
           lead_id: '',
           lead_name: '',
@@ -939,25 +1105,38 @@ export default function MoreScreen() {
               )}
               
               <Text style={styles.inputLabel}>Visit Date *</Text>
-              {Platform.OS === 'web' ? (
-                <TextInput
-                  style={styles.input}
-                  value={visitForm.visit_date}
-                  onChangeText={(text) => setVisitForm({ ...visitForm, visit_date: text })}
-                  placeholder="YYYY-MM-DD (e.g., 2026-05-15)"
-                />
-              ) : (
-                <>
-                  <TouchableOpacity 
-                    style={styles.datePickerButton}
-                    onPress={() => setShowDatePicker(true)}
-                  >
-                    <Ionicons name="calendar" size={20} color="#6B7280" />
-                    <Text style={[styles.datePickerText, !visitForm.visit_date && styles.placeholderText]}>
-                      {visitForm.visit_date || 'Select date'}
-                    </Text>
-                  </TouchableOpacity>
-                  {showDatePicker && (
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(!showDatePicker)}
+              >
+                <Ionicons name="calendar" size={20} color="#6B7280" />
+                <Text style={[styles.datePickerText, !visitForm.visit_date && styles.placeholderText]}>
+                  {visitForm.visit_date || 'Select date'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+              {showDatePicker && (
+                Platform.OS === 'web' ? (
+                  <View style={[styles.dropdownContainer, { maxHeight: 230 }]}>
+                    <ScrollView nestedScrollEnabled>
+                      {visitDateOptions.map((dateOption) => (
+                        <TouchableOpacity
+                          key={dateOption.value}
+                          style={[styles.dropdownItem, visitForm.visit_date === dateOption.value && styles.dropdownItemSelected]}
+                          onPress={() => {
+                            setVisitForm({ ...visitForm, visit_date: dateOption.value });
+                            setSelectedDate(new Date(`${dateOption.value}T10:00:00`));
+                            setShowDatePicker(false);
+                          }}
+                        >
+                          <Text style={[styles.dropdownItemText, visitForm.visit_date === dateOption.value && styles.dropdownItemTextSelected]}>
+                            {dateOption.label} - {dateOption.value}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : (
                     <DateTimePicker
                       value={selectedDate}
                       mode="date"
@@ -965,8 +1144,58 @@ export default function MoreScreen() {
                       onChange={handleDateChange}
                       minimumDate={new Date()}
                     />
-                  )}
-                </>
+                )
+              )}
+
+              <View style={styles.routeActionRow}>
+                <TouchableOpacity style={styles.secondaryRouteButton} onPress={openMatchingInventory}>
+                  <Ionicons name="git-compare" size={18} color="#2563EB" />
+                  <Text style={styles.secondaryRouteButtonText}>Add Matched Inventory</Text>
+                </TouchableOpacity>
+              </View>
+
+              {visitStops.length > 0 && (
+                <View style={styles.visitPlanBox}>
+                  <View style={styles.visitPlanHeader}>
+                    <Text style={styles.visitPlanTitle}>Visit Order</Text>
+                    <Text style={styles.visitPlanCount}>{visitStops.length} stops</Text>
+                  </View>
+                  {visitStops.map((stop, index) => (
+                    <View key={stop.id} style={styles.visitStopCard}>
+                      <View style={styles.visitStopIndex}>
+                        <Text style={styles.visitStopIndexText}>{index + 1}</Text>
+                      </View>
+                      <View style={styles.visitStopContent}>
+                        <Text style={styles.visitStopTitle}>{stop.name || `Inventory #${stop.id}`}</Text>
+                        <Text style={styles.visitStopMeta} numberOfLines={2}>{formatStopLocation(stop)}</Text>
+                        <Text style={styles.visitStopMeta}>
+                          {[stop.area_size ? `${stop.area_size} sq.yds` : '', stop.floor, formatStopPrice(stop)].filter(Boolean).join(' • ')}
+                        </Text>
+                      </View>
+                      <View style={styles.visitStopActions}>
+                        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => moveVisitStop(index, -1)}>
+                          <Ionicons name="chevron-up" size={17} color="#4B5563" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => moveVisitStop(index, 1)}>
+                          <Ionicons name="chevron-down" size={17} color="#4B5563" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => removeVisitStop(stop.id)}>
+                          <Ionicons name="trash" size={16} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                  <View style={styles.routeActionRow}>
+                    <TouchableOpacity style={styles.routeButton} onPress={openVisitRoute}>
+                      <Ionicons name="map" size={17} color="#FFFFFF" />
+                      <Text style={styles.routeButtonText}>Open Route</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.routeButton, styles.whatsAppRouteButton]} onPress={shareVisitPlan}>
+                      <Ionicons name="logo-whatsapp" size={17} color="#FFFFFF" />
+                      <Text style={styles.routeButtonText}>Share Plan</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               )}
               
               <Text style={styles.inputLabel}>Visit Time</Text>
@@ -1159,6 +1388,59 @@ export default function MoreScreen() {
                 <Text style={styles.submitButtonText}>Schedule Visit</Text>
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showMatchingModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Matched Inventory</Text>
+              <TouchableOpacity onPress={() => setShowMatchingModal(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            {loadingMatches ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <Text style={styles.emptyText}>Finding matching inventory...</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={matchingInventory}
+                keyExtractor={(item) => item.id.toString()}
+                contentContainerStyle={styles.listContainer}
+                renderItem={({ item }) => {
+                  const checked = selectedStopIds.includes(item.id);
+                  return (
+                    <TouchableOpacity style={styles.matchInventoryRow} onPress={() => toggleMatchedStop(item.id)}>
+                      <Ionicons
+                        name={checked ? 'checkbox' : 'square-outline'}
+                        size={24}
+                        color={checked ? '#2563EB' : '#9CA3AF'}
+                      />
+                      <View style={styles.matchInventoryContent}>
+                        <Text style={styles.matchInventoryTitle}>{item.name || `Inventory #${item.id}`}</Text>
+                        <Text style={styles.matchInventoryMeta} numberOfLines={2}>{formatStopLocation(item)}</Text>
+                        <Text style={styles.matchInventoryMeta}>
+                          {[item.area_size ? `${item.area_size} sq.yds` : '', item.floor, formatStopPrice(item)].filter(Boolean).join(' • ')}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyTitle}>No matched inventory</Text>
+                    <Text style={styles.emptyText}>Adjust matching criteria from lead details or add preferred inventory first.</Text>
+                  </View>
+                }
+              />
+            )}
+            <TouchableOpacity style={styles.submitButton} onPress={addSelectedStopsToPlan}>
+              <Text style={styles.submitButtonText}>Add Selected to Visit Plan</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -2100,6 +2382,141 @@ const styles = StyleSheet.create({
   },
   optionChipTextActive: {
     color: '#2563EB',
+  },
+  routeActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  secondaryRouteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  secondaryRouteButtonText: {
+    color: '#2563EB',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  visitPlanBox: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 16,
+  },
+  visitPlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  visitPlanTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  visitPlanCount: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
+  visitStopCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  visitStopIndex: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  visitStopIndexText: {
+    color: '#1D4ED8',
+    fontWeight: '800',
+  },
+  visitStopContent: {
+    flex: 1,
+  },
+  visitStopTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  visitStopMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  visitStopActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  visitStopIconBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  whatsAppRouteButton: {
+    backgroundColor: '#16A34A',
+  },
+  routeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  matchInventoryRow: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  matchInventoryContent: {
+    flex: 1,
+  },
+  matchInventoryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  matchInventoryMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 3,
   },
   // Tabs container for horizontal scroll
   tabsContainer: {

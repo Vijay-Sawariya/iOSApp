@@ -30,6 +30,20 @@ const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Rev
 const VISIT_OUTCOMES = ['Interested', 'Needs Follow-up', 'Negotiation', 'Not Interested', 'Deal Likely'];
 const INTEREST_LEVELS = ['Hot', 'Warm', 'Cold'];
 
+const formatDateValue = (date: Date) => date.toISOString().split('T')[0];
+
+const getVisitDateOptions = () => {
+  const labels = ['Today', 'Tomorrow'];
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    return {
+      label: labels[index] || date.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }),
+      value: formatDateValue(date),
+    };
+  });
+};
+
 export default function AddSiteVisitScreen() {
   const { token } = useAuth();
   const params = useLocalSearchParams();
@@ -44,6 +58,7 @@ export default function AddSiteVisitScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const visitDateOptions = getVisitDateOptions();
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
@@ -285,19 +300,40 @@ export default function AddSiteVisitScreen() {
             <Text style={styles.inputLabel}>Visit Date *</Text>
             <TouchableOpacity
               style={styles.dateInput}
-              onPress={() => setShowDatePicker(true)}
+              onPress={() => setShowDatePicker(!showDatePicker)}
             >
               <Ionicons name="calendar-outline" size={20} color="#6B7280" />
               <Text style={styles.dateInputText}>{visitForm.visit_date || 'Select date'}</Text>
+              <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
             </TouchableOpacity>
             {showDatePicker && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleDateChange}
-                minimumDate={new Date()}
-              />
+              Platform.OS === 'web' ? (
+                <View style={styles.dropdown}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {visitDateOptions.map((dateOption) => (
+                      <TouchableOpacity
+                        key={dateOption.value}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setVisitForm(prev => ({ ...prev, visit_date: dateOption.value }));
+                          setSelectedDate(new Date(`${dateOption.value}T10:00:00`));
+                          setShowDatePicker(false);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>{dateOption.label} - {dateOption.value}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleDateChange}
+                  minimumDate={new Date()}
+                />
+              )
             )}
           </View>
 

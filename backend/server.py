@@ -2853,6 +2853,7 @@ class SiteVisitCreate(BaseModel):
     visit_type: Optional[str] = "Property Visit"
     meeting_point: Optional[str] = None
     location_url: Optional[str] = None
+    visit_order: Optional[int] = None
     client_feedback: Optional[str] = None
     outcome: Optional[str] = None
     interest_level: Optional[str] = None
@@ -2875,6 +2876,7 @@ class SiteVisitResponse(BaseModel):
     visit_type: Optional[str]
     meeting_point: Optional[str]
     location_url: Optional[str]
+    visit_order: Optional[int]
     client_feedback: Optional[str]
     outcome: Optional[str]
     interest_level: Optional[str]
@@ -2906,6 +2908,7 @@ def ensure_site_visits_table(cursor):
         ("visit_type", "VARCHAR(100) DEFAULT 'Property Visit'"),
         ("meeting_point", "VARCHAR(255) NULL"),
         ("location_url", "TEXT NULL"),
+        ("visit_order", "INT NULL"),
         ("client_feedback", "TEXT NULL"),
         ("outcome", "VARCHAR(100) NULL"),
         ("interest_level", "VARCHAR(50) NULL"),
@@ -2945,7 +2948,7 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
                 query += " AND sv.status = %s"
                 params.append(status)
             
-            query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC"
+            query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC, COALESCE(sv.visit_order, 999) ASC"
             cursor.execute(query, params)
             visits = cursor.fetchall()
             return [dict(v) for v in visits]
@@ -2965,15 +2968,15 @@ def create_site_visit(visit: SiteVisitCreate, current_user: dict = Depends(get_c
         cursor.execute("""
             INSERT INTO site_visits (
                 lead_id, property_lead_id, visit_date, visit_time, location, visit_type,
-                meeting_point, location_url, client_feedback, outcome, interest_level,
+                meeting_point, location_url, visit_order, client_feedback, outcome, interest_level,
                 objections, quoted_price, next_followup_date, next_followup_time,
                 notes, status, created_by, created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         """, (
             visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time,
             visit.location, visit.visit_type or 'Property Visit', visit.meeting_point,
-            visit.location_url, visit.client_feedback, visit.outcome, visit.interest_level,
+            visit.location_url, visit.visit_order, visit.client_feedback, visit.outcome, visit.interest_level,
             visit.objections, visit.quoted_price, visit.next_followup_date, visit.next_followup_time,
             visit.notes, visit.status or 'Scheduled', current_user['id']
         ))
@@ -2992,7 +2995,7 @@ def update_site_visit(visit_id: int, visit: SiteVisitCreate, current_user: dict 
 
         allowed_fields = [
             'lead_id', 'property_lead_id', 'visit_date', 'visit_time', 'location',
-            'visit_type', 'meeting_point', 'location_url', 'client_feedback',
+            'visit_type', 'meeting_point', 'location_url', 'visit_order', 'client_feedback',
             'outcome', 'interest_level', 'objections', 'quoted_price',
             'next_followup_date', 'next_followup_time', 'notes', 'status'
         ]
