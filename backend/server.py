@@ -16,9 +16,14 @@ from contextlib import contextmanager
 import re
 import base64
 import asyncio
+import json
 
 # Import for AI features
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+except ModuleNotFoundError:
+    LlmChat = None
+    UserMessage = None
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -129,6 +134,47 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def ensure_user_permission_columns(cursor):
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
+    except Exception:
+        pass
+
+def ensure_security_audit_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS security_audit_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NULL,
+            event_type VARCHAR(100) NOT NULL,
+            entity_type VARCHAR(50) NULL,
+            entity_id INT NULL,
+            details TEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_security_audit_created_at (created_at),
+            INDEX idx_security_audit_user_id (user_id),
+            INDEX idx_security_audit_event_type (event_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+def log_security_event(cursor, user_id, event_type, entity_type=None, entity_id=None, details=None):
+    try:
+        ensure_security_audit_table(cursor)
+        details_text = details if isinstance(details, str) else json.dumps(details or {})
+        cursor.execute("""
+            INSERT INTO security_audit_logs (user_id, event_type, entity_type, entity_id, details, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """, (user_id, event_type, entity_type, entity_id, details_text))
+    except Exception as exc:
+        logging.warning(f"Security audit log skipped: {exc}")
+
+def user_can_export(cursor, current_user: dict) -> bool:
+    if current_user.get('role') == 'admin':
+        return True
+    ensure_user_permission_columns(cursor)
+    cursor.execute("SELECT can_export FROM users WHERE id = %s", (current_user['id'],))
+    result = cursor.fetchone()
+    return bool(result and result.get('can_export'))
 
 # ============= Calculation Helper Functions =============
 def normalize_floor_label(label: str) -> str:
@@ -451,6 +497,11 @@ class DashboardStats(BaseModel):
     qualified_leads: int = 0
     negotiating_leads: int = 0
     won_leads: int = 0
+    # Daily usability stats
+    uncontacted_new_leads: int = 0
+    today_site_visits: int = 0
+    stale_leads: int = 0
+    available_inventory: int = 0
 
 class AIMatchResult(BaseModel):
     buyer_id: int
@@ -505,28 +556,40 @@ def login(credentials: UserLogin):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username = %s", (credentials.username,))
         user = cursor.fetchone()
-        
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Check if password is hashed (starts with $2b$ for bcrypt) or plain text
-    password_valid = False
-    if user['password'].startswith('$2b$') or user['password'].startswith('$2a$'):
-        # Hashed password - use bcrypt verification
-        password_valid = verify_password(credentials.password, user['password'])
-    else:
-        # Plain text password (legacy) - direct comparison
-        password_valid = (credentials.password == user['password'])
-    
-    if not password_valid:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    access_token = create_access_token(data={"sub": str(user['id'])})
-    
-    return TokenResponse(
-        access_token=access_token,
-        user=UserResponse(**user)
-    )
+
+        if not user:
+            log_security_event(cursor, None, "login_failed", "user", None, {
+                "username": credentials.username,
+                "reason": "unknown_user"
+            })
+            conn.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        # Check if password is hashed (starts with $2b$ for bcrypt) or plain text
+        password_valid = False
+        if user['password'].startswith('$2b$') or user['password'].startswith('$2a$'):
+            # Hashed password - use bcrypt verification
+            password_valid = verify_password(credentials.password, user['password'])
+        else:
+            # Plain text password (legacy) - direct comparison
+            password_valid = (credentials.password == user['password'])
+
+        if not password_valid:
+            log_security_event(cursor, user['id'], "login_failed", "user", user['id'], {
+                "username": credentials.username,
+                "reason": "invalid_password"
+            })
+            conn.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        access_token = create_access_token(data={"sub": str(user['id'])})
+        log_security_event(cursor, user['id'], "login_success", "user", user['id'])
+        conn.commit()
+
+        return TokenResponse(
+            access_token=access_token,
+            user=UserResponse(**user)
+        )
 
 @api_router.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: dict = Depends(get_current_user)):
@@ -2074,6 +2137,59 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         
         cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'Won' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
         won_leads = cursor.fetchone()['count']
+
+        # Leads created but not yet touched by an action/reminder.
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM leads l
+                WHERE l.lead_status = 'New'
+                AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND NOT EXISTS (SELECT 1 FROM actions a WHERE a.lead_id = l.id)
+            """)
+            uncontacted_new_leads = cursor.fetchone()['count']
+        except Exception:
+            uncontacted_new_leads = 0
+
+        # Site visits scheduled for today.
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM site_visits
+                WHERE DATE(visit_date) = CURDATE()
+                AND (status IS NULL OR status NOT IN ('Cancelled', 'Canceled'))
+            """)
+            today_site_visits = cursor.fetchone()['count']
+        except Exception:
+            today_site_visits = 0
+
+        # Active leads with no recent follow-up activity.
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM leads l
+                LEFT JOIN (
+                    SELECT lead_id, MAX(due_date) as last_action_date
+                    FROM actions
+                    GROUP BY lead_id
+                ) latest_action ON latest_action.lead_id = l.id
+                WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND (l.lead_status IS NULL OR l.lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
+                AND COALESCE(DATE(latest_action.last_action_date), DATE(l.created_at)) < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+            """)
+            stale_leads = cursor.fetchone()['count']
+        except Exception:
+            stale_leads = 0
+
+        # Inventory still available for matching.
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM leads
+            WHERE lead_type IN ('seller', 'landlord', 'builder')
+            AND (is_deleted IS NULL OR is_deleted = 0)
+            AND (lead_status IS NULL OR lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
+        """)
+        available_inventory = cursor.fetchone()['count']
     
     return DashboardStats(
         total_leads=total_leads,
@@ -2094,7 +2210,11 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         contacted_leads=contacted_leads,
         qualified_leads=qualified_leads,
         negotiating_leads=negotiating_leads,
-        won_leads=won_leads
+        won_leads=won_leads,
+        uncontacted_new_leads=uncontacted_new_leads,
+        today_site_visits=today_site_visits,
+        stale_leads=stale_leads,
+        available_inventory=available_inventory
     )
 
 # ============= AI Features Routes =============
@@ -2246,7 +2366,7 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
 async def generate_ai_message(request: AIMessageRequest, current_user: dict = Depends(get_current_user)):
     """Generate AI-powered follow-up message for WhatsApp"""
     
-    if not EMERGENT_LLM_KEY:
+    if not EMERGENT_LLM_KEY or LlmChat is None or UserMessage is None:
         raise HTTPException(status_code=500, detail="AI features not configured")
     
     # Get lead details
@@ -2326,7 +2446,7 @@ ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'im
 ALLOWED_PDF_TYPES = ['application/pdf']
 
 # File upload directory - stored on server
-UPLOAD_DIR = Path("/app/backend/uploads/inventory")
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", ROOT_DIR / "uploads" / "inventory"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Base URL for accessing files
@@ -3170,14 +3290,10 @@ def get_team_performance(current_user: dict = Depends(get_current_user)):
 @api_router.get("/user/permissions")
 def get_user_permissions(current_user: dict = Depends(get_current_user)):
     """Get current user's permissions"""
-    # Check if can_export column exists, if not add it
     with get_db() as conn:
         cursor = conn.cursor()
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
-            conn.commit()
-        except:
-            pass  # Column already exists
+        ensure_user_permission_columns(cursor)
+        conn.commit()
         
         # Admins always have export permission
         if current_user['role'] == 'admin':
@@ -3198,14 +3314,10 @@ def update_user_permissions(user_id: int, can_export: bool, current_user: dict =
     
     with get_db() as conn:
         cursor = conn.cursor()
-        # Ensure column exists
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
-            conn.commit()
-        except:
-            pass
+        ensure_user_permission_columns(cursor)
         
         cursor.execute("UPDATE users SET can_export = %s WHERE id = %s", (1 if can_export else 0, user_id))
+        log_security_event(cursor, current_user['id'], "permission_update", "user", user_id, {"can_export": can_export})
         conn.commit()
         return {"message": "Permissions updated successfully"}
 
@@ -3217,12 +3329,8 @@ def get_team_members_with_permissions(current_user: dict = Depends(get_current_u
     
     with get_db() as conn:
         cursor = conn.cursor()
-        # Ensure column exists
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
-            conn.commit()
-        except:
-            pass
+        ensure_user_permission_columns(cursor)
+        conn.commit()
         
         cursor.execute("""
             SELECT id, username, full_name, email, role, can_export,
@@ -3236,6 +3344,26 @@ def get_team_members_with_permissions(current_user: dict = Depends(get_current_u
             member_dict['can_export'] = bool(member_dict.get('can_export', 0))
             result.append(member_dict)
         return result
+
+@api_router.get("/security/audit-logs")
+def get_security_audit_logs(limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Get recent security audit events (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    safe_limit = max(1, min(limit, 500))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_security_audit_table(cursor)
+        cursor.execute("""
+            SELECT a.*, u.username, u.full_name
+            FROM security_audit_logs a
+            LEFT JOIN users u ON u.id = a.user_id
+            ORDER BY a.created_at DESC
+            LIMIT %s
+        """, (safe_limit,))
+        logs = cursor.fetchall()
+        return [dict(item) for item in logs]
 
 # ============= Bulk Import/Export =============
 
@@ -3290,6 +3418,11 @@ def export_leads(lead_type: Optional[str] = None, current_user: dict = Depends(g
     """Export leads to CSV format"""
     with get_db() as conn:
         cursor = conn.cursor()
+        if not user_can_export(cursor, current_user):
+            log_security_event(cursor, current_user['id'], "export_denied", "leads", None, {"lead_type": lead_type})
+            conn.commit()
+            raise HTTPException(status_code=403, detail="Export permission required")
+
         query = "SELECT * FROM leads WHERE (is_deleted IS NULL OR is_deleted = 0)"
         params = []
         
@@ -3299,6 +3432,11 @@ def export_leads(lead_type: Optional[str] = None, current_user: dict = Depends(g
         
         cursor.execute(query, params)
         leads = cursor.fetchall()
+        log_security_event(cursor, current_user['id'], "leads_exported", "leads", None, {
+            "lead_type": lead_type,
+            "row_count": len(leads)
+        })
+        conn.commit()
         
         # Convert to list of dicts
         return [dict(l) for l in leads]

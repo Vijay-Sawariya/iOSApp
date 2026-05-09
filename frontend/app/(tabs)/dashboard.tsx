@@ -36,6 +36,10 @@ interface DashboardStats {
   qualified_leads: number;
   negotiating_leads: number;
   won_leads: number;
+  uncontacted_new_leads: number;
+  today_site_visits: number;
+  stale_leads: number;
+  available_inventory: number;
 }
 
 interface UrgentFollowup {
@@ -151,6 +155,42 @@ export default function DashboardScreen() {
       color: '#EF4444',
       bg: '#FFF1F2',
       route: '/clients',
+    },
+    {
+      key: 'untouched',
+      title: 'New untouched',
+      count: stats?.uncontacted_new_leads || 0,
+      icon: 'person-add',
+      color: '#7C3AED',
+      bg: '#F5F3FF',
+      route: '/clients',
+    },
+    {
+      key: 'visits',
+      title: 'Site visits',
+      count: stats?.today_site_visits || 0,
+      icon: 'walk',
+      color: '#0F766E',
+      bg: '#F0FDFA',
+      route: '/more',
+    },
+    {
+      key: 'stale',
+      title: 'Stale leads',
+      count: stats?.stale_leads || 0,
+      icon: 'time',
+      color: '#9333EA',
+      bg: '#FAF5FF',
+      route: '/clients',
+    },
+    {
+      key: 'available',
+      title: 'Available inventory',
+      count: stats?.available_inventory || 0,
+      icon: 'home',
+      color: '#047857',
+      bg: '#ECFDF5',
+      route: '/inventory',
     },
     {
       key: 'matches',
