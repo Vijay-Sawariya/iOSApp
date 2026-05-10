@@ -484,6 +484,67 @@ export default function MoreScreen() {
     setShowMatchingModal(false);
   };
 
+  const renderMatchingInventoryPanel = () => (
+    <View style={styles.matchInventoryPanel}>
+      <View style={styles.matchInventoryPanelHeader}>
+        <View>
+          <Text style={styles.matchInventoryPanelTitle}>Matched Inventory</Text>
+          <Text style={styles.matchInventoryPanelHint}>
+            Select inventory, add to plan, then drag the Visit Order list.
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.matchInventoryCloseButton} onPress={() => setShowMatchingModal(false)}>
+          <Ionicons name="close" size={18} color="#64748B" />
+        </TouchableOpacity>
+      </View>
+      {loadingMatches ? (
+        <View style={styles.matchInventoryLoading}>
+          <ActivityIndicator size="small" color="#2563EB" />
+          <Text style={styles.emptyText}>Finding matching inventory...</Text>
+        </View>
+      ) : (
+        <>
+          <ScrollView style={styles.matchInventoryList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {matchingInventory.length > 0 ? (
+              matchingInventory.map((item) => {
+                const checked = selectedStopIds.includes(item.id);
+                return (
+                  <TouchableOpacity key={item.id} style={styles.matchInventoryRow} onPress={() => toggleMatchedStop(item.id)}>
+                    <Ionicons
+                      name={checked ? 'checkbox' : 'square-outline'}
+                      size={24}
+                      color={checked ? '#2563EB' : '#9CA3AF'}
+                    />
+                    <View style={styles.matchInventoryContent}>
+                      <Text style={styles.matchInventoryTitle}>{item.name || `Inventory #${item.id}`}</Text>
+                      <Text style={styles.matchInventoryMeta} numberOfLines={2}>{formatStopLocation(item)}</Text>
+                      <Text style={styles.matchInventoryMeta}>
+                        {[item.area_size ? `${item.area_size} sq.yds` : '', item.floor, formatStopPrice(item)].filter(Boolean).join(' • ')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>No matched inventory</Text>
+                <Text style={styles.emptyText}>Adjust matching criteria from lead details or add preferred inventory first.</Text>
+              </View>
+            )}
+          </ScrollView>
+          <TouchableOpacity
+            style={[styles.submitButton, styles.matchInventoryAddButton]}
+            onPress={addSelectedStopsToPlan}
+          >
+            <Text style={styles.submitButtonText}>
+              Add Selected to Visit Plan ({selectedStopIds.length})
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+
   const moveVisitStop = (index: number, direction: -1 | 1) => {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= visitStops.length) return;
@@ -1234,6 +1295,8 @@ export default function MoreScreen() {
                 </TouchableOpacity>
               </View>
 
+              {showMatchingModal && renderMatchingInventoryPanel()}
+
               {visitStops.length > 0 && (
                 <View style={styles.visitPlanBox}>
                   <View style={styles.visitPlanHeader}>
@@ -1383,59 +1446,6 @@ export default function MoreScreen() {
                 <Text style={styles.submitButtonText}>Schedule Visit</Text>
               </TouchableOpacity>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={showMatchingModal} animationType="slide" transparent presentationStyle="overFullScreen">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Matched Inventory</Text>
-              <TouchableOpacity onPress={() => setShowMatchingModal(false)}>
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            {loadingMatches ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#3B82F6" />
-                <Text style={styles.emptyText}>Finding matching inventory...</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={matchingInventory}
-                keyExtractor={(item) => item.id.toString()}
-                contentContainerStyle={styles.listContainer}
-                renderItem={({ item }) => {
-                  const checked = selectedStopIds.includes(item.id);
-                  return (
-                    <TouchableOpacity style={styles.matchInventoryRow} onPress={() => toggleMatchedStop(item.id)}>
-                      <Ionicons
-                        name={checked ? 'checkbox' : 'square-outline'}
-                        size={24}
-                        color={checked ? '#2563EB' : '#9CA3AF'}
-                      />
-                      <View style={styles.matchInventoryContent}>
-                        <Text style={styles.matchInventoryTitle}>{item.name || `Inventory #${item.id}`}</Text>
-                        <Text style={styles.matchInventoryMeta} numberOfLines={2}>{formatStopLocation(item)}</Text>
-                        <Text style={styles.matchInventoryMeta}>
-                          {[item.area_size ? `${item.area_size} sq.yds` : '', item.floor, formatStopPrice(item)].filter(Boolean).join(' • ')}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                }}
-                ListEmptyComponent={
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyTitle}>No matched inventory</Text>
-                    <Text style={styles.emptyText}>Adjust matching criteria from lead details or add preferred inventory first.</Text>
-                  </View>
-                }
-              />
-            )}
-            <TouchableOpacity style={styles.submitButton} onPress={addSelectedStopsToPlan}>
-              <Text style={styles.submitButtonText}>Add Selected to Visit Plan</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -2513,6 +2523,48 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+  matchInventoryPanel: {
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#F8FBFF',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 16,
+  },
+  matchInventoryPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
+  matchInventoryPanelTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  matchInventoryPanelHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  matchInventoryCloseButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E2E8F0',
+  },
+  matchInventoryLoading: {
+    minHeight: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  matchInventoryList: {
+    maxHeight: 280,
+  },
   matchInventoryRow: {
     flexDirection: 'row',
     gap: 12,
@@ -2535,6 +2587,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 3,
+  },
+  matchInventoryAddButton: {
+    marginBottom: 4,
   },
   // Tabs container for horizontal scroll
   tabsContainer: {
