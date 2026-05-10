@@ -927,12 +927,14 @@ export default function MoreScreen() {
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View>
+          <View style={styles.cardHeaderText}>
             <Text style={styles.cardTitle}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
-            <Text style={styles.cardSubtitle}>{item.location || item.property_location || 'No location'}</Text>
+            <Text style={styles.cardSubtitle} numberOfLines={2}>{item.location || item.property_location || 'No location'}</Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]} numberOfLines={1}>
+              {item.status}
+            </Text>
           </View>
         </View>
         <View style={styles.cardBody}>
@@ -2029,6 +2031,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
+    gap: 8,
+  },
+  cardHeaderText: {
+    flex: 1,
+    minWidth: 0,
   },
   cardTitle: {
     fontSize: 16,
@@ -2044,10 +2051,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    maxWidth: 96,
+    flexShrink: 0,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '700',
   },
   cardBody: {
     gap: 8,

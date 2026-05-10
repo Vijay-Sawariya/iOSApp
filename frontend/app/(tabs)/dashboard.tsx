@@ -362,10 +362,12 @@ export default function DashboardScreen() {
               { label: 'Won', value: stats?.won_leads || 0, color: '#10B981' },
             ].map((stage, index) => (
               <View key={stage.label} style={styles.funnelStage}>
-                <View style={[styles.funnelBar, { backgroundColor: stage.color, width: `${Math.max(20, funnelTotal > 0 ? (stage.value / funnelTotal) * 100 : 20)}%` }]}>
-                  <Text style={styles.funnelValue}>{stage.value}</Text>
+                <View style={styles.funnelBarTrack}>
+                  <View style={[styles.funnelBar, { backgroundColor: stage.color, width: `${Math.max(18, funnelTotal > 0 ? (stage.value / funnelTotal) * 100 : 18)}%` }]}>
+                    <Text style={styles.funnelValue}>{stage.value}</Text>
+                  </View>
                 </View>
-                <Text style={styles.funnelLabel}>{stage.label}</Text>
+                <Text style={styles.funnelLabel} numberOfLines={1}>{stage.label}</Text>
               </View>
             ))}
           </View>
@@ -756,24 +758,29 @@ const styles = StyleSheet.create({
   funnelStage: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+  },
+  funnelBarTrack: {
+    flex: 1,
+    minWidth: 0,
   },
   funnelBar: {
     height: 28,
     borderRadius: 6,
     justifyContent: 'center',
-    paddingHorizontal: 10,
-    minWidth: 50,
+    paddingHorizontal: 8,
+    minWidth: 36,
   },
   funnelValue: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   funnelLabel: {
-    fontSize: 13,
+    width: 76,
+    fontSize: 11,
     color: '#6B7280',
-    flex: 1,
+    flexShrink: 0,
   },
   // Match Widget
   matchWidget: {
