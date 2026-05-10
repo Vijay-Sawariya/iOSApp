@@ -66,8 +66,9 @@ interface VisitStopRowProps {
   stop: VisitStop;
   index: number;
   total: number;
-  onMove: (index: number, direction: -1 | 1) => void;
+  onReorder: (stopId: number, targetIndex: number) => void;
   onRemove: (id: number) => void;
+  onDragStateChange: (dragging: boolean) => void;
   formatStopLocation: (stop: VisitStop) => string;
   formatStopPrice: (stop: VisitStop) => string;
 }
@@ -76,43 +77,53 @@ function VisitStopRow({
   stop,
   index,
   total,
-  onMove,
+  onReorder,
   onRemove,
+  onDragStateChange,
   formatStopLocation,
   formatStopPrice,
 }: VisitStopRowProps) {
   const [dragging, setDragging] = useState(false);
-  const hasMovedRef = useRef(false);
   const indexRef = useRef(index);
   const totalRef = useRef(total);
-  const onMoveRef = useRef(onMove);
+  const startIndexRef = useRef(index);
+  const lastTargetIndexRef = useRef(index);
+  const onReorderRef = useRef(onReorder);
+  const onDragStateChangeRef = useRef(onDragStateChange);
 
   indexRef.current = index;
   totalRef.current = total;
-  onMoveRef.current = onMove;
+  onReorderRef.current = onReorder;
+  onDragStateChangeRef.current = onDragStateChange;
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 8,
       onPanResponderGrant: () => {
-        hasMovedRef.current = false;
+        startIndexRef.current = indexRef.current;
+        lastTargetIndexRef.current = indexRef.current;
         setDragging(true);
+        onDragStateChangeRef.current(true);
       },
       onPanResponderMove: (_, gestureState) => {
-        if (hasMovedRef.current) return;
-        const currentIndex = indexRef.current;
         const currentTotal = totalRef.current;
-        if (gestureState.dy < -44 && currentIndex > 0) {
-          hasMovedRef.current = true;
-          onMoveRef.current(currentIndex, -1);
-        } else if (gestureState.dy > 44 && currentIndex < currentTotal - 1) {
-          hasMovedRef.current = true;
-          onMoveRef.current(currentIndex, 1);
+        const rowStep = 74;
+        const requestedIndex = startIndexRef.current + Math.round(gestureState.dy / rowStep);
+        const targetIndex = Math.max(0, Math.min(currentTotal - 1, requestedIndex));
+        if (targetIndex !== lastTargetIndexRef.current) {
+          lastTargetIndexRef.current = targetIndex;
+          onReorderRef.current(stop.id, targetIndex);
         }
       },
-      onPanResponderRelease: () => setDragging(false),
-      onPanResponderTerminate: () => setDragging(false),
+      onPanResponderRelease: () => {
+        setDragging(false);
+        onDragStateChangeRef.current(false);
+      },
+      onPanResponderTerminate: () => {
+        setDragging(false);
+        onDragStateChangeRef.current(false);
+      },
     })
   ).current;
 
@@ -121,23 +132,20 @@ function VisitStopRow({
       <View style={styles.visitStopDragHandle} {...panResponder.panHandlers}>
         <Ionicons name="reorder-three" size={24} color="#64748B" />
       </View>
-      <View style={styles.visitStopIndex}>
-        <Text style={styles.visitStopIndexText}>{index + 1}</Text>
-      </View>
       <View style={styles.visitStopContent}>
-        <Text style={styles.visitStopTitle}>{stop.name || `Inventory #${stop.id}`}</Text>
-        <Text style={styles.visitStopMeta} numberOfLines={2}>{formatStopLocation(stop)}</Text>
-        <Text style={styles.visitStopMeta}>
-          {[stop.area_size ? `${stop.area_size} sq.yds` : '', stop.floor, formatStopPrice(stop)].filter(Boolean).join(' • ')}
+        <View style={styles.visitStopTitleRow}>
+          <View style={styles.visitStopIndex}>
+            <Text style={styles.visitStopIndexText}>{index + 1}</Text>
+          </View>
+          <Text style={styles.visitStopTitle} numberOfLines={2}>{stop.name || `Inventory #${stop.id}`}</Text>
+        </View>
+        <Text style={styles.visitStopMeta} numberOfLines={3}>{formatStopLocation(stop)}</Text>
+        <Text style={styles.visitStopMeta} numberOfLines={2}>
+          {[stop.area_size ? `${stop.area_size} sq.yds` : '', stop.floor].filter(Boolean).join(' • ')}
         </Text>
+        <Text style={styles.visitStopPrice} numberOfLines={2}>{formatStopPrice(stop)}</Text>
       </View>
       <View style={styles.visitStopActions}>
-        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onMove(index, -1)} disabled={index === 0}>
-          <Ionicons name="chevron-up" size={17} color={index === 0 ? '#CBD5E1' : '#4B5563'} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onMove(index, 1)} disabled={index === total - 1}>
-          <Ionicons name="chevron-down" size={17} color={index === total - 1 ? '#CBD5E1' : '#4B5563'} />
-        </TouchableOpacity>
         <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onRemove(stop.id)}>
           <Ionicons name="trash" size={16} color="#DC2626" />
         </TouchableOpacity>
@@ -215,7 +223,8 @@ const getVisitDateOptions = () => {
 export default function MoreScreen() {
   const { user, token } = useAuth();
   const params = useLocalSearchParams();
-  const initialTab = (params.tab as string) || 'visits';
+  const requestedTab = (params.tab as string) || 'visits';
+  const initialTab = requestedTab === 'deals' ? 'visits' : requestedTab;
   const fromPopup = params.fromPopup === 'true';
   const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>(
     initialTab as any
@@ -233,7 +242,7 @@ export default function MoreScreen() {
   // Update active tab when params change
   useEffect(() => {
     if (params.tab) {
-      setActiveTab(params.tab as any);
+      setActiveTab(params.tab === 'deals' ? 'visits' : params.tab as any);
     }
   }, [params.tab]);
   
@@ -258,6 +267,7 @@ export default function MoreScreen() {
   const [matchingInventory, setMatchingInventory] = useState<VisitStop[]>([]);
   const [selectedStopIds, setSelectedStopIds] = useState<number[]>([]);
   const [visitStops, setVisitStops] = useState<VisitStop[]>([]);
+  const [isVisitStopDragging, setIsVisitStopDragging] = useState(false);
   
   // Lead search states for Deal
   const [dealLeadSearchQuery, setDealLeadSearchQuery] = useState('');
@@ -545,13 +555,16 @@ export default function MoreScreen() {
     </View>
   );
 
-  const moveVisitStop = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= visitStops.length) return;
-    const nextStops = [...visitStops];
-    const [moved] = nextStops.splice(index, 1);
-    nextStops.splice(targetIndex, 0, moved);
-    setVisitStops(nextStops);
+  const reorderVisitStop = (stopId: number, targetIndex: number) => {
+    setVisitStops((prev) => {
+      const currentIndex = prev.findIndex((stop) => stop.id === stopId);
+      if (currentIndex < 0 || currentIndex === targetIndex) return prev;
+      const boundedTargetIndex = Math.max(0, Math.min(prev.length - 1, targetIndex));
+      const nextStops = [...prev];
+      const [moved] = nextStops.splice(currentIndex, 1);
+      nextStops.splice(boundedTargetIndex, 0, moved);
+      return nextStops;
+    });
   };
 
   const removeVisitStop = (id: number) => {
@@ -805,55 +818,37 @@ export default function MoreScreen() {
   const exportLeads = async (leadType: 'clients' | 'inventory' | 'all') => {
     setExporting(true);
     try {
-      const endpoint = leadType === 'all' ? '/api/leads' : `/api/leads/${leadType}`;
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      const query = leadType === 'all' ? '' : `?category=${leadType}`;
+      const response = await fetch(`${API_URL}/api/leads/export${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      if (!response.ok) throw new Error('Failed to fetch leads');
-      
-      const leads = await response.json();
-      
-      // Create CSV content
-      const headers = ['ID', 'Name', 'Phone', 'Email', 'Lead Type', 'Status', 'Temperature', 'Budget', 'Location', 'Property Type', 'Created At'];
-      const csvRows = [headers.join(',')];
-      
-      for (const lead of leads) {
-        const row = [
-          lead.id || '',
-          `"${(lead.name || '').replace(/"/g, '""')}"`,
-          lead.phone || '',
-          lead.email || '',
-          lead.lead_type || '',
-          lead.lead_status || '',
-          lead.temperature || '',
-          `${lead.budget_min || ''}-${lead.budget_max || ''}`,
-          `"${(lead.location || '').replace(/"/g, '""')}"`,
-          lead.property_type || '',
-          lead.created_at || ''
-        ];
-        csvRows.push(row.join(','));
+
+      if (!response.ok) {
+        let message = 'Failed to export leads';
+        try {
+          const errorData = await response.json();
+          message = errorData?.detail || message;
+        } catch {}
+        throw new Error(message);
       }
-      
-      const csvContent = csvRows.join('\n');
+
+      const csvContent = await response.text();
       const fileName = `leads_${leadType}_${new Date().toISOString().split('T')[0]}.csv`;
-      
+
       if (Platform.OS === 'web') {
-        // Web download
-        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
-        Alert.alert('Success', `Exported ${leads.length} leads`);
+        Alert.alert('Success', 'Lead export downloaded');
       } else {
-        // Mobile - save and share
         const legacyFileSystem = FileSystem as any;
         const fileUri = legacyFileSystem.documentDirectory + fileName;
         await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
-        
+
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Leads' });
         } else {
@@ -862,7 +857,7 @@ export default function MoreScreen() {
       }
     } catch (error) {
       console.error('Export error:', error);
-      Alert.alert('Error', 'Failed to export leads');
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to export leads');
     } finally {
       setExporting(false);
     }
@@ -1190,7 +1185,11 @@ export default function MoreScreen() {
                 <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.modalBody}
+              keyboardShouldPersistTaps="handled"
+              scrollEnabled={!isVisitStopDragging}
+            >
               <Text style={styles.inputLabel}>Lead *</Text>
               <View style={styles.searchContainer}>
                 <TextInput
@@ -1302,7 +1301,7 @@ export default function MoreScreen() {
                   <View style={styles.visitPlanHeader}>
                     <View>
                       <Text style={styles.visitPlanTitle}>Visit Order</Text>
-                      <Text style={styles.visitPlanHint}>Drag handle to arrange route</Text>
+                      <Text style={styles.visitPlanHint}>Hold and drag the handle to arrange route</Text>
                     </View>
                     <Text style={styles.visitPlanCount}>{visitStops.length} stops</Text>
                   </View>
@@ -1312,8 +1311,9 @@ export default function MoreScreen() {
                       stop={stop}
                       index={index}
                       total={visitStops.length}
-                      onMove={moveVisitStop}
+                      onReorder={reorderVisitStop}
                       onRemove={removeVisitStop}
+                      onDragStateChange={setIsVisitStopDragging}
                       formatStopLocation={formatStopLocation}
                       formatStopPrice={formatStopPrice}
                     />
@@ -1582,15 +1582,14 @@ export default function MoreScreen() {
           </TouchableOpacity>
           <Text style={styles.simpleHeaderTitle}>
             {activeTab === 'visits' && 'Site Visits'}
-            {activeTab === 'deals' && 'Deals & Transactions'}
             {activeTab === 'activity' && 'Activity Timeline'}
             {activeTab === 'team' && 'Team Members'}
             {activeTab === 'export' && 'Export Data'}
           </Text>
-          {(activeTab === 'visits' || activeTab === 'deals') && (
+          {activeTab === 'visits' && (
             <TouchableOpacity 
               style={styles.headerAddButton} 
-              onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+              onPress={() => setShowAddVisitModal(true)}
             >
               <Ionicons name="add" size={24} color="#3B82F6" />
             </TouchableOpacity>
@@ -1616,29 +1615,6 @@ export default function MoreScreen() {
                   <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
                     <Ionicons name="add" size={18} color="#FFFFFF" />
                     <Text style={styles.emptyButtonText}>Schedule Visit</Text>
-                  </TouchableOpacity>
-                </View>
-              }
-            />
-          )}
-
-          {activeTab === 'deals' && (
-            <FlatList
-              data={deals}
-              renderItem={renderDeal}
-              keyExtractor={(item) => item.id.toString()}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              contentContainerStyle={styles.listContainer}
-              ListEmptyComponent={
-                <View style={styles.emptyState}>
-                  <View style={styles.emptyIconContainer}>
-                    <Ionicons name="cash-outline" size={40} color="#9CA3AF" />
-                  </View>
-                  <Text style={styles.emptyTitle}>No Deals Yet</Text>
-                  <Text style={styles.emptyText}>Create your first deal to track</Text>
-                  <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
-                    <Ionicons name="add" size={18} color="#FFFFFF" />
-                    <Text style={styles.emptyButtonText}>Add Deal</Text>
                   </TouchableOpacity>
                 </View>
               }
@@ -1721,20 +1697,6 @@ export default function MoreScreen() {
                 </TouchableOpacity>
               </View>
               
-              <View style={styles.exportSection}>
-                <Text style={styles.exportSectionTitle}>Export Deals</Text>
-                <Text style={styles.exportDescription}>Download deals and transactions data</Text>
-                
-                <TouchableOpacity 
-                  style={[styles.exportButton, { backgroundColor: '#F59E0B' }]} 
-                  onPress={exportDeals}
-                  disabled={exporting}
-                >
-                  <Ionicons name="cash" size={20} color="#FFFFFF" />
-                  <Text style={styles.exportButtonText}>Export All Deals</Text>
-                </TouchableOpacity>
-              </View>
-              
               <View style={styles.exportInfo}>
                 <Ionicons name="information-circle" size={20} color="#6B7280" />
                 <Text style={styles.exportInfoText}>
@@ -1757,7 +1719,7 @@ export default function MoreScreen() {
       <View style={styles.header}>
         <View style={styles.headerGradient}>
           <Text style={styles.headerTitle}>More Features</Text>
-          <Text style={styles.headerSubtitle}>Manage visits, deals & more</Text>
+          <Text style={styles.headerSubtitle}>Manage visits, activity, team and exports</Text>
         </View>
       </View>
 
@@ -1773,18 +1735,6 @@ export default function MoreScreen() {
           </View>
           <Text style={styles.featureCardTitle}>Site Visits</Text>
           <Text style={styles.featureCardCount}>{siteVisits.length}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.featureCard, activeTab === 'deals' && styles.featureCardActive]}
-          onPress={() => setActiveTab('deals')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.featureIconContainer, { backgroundColor: '#F0FDF4' }]}>
-            <Ionicons name="cash" size={22} color="#10B981" />
-          </View>
-          <Text style={styles.featureCardTitle}>Deals</Text>
-          <Text style={styles.featureCardCount}>{deals.length}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -1832,15 +1782,14 @@ export default function MoreScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
           {activeTab === 'visits' && 'Site Visits'}
-          {activeTab === 'deals' && 'Deals & Transactions'}
           {activeTab === 'activity' && 'Activity Timeline'}
           {activeTab === 'team' && 'Team Members'}
           {activeTab === 'export' && 'Export Data'}
         </Text>
-        {(activeTab === 'visits' || activeTab === 'deals') && (
+        {activeTab === 'visits' && (
           <TouchableOpacity 
             style={styles.addButtonSmall} 
-            onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+            onPress={() => setShowAddVisitModal(true)}
           >
             <Ionicons name="add" size={18} color="#FFFFFF" />
           </TouchableOpacity>
@@ -1866,29 +1815,6 @@ export default function MoreScreen() {
                 <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
                   <Ionicons name="add" size={18} color="#FFFFFF" />
                   <Text style={styles.emptyButtonText}>Schedule Visit</Text>
-                </TouchableOpacity>
-              </View>
-            }
-          />
-        )}
-
-        {activeTab === 'deals' && (
-          <FlatList
-            data={deals}
-            renderItem={renderDeal}
-            keyExtractor={(item) => item.id.toString()}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={styles.listContainer}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIconContainer}>
-                  <Ionicons name="cash-outline" size={40} color="#9CA3AF" />
-                </View>
-                <Text style={styles.emptyTitle}>No Deals Yet</Text>
-                <Text style={styles.emptyText}>Create your first deal to track</Text>
-                <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
-                  <Ionicons name="add" size={18} color="#FFFFFF" />
-                  <Text style={styles.emptyButtonText}>Add Deal</Text>
                 </TouchableOpacity>
               </View>
             }
@@ -1966,20 +1892,6 @@ export default function MoreScreen() {
               >
                 <Ionicons name="document-text" size={20} color="#FFFFFF" />
                 <Text style={styles.exportButtonText}>Export All Leads</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.exportSection}>
-              <Text style={styles.exportSectionTitle}>Export Deals</Text>
-              <Text style={styles.exportDescription}>Download deals and transactions data</Text>
-              
-              <TouchableOpacity 
-                style={[styles.exportButton, { backgroundColor: '#F59E0B' }]} 
-                onPress={exportDeals}
-                disabled={exporting}
-              >
-                <Ionicons name="cash" size={20} color="#FFFFFF" />
-                <Text style={styles.exportButtonText}>Export All Deals</Text>
               </TouchableOpacity>
             </View>
             
@@ -2419,7 +2331,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     marginBottom: 16,
   },
   visitPlanHeader: {
@@ -2445,13 +2357,14 @@ const styles = StyleSheet.create({
   },
   visitStopCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: 10,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    gap: 8,
   },
   visitStopCardDragging: {
     borderColor: '#2563EB',
@@ -2459,49 +2372,65 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.01 }],
   },
   visitStopDragHandle: {
-    width: 32,
-    height: 40,
+    width: 30,
+    height: 42,
     borderRadius: 8,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
   },
   visitStopIndex: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
   visitStopIndexText: {
     color: '#1D4ED8',
     fontWeight: '800',
+    fontSize: 12,
   },
   visitStopContent: {
     flex: 1,
+    minWidth: 0,
+  },
+  visitStopTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 3,
   },
   visitStopTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
     color: '#111827',
   },
   visitStopMeta: {
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 15,
     color: '#6B7280',
     marginTop: 2,
   },
+  visitStopPrice: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#334155',
+    fontWeight: '700',
+    marginTop: 3,
+  },
   visitStopActions: {
     flexDirection: 'row',
-    gap: 4,
   },
   visitStopIconBtn: {
-    width: 28,
-    height: 28,
+    width: 30,
+    height: 30,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FEF2F2',
     alignItems: 'center',
     justifyContent: 'center',
   },

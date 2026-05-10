@@ -710,13 +710,6 @@ export default function LeadDetailScreen() {
             <Ionicons name="location-outline" size={18} color="#10B981" />
             <Text style={styles.commandActionText}>Visit</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.commandAction}
-            onPress={() => router.push(`/more?tab=deals&lead_id=${id}` as any)}
-          >
-            <Ionicons name="cash-outline" size={18} color="#8B5CF6" />
-            <Text style={styles.commandActionText}>Deal</Text>
-          </TouchableOpacity>
           {(isClientLead() || isInventoryLead()) ? (
             <TouchableOpacity
               style={styles.commandAction}

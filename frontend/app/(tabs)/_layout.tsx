@@ -106,13 +106,6 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleMenuItemPress('visits')}
             />
             <MenuItem 
-              icon="cash"
-              label="Deals"
-              color="#10B981"
-              bgColor="#ECFDF5"
-              onPress={() => handleMenuItemPress('deals')}
-            />
-            <MenuItem 
               icon="time"
               label="Activity"
               color="#F59E0B"
