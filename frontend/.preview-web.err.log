@@ -1,0 +1,16 @@
+Skipping dependency validation in offline mode
+Failed to construct transformer:  Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:421:11)
+    at spawn (node:child_process:796:9)
+    at fork (node:child_process:174:10)
+    at ChildProcessWorker.initialize (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\jest-worker\build\workers\ChildProcessWorker.js:144:45)
+    at new ChildProcessWorker (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\jest-worker\build\workers\ChildProcessWorker.js:100:10)
+    at WorkerPool.createWorker (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\jest-worker\build\WorkerPool.js:30:12)
+    at new BaseWorkerPool (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\jest-worker\build\base\BaseWorkerPool.js:55:27)
+    at new WorkerPool (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\jest-worker\build\WorkerPool.js:18:1)
+    at new Worker (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\jest-worker\build\index.js:141:26)
+    at WorkerFarm._makeFarm (C:\Important\Sagar Homes\LMSiOS\iOSApp\frontend\node_modules\metro\src\DeltaBundler\WorkerFarm.js:70:12) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}
