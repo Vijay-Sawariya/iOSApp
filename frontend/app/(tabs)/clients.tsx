@@ -754,8 +754,8 @@ www.sagarhome.com`;
               Showing {filteredLeads.length} of {leads.length} results
             </Text>
             {hasActiveFilters() && (
-              <TouchableOpacity onPress={clearAllFilters} style={styles.clearFiltersBtn}>
-                <Text style={styles.clearFiltersText}>Clear Filters</Text>
+              <TouchableOpacity onPress={clearAllFilters} style={styles.resultClearFiltersBtn}>
+                <Text style={styles.resultClearFiltersText}>Clear Filters</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1557,7 +1557,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
   },
-  placeholderText: {
+  selectorPlaceholderText: {
     color: '#9CA3AF',
   },
   filterSection: {
@@ -1840,13 +1840,13 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     fontWeight: '500',
   },
-  clearFiltersBtn: {
+  resultClearFiltersBtn: {
     paddingHorizontal: 12,
     paddingVertical: 4,
     backgroundColor: '#3B82F6',
     borderRadius: 4,
   },
-  clearFiltersText: {
+  resultClearFiltersText: {
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '600',

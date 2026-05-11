@@ -14,12 +14,18 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://sagar-home-api.onrender.com"
+      },
       "ios": {
         "resourceClass": "m-medium"
       }
     },
     "production": {
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://sagar-home-api.onrender.com"
+      },
       "ios": {
         "resourceClass": "m-medium",
         "buildConfiguration": "Release"

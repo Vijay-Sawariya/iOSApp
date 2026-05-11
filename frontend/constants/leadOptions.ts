@@ -219,7 +219,7 @@ export interface FloorPricing {
 
 export const formatFloorPricing = (pricing?: FloorPricing[], unit?: string | null): string | null => {
   if (!pricing || pricing.length === 0) return null;
-  const unitStr = formatUnit(unit);
+  const unitStr = formatUnit(unit ?? null);
   return pricing.map(p => `${p.floor_label}: ₹${p.floor_amount}${unitStr}`).join(' | ');
 };
 
@@ -240,6 +240,8 @@ export interface Lead {
   budget_min: number | null;
   budget_max: number | null;
   floor: string | null;
+  bhk?: string | null;
+  lift?: string | null;
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;

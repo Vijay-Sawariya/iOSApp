@@ -12,7 +12,8 @@ const IST_OFFSET_MINUTES = 330;
 // CRITICAL: This must be set for notifications to display with sound when app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,    // Show the notification popup
+    shouldShowBanner: true,   // Show the notification banner
+    shouldShowList: true,     // Show in notification list
     shouldPlaySound: true,    // Play notification sound
     shouldSetBadge: true,     // Update app badge
     priority: Notifications.AndroidNotificationPriority.MAX,
@@ -171,6 +172,7 @@ export const notificationService = {
           vibrate: [0, 250, 250, 250],
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: notificationTime,
           channelId: Platform.OS === 'android' ? 'reminders' : undefined,
         },
@@ -282,6 +284,7 @@ export const notificationService = {
           vibrate: [0, 250, 250, 250],
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: secondsUntil,
           channelId: Platform.OS === 'android' ? 'reminders' : undefined,
         },
@@ -417,6 +420,7 @@ export const notificationService = {
           priority: Notifications.AndroidNotificationPriority.MAX,
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: 2,
           channelId: Platform.OS === 'android' ? 'reminders' : undefined,
         },
