@@ -14,6 +14,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
+import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
 interface DashboardStats {
   total_leads: number;
@@ -35,6 +36,10 @@ interface DashboardStats {
   qualified_leads: number;
   negotiating_leads: number;
   won_leads: number;
+  uncontacted_new_leads: number;
+  today_site_visits: number;
+  stale_leads: number;
+  available_inventory: number;
 }
 
 interface UrgentFollowup {
@@ -48,6 +53,7 @@ interface UrgentFollowup {
   due_time: string;
   status: string;
   is_missed: boolean;
+  created_by?: number | null;
 }
 
 interface SmartMatch {
@@ -151,6 +157,42 @@ export default function DashboardScreen() {
       route: '/clients',
     },
     {
+      key: 'untouched',
+      title: 'New untouched',
+      count: stats?.uncontacted_new_leads || 0,
+      icon: 'person-add',
+      color: '#7C3AED',
+      bg: '#F5F3FF',
+      route: '/clients',
+    },
+    {
+      key: 'visits',
+      title: 'Site visits',
+      count: stats?.today_site_visits || 0,
+      icon: 'walk',
+      color: '#0F766E',
+      bg: '#F0FDFA',
+      route: '/more',
+    },
+    {
+      key: 'stale',
+      title: 'Stale leads',
+      count: stats?.stale_leads || 0,
+      icon: 'time',
+      color: '#9333EA',
+      bg: '#FAF5FF',
+      route: '/clients',
+    },
+    {
+      key: 'available',
+      title: 'Available inventory',
+      count: stats?.available_inventory || 0,
+      icon: 'home',
+      color: '#047857',
+      bg: '#ECFDF5',
+      route: '/inventory',
+    },
+    {
       key: 'matches',
       title: 'Smart matches',
       count: smartMatches.length,
@@ -215,12 +257,16 @@ export default function DashboardScreen() {
                 <Text style={styles.nextActionTitle} numberOfLines={1}>{urgentFollowups[0].title}</Text>
               </View>
               <View style={styles.nextActionButtons}>
-                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
-                  <Ionicons name="call" size={18} color="#10B981" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
-                  <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                </TouchableOpacity>
+                {canViewSensitiveData(user?.role, user?.id, urgentFollowups[0].created_by) && urgentFollowups[0].lead_phone && (
+                  <>
+                    <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
+                      <Ionicons name="call" size={18} color="#10B981" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
+                      <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                    </TouchableOpacity>
+                  </>
+                )}
                 <TouchableOpacity style={styles.nextActionButton} onPress={() => router.push(`/leads/${urgentFollowups[0].lead_id}` as any)}>
                   <Ionicons name="open-outline" size={18} color="#3B82F6" />
                 </TouchableOpacity>
@@ -252,25 +298,32 @@ export default function DashboardScreen() {
                 <Text style={styles.urgentBadgeText}>{stats?.missed_followups || 0} missed</Text>
               </View>
             </View>
-            {urgentFollowups.slice(0, 3).map((followup) => (
-              <View key={followup.id} style={[styles.urgentItem, followup.is_missed && styles.missedItem]}>
-                <View style={styles.urgentItemContent}>
-                  <Text style={styles.urgentItemName}>{followup.lead_name}</Text>
-                  <Text style={styles.urgentItemTitle}>{followup.title}</Text>
-                  <Text style={[styles.urgentItemStatus, followup.is_missed ? styles.missedText : styles.todayText]}>
-                    {followup.status} • {followup.due_date} {followup.due_time ? `at ${followup.due_time.slice(0, 5)}` : ''}
-                  </Text>
+            {urgentFollowups.slice(0, 3).map((followup) => {
+              const canView = canViewSensitiveData(user?.role, user?.id, followup.created_by);
+              return (
+                <View key={followup.id} style={[styles.urgentItem, followup.is_missed && styles.missedItem]}>
+                  <View style={styles.urgentItemContent}>
+                    <Text style={styles.urgentItemName}>{followup.lead_name}</Text>
+                    <Text style={styles.urgentItemTitle}>{followup.title}</Text>
+                    <Text style={[styles.urgentItemStatus, followup.is_missed ? styles.missedText : styles.todayText]}>
+                      {followup.status} • {followup.due_date} {followup.due_time ? `at ${followup.due_time.slice(0, 5)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.urgentActions}>
+                    {canView && followup.lead_phone && (
+                      <>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleCall(followup.lead_phone)}>
+                          <Ionicons name="call" size={18} color="#10B981" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name)}>
+                          <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.urgentActions}>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleCall(followup.lead_phone)}>
-                    <Ionicons name="call" size={18} color="#10B981" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name)}>
-                    <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
+              );
+            })}
             <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/reminders' as any)}>
               <Text style={styles.viewAllText}>View All Follow-ups</Text>
               <Ionicons name="chevron-forward" size={16} color="#3B82F6" />
@@ -309,10 +362,12 @@ export default function DashboardScreen() {
               { label: 'Won', value: stats?.won_leads || 0, color: '#10B981' },
             ].map((stage, index) => (
               <View key={stage.label} style={styles.funnelStage}>
-                <View style={[styles.funnelBar, { backgroundColor: stage.color, width: `${Math.max(20, funnelTotal > 0 ? (stage.value / funnelTotal) * 100 : 20)}%` }]}>
-                  <Text style={styles.funnelValue}>{stage.value}</Text>
+                <View style={styles.funnelBarTrack}>
+                  <View style={[styles.funnelBar, { backgroundColor: stage.color, width: `${Math.max(18, funnelTotal > 0 ? (stage.value / funnelTotal) * 100 : 18)}%` }]}>
+                    <Text style={styles.funnelValue}>{stage.value}</Text>
+                  </View>
                 </View>
-                <Text style={styles.funnelLabel}>{stage.label}</Text>
+                <Text style={styles.funnelLabel} numberOfLines={1}>{stage.label}</Text>
               </View>
             ))}
           </View>
@@ -703,24 +758,29 @@ const styles = StyleSheet.create({
   funnelStage: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+  },
+  funnelBarTrack: {
+    flex: 1,
+    minWidth: 0,
   },
   funnelBar: {
     height: 28,
     borderRadius: 6,
     justifyContent: 'center',
-    paddingHorizontal: 10,
-    minWidth: 50,
+    paddingHorizontal: 8,
+    minWidth: 36,
   },
   funnelValue: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   funnelLabel: {
-    fontSize: 13,
+    width: 76,
+    fontSize: 11,
     color: '#6B7280',
-    flex: 1,
+    flexShrink: 0,
   },
   // Match Widget
   matchWidget: {

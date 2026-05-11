@@ -16,12 +16,62 @@ from contextlib import contextmanager
 import re
 import base64
 import asyncio
+import json
+import csv
+import io
 
 # Import for AI features
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+except ModuleNotFoundError:
+    LlmChat = None
+    UserMessage = None
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Phone/Address masking helper functions
+def mask_phone(phone: str) -> str:
+    """Mask phone number showing first 2 and last 2 digits"""
+    if not phone:
+        return phone
+    # Remove all non-numeric characters for masking
+    clean_phone = re.sub(r'[^0-9]', '', phone)
+    if len(clean_phone) <= 4:
+        return phone
+    # Show first 2 and last 2 digits, mask the rest
+    masked = clean_phone[:2] + 'X' * (len(clean_phone) - 4) + clean_phone[-2:]
+    return masked
+
+def mask_address(address: str) -> str:
+    """Mask address - show only area/locality, hide specific details"""
+    if not address:
+        return address
+    # Mask specific plot/house numbers but keep general area
+    # Pattern: hide numbers like C-10, A-123, Plot-5, etc.
+    masked = re.sub(r'\b[A-Za-z]?-?\d+[A-Za-z]?\b', '***', address)
+    return masked
+
+def should_mask_data(user_role: str, user_id: int, created_by: int) -> bool:
+    """Determine if data should be masked based on user role and ownership"""
+    # Admin can see everything
+    if user_role and user_role.lower() == 'admin':
+        return False
+    # Owner can see their own data
+    if created_by is not None and user_id == created_by:
+        return False
+    # Everyone else gets masked data
+    return True
+
+def apply_lead_masking(lead: dict, user_role: str, user_id: int) -> dict:
+    """Apply masking to a lead based on user permissions"""
+    created_by = lead.get('created_by')
+    if should_mask_data(user_role, user_id, created_by):
+        if lead.get('phone'):
+            lead['phone'] = mask_phone(lead['phone'])
+        if lead.get('address'):
+            lead['address'] = mask_address(lead['address'])
+    return lead
 
 # MySQL connection config
 MYSQL_CONFIG = {
@@ -86,6 +136,47 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def ensure_user_permission_columns(cursor):
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
+    except Exception:
+        pass
+
+def ensure_security_audit_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS security_audit_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NULL,
+            event_type VARCHAR(100) NOT NULL,
+            entity_type VARCHAR(50) NULL,
+            entity_id INT NULL,
+            details TEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_security_audit_created_at (created_at),
+            INDEX idx_security_audit_user_id (user_id),
+            INDEX idx_security_audit_event_type (event_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+def log_security_event(cursor, user_id, event_type, entity_type=None, entity_id=None, details=None):
+    try:
+        ensure_security_audit_table(cursor)
+        details_text = details if isinstance(details, str) else json.dumps(details or {})
+        cursor.execute("""
+            INSERT INTO security_audit_logs (user_id, event_type, entity_type, entity_id, details, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """, (user_id, event_type, entity_type, entity_id, details_text))
+    except Exception as exc:
+        logging.warning(f"Security audit log skipped: {exc}")
+
+def user_can_export(cursor, current_user: dict) -> bool:
+    if current_user.get('role') == 'admin':
+        return True
+    ensure_user_permission_columns(cursor)
+    cursor.execute("SELECT can_export FROM users WHERE id = %s", (current_user['id'],))
+    result = cursor.fetchone()
+    return bool(result and result.get('can_export'))
 
 # ============= Calculation Helper Functions =============
 def normalize_floor_label(label: str) -> str:
@@ -408,6 +499,11 @@ class DashboardStats(BaseModel):
     qualified_leads: int = 0
     negotiating_leads: int = 0
     won_leads: int = 0
+    # Daily usability stats
+    uncontacted_new_leads: int = 0
+    today_site_visits: int = 0
+    stale_leads: int = 0
+    available_inventory: int = 0
 
 class AIMatchResult(BaseModel):
     buyer_id: int
@@ -462,28 +558,40 @@ def login(credentials: UserLogin):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username = %s", (credentials.username,))
         user = cursor.fetchone()
-        
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Check if password is hashed (starts with $2b$ for bcrypt) or plain text
-    password_valid = False
-    if user['password'].startswith('$2b$') or user['password'].startswith('$2a$'):
-        # Hashed password - use bcrypt verification
-        password_valid = verify_password(credentials.password, user['password'])
-    else:
-        # Plain text password (legacy) - direct comparison
-        password_valid = (credentials.password == user['password'])
-    
-    if not password_valid:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    access_token = create_access_token(data={"sub": str(user['id'])})
-    
-    return TokenResponse(
-        access_token=access_token,
-        user=UserResponse(**user)
-    )
+
+        if not user:
+            log_security_event(cursor, None, "login_failed", "user", None, {
+                "username": credentials.username,
+                "reason": "unknown_user"
+            })
+            conn.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        # Check if password is hashed (starts with $2b$ for bcrypt) or plain text
+        password_valid = False
+        if user['password'].startswith('$2b$') or user['password'].startswith('$2a$'):
+            # Hashed password - use bcrypt verification
+            password_valid = verify_password(credentials.password, user['password'])
+        else:
+            # Plain text password (legacy) - direct comparison
+            password_valid = (credentials.password == user['password'])
+
+        if not password_valid:
+            log_security_event(cursor, user['id'], "login_failed", "user", user['id'], {
+                "username": credentials.username,
+                "reason": "invalid_password"
+            })
+            conn.commit()
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        access_token = create_access_token(data={"sub": str(user['id'])})
+        log_security_event(cursor, user['id'], "login_success", "user", user['id'])
+        conn.commit()
+
+        return TokenResponse(
+            access_token=access_token,
+            user=UserResponse(**user)
+        )
 
 @api_router.get("/auth/me", response_model=UserResponse)
 def get_me(current_user: dict = Depends(get_current_user)):
@@ -701,7 +809,12 @@ def get_client_leads(
                 lead['aging_color'] = aging['color']
                 lead['aging_urgency'] = aging['urgency']
     
-    return leads
+    # Apply masking based on user permissions
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    masked_leads = [apply_lead_masking(dict(lead), user_role, user_id) for lead in leads]
+    
+    return masked_leads
 
 @api_router.get("/leads/{lead_id}/preferred-inventory")
 def get_preferred_inventory_ids(
@@ -914,6 +1027,10 @@ def get_matching_inventory(
                 ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
             ] if ok
         ]
+        # Apply masking based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        item = apply_lead_masking(item, user_role, user_id)
         matches.append(item)
 
     return {"lead_id": lead_id, "defaults": defaults, "filters": {
@@ -1012,6 +1129,10 @@ def get_matching_clients(
                 ('Budget +/- 20%', effective_budget_min is not None or effective_budget_max is not None),
             ] if ok
         ]
+        # Apply masking based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        item = apply_lead_masking(item, user_role, user_id)
         matches.append(item)
 
     return {"lead_id": lead_id, "defaults": defaults, "filters": {
@@ -1140,7 +1261,12 @@ def get_inventory_leads(
                 lead['aging_color'] = aging['color']
                 lead['aging_urgency'] = aging['urgency']
     
-    return leads
+    # Apply masking based on user permissions
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    masked_leads = [apply_lead_masking(dict(lead), user_role, user_id) for lead in leads]
+    
+    return masked_leads
 
 @api_router.get("/leads/search")
 def search_leads(q: str, current_user: dict = Depends(get_current_user)):
@@ -1724,7 +1850,7 @@ def get_reminders(
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT a.*, l.name as lead_name, l.phone as lead_phone
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
                FROM actions a
                LEFT JOIN leads l ON a.lead_id = l.id
                WHERE a.user_id = %s
@@ -1751,6 +1877,15 @@ def get_reminders(
             a_dict['notes'] = a_dict.get('description')
             
             result.append(a_dict)
+    
+    # Apply masking to phone numbers based on user permissions
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    for item in result:
+        lead_created_by = item.get('lead_created_by')
+        if should_mask_data(user_role, user_id, lead_created_by):
+            if item.get('lead_phone'):
+                item['lead_phone'] = mask_phone(item['lead_phone'])
     
     return result
 
@@ -2004,6 +2139,59 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         
         cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_status = 'Won' AND lead_type IN ('buyer', 'tenant') AND (is_deleted IS NULL OR is_deleted = 0)")
         won_leads = cursor.fetchone()['count']
+
+        # Leads created but not yet touched by an action/reminder.
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM leads l
+                WHERE l.lead_status = 'New'
+                AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND NOT EXISTS (SELECT 1 FROM actions a WHERE a.lead_id = l.id)
+            """)
+            uncontacted_new_leads = cursor.fetchone()['count']
+        except Exception:
+            uncontacted_new_leads = 0
+
+        # Site visits scheduled for today.
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM site_visits
+                WHERE DATE(visit_date) = CURDATE()
+                AND (status IS NULL OR status NOT IN ('Cancelled', 'Canceled'))
+            """)
+            today_site_visits = cursor.fetchone()['count']
+        except Exception:
+            today_site_visits = 0
+
+        # Active leads with no recent follow-up activity.
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM leads l
+                LEFT JOIN (
+                    SELECT lead_id, MAX(due_date) as last_action_date
+                    FROM actions
+                    GROUP BY lead_id
+                ) latest_action ON latest_action.lead_id = l.id
+                WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+                AND (l.lead_status IS NULL OR l.lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
+                AND COALESCE(DATE(latest_action.last_action_date), DATE(l.created_at)) < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+            """)
+            stale_leads = cursor.fetchone()['count']
+        except Exception:
+            stale_leads = 0
+
+        # Inventory still available for matching.
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM leads
+            WHERE lead_type IN ('seller', 'landlord', 'builder')
+            AND (is_deleted IS NULL OR is_deleted = 0)
+            AND (lead_status IS NULL OR lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
+        """)
+        available_inventory = cursor.fetchone()['count']
     
     return DashboardStats(
         total_leads=total_leads,
@@ -2024,7 +2212,11 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         contacted_leads=contacted_leads,
         qualified_leads=qualified_leads,
         negotiating_leads=negotiating_leads,
-        won_leads=won_leads
+        won_leads=won_leads,
+        uncontacted_new_leads=uncontacted_new_leads,
+        today_site_visits=today_site_visits,
+        stale_leads=stale_leads,
+        available_inventory=available_inventory
     )
 
 # ============= AI Features Routes =============
@@ -2128,7 +2320,7 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
         # Get missed and today's follow-ups
         cursor.execute("""
             SELECT a.id, a.lead_id, a.title, a.due_date, a.due_time, a.status,
-                   l.name as lead_name, l.phone as lead_phone, l.lead_type
+                   l.name as lead_name, l.phone as lead_phone, l.lead_type, l.created_by
             FROM actions a
             JOIN leads l ON a.lead_id = l.id
             WHERE a.status IN ('Pending', 'Up Coming')
@@ -2157,8 +2349,18 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
                 'due_date': str(due_date) if due_date else None,
                 'due_time': str(f['due_time']) if f['due_time'] else None,
                 'status': 'Missed' if is_missed else 'Due Today',
-                'is_missed': is_missed
+                'is_missed': is_missed,
+                'created_by': f['created_by']
             })
+        
+        # Apply masking to phone numbers based on user permissions
+        user_role = current_user.get('role', '')
+        user_id = current_user.get('id')
+        for item in result:
+            created_by = item.get('created_by')
+            if should_mask_data(user_role, user_id, created_by):
+                if item.get('lead_phone'):
+                    item['lead_phone'] = mask_phone(item['lead_phone'])
         
         return result
 
@@ -2166,7 +2368,7 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
 async def generate_ai_message(request: AIMessageRequest, current_user: dict = Depends(get_current_user)):
     """Generate AI-powered follow-up message for WhatsApp"""
     
-    if not EMERGENT_LLM_KEY:
+    if not EMERGENT_LLM_KEY or LlmChat is None or UserMessage is None:
         raise HTTPException(status_code=500, detail="AI features not configured")
     
     # Get lead details
@@ -2246,7 +2448,7 @@ ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'im
 ALLOWED_PDF_TYPES = ['application/pdf']
 
 # File upload directory - stored on server
-UPLOAD_DIR = Path("/app/backend/uploads/inventory")
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", ROOT_DIR / "uploads" / "inventory"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Base URL for accessing files
@@ -2645,11 +2847,22 @@ def get_all_locations(current_user: dict = Depends(get_current_user)):
 # ============= Site Visit Scheduler =============
 
 class SiteVisitCreate(BaseModel):
-    lead_id: int
+    lead_id: Optional[int] = None
     property_lead_id: Optional[int] = None  # The inventory/property to visit
-    visit_date: str
+    visit_date: Optional[str] = None
     visit_time: Optional[str] = None
     location: Optional[str] = None
+    visit_type: Optional[str] = "Property Visit"
+    meeting_point: Optional[str] = None
+    location_url: Optional[str] = None
+    visit_order: Optional[int] = None
+    client_feedback: Optional[str] = None
+    outcome: Optional[str] = None
+    interest_level: Optional[str] = None
+    objections: Optional[str] = None
+    quoted_price: Optional[float] = None
+    next_followup_date: Optional[str] = None
+    next_followup_time: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = "Scheduled"  # Scheduled, Completed, Cancelled, Rescheduled
 
@@ -2662,10 +2875,56 @@ class SiteVisitResponse(BaseModel):
     location: Optional[str]
     notes: Optional[str]
     status: str
+    visit_type: Optional[str]
+    meeting_point: Optional[str]
+    location_url: Optional[str]
+    visit_order: Optional[int]
+    client_feedback: Optional[str]
+    outcome: Optional[str]
+    interest_level: Optional[str]
+    objections: Optional[str]
+    quoted_price: Optional[float]
+    next_followup_date: Optional[str]
+    next_followup_time: Optional[str]
     lead_name: Optional[str]
     property_name: Optional[str]
     created_by: Optional[int]
     created_at: Optional[str]
+
+def ensure_site_visits_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS site_visits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT,
+            property_lead_id INT,
+            visit_date DATE,
+            visit_time TIME,
+            location VARCHAR(255),
+            notes TEXT,
+            status VARCHAR(50) DEFAULT 'Scheduled',
+            created_by INT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    optional_columns = [
+        ("visit_type", "VARCHAR(100) DEFAULT 'Property Visit'"),
+        ("meeting_point", "VARCHAR(255) NULL"),
+        ("location_url", "TEXT NULL"),
+        ("visit_order", "INT NULL"),
+        ("client_feedback", "TEXT NULL"),
+        ("outcome", "VARCHAR(100) NULL"),
+        ("interest_level", "VARCHAR(50) NULL"),
+        ("objections", "TEXT NULL"),
+        ("quoted_price", "DECIMAL(15,2) NULL"),
+        ("next_followup_date", "DATE NULL"),
+        ("next_followup_time", "TIME NULL"),
+        ("updated_at", "DATETIME NULL"),
+    ]
+    for column, definition in optional_columns:
+        try:
+            cursor.execute(f"ALTER TABLE site_visits ADD COLUMN {column} {definition}")
+        except Exception:
+            pass
 
 @api_router.get("/site-visits")
 def get_site_visits(current_user: dict = Depends(get_current_user), status: Optional[str] = None):
@@ -2673,27 +2932,15 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            # First check if table exists, create if not
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS site_visits (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    lead_id INT,
-                    property_lead_id INT,
-                    visit_date DATE,
-                    visit_time TIME,
-                    location VARCHAR(255),
-                    notes TEXT,
-                    status VARCHAR(50) DEFAULT 'Scheduled',
-                    created_by INT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            ensure_site_visits_table(cursor)
             conn.commit()
             
             query = """
                 SELECT sv.*, 
-                       l.name as lead_name, l.phone as lead_phone,
-                       p.name as property_name, p.location as property_location
+                       l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
+                       p.name as property_name, p.location as property_location,
+                       p.Property_locationUrl as property_map_url,
+                       COALESCE(sv.location_url, p.Property_locationUrl) as location_url
                 FROM site_visits sv
                 LEFT JOIN leads l ON sv.lead_id = l.id
                 LEFT JOIN leads p ON sv.property_lead_id = p.id
@@ -2705,7 +2952,7 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
                 query += " AND sv.status = %s"
                 params.append(status)
             
-            query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC"
+            query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC, COALESCE(sv.visit_order, 999) ASC"
             cursor.execute(query, params)
             visits = cursor.fetchall()
             return [dict(v) for v in visits]
@@ -2716,13 +2963,27 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
 @api_router.post("/site-visits")
 def create_site_visit(visit: SiteVisitCreate, current_user: dict = Depends(get_current_user)):
     """Create a new site visit"""
+    if not visit.lead_id or not visit.visit_date:
+        raise HTTPException(status_code=400, detail="Lead and visit date are required")
+
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_site_visits_table(cursor)
         cursor.execute("""
-            INSERT INTO site_visits (lead_id, property_lead_id, visit_date, visit_time, location, notes, status, created_by, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        """, (visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time, 
-              visit.location, visit.notes, visit.status or 'Scheduled', current_user['id']))
+            INSERT INTO site_visits (
+                lead_id, property_lead_id, visit_date, visit_time, location, visit_type,
+                meeting_point, location_url, visit_order, client_feedback, outcome, interest_level,
+                objections, quoted_price, next_followup_date, next_followup_time,
+                notes, status, created_by, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """, (
+            visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time,
+            visit.location, visit.visit_type or 'Property Visit', visit.meeting_point,
+            visit.location_url, visit.visit_order, visit.client_feedback, visit.outcome, visit.interest_level,
+            visit.objections, visit.quoted_price, visit.next_followup_date, visit.next_followup_time,
+            visit.notes, visit.status or 'Scheduled', current_user['id']
+        ))
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Site visit scheduled successfully"}
 
@@ -2731,12 +2992,33 @@ def update_site_visit(visit_id: int, visit: SiteVisitCreate, current_user: dict 
     """Update a site visit"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE site_visits SET lead_id=%s, property_lead_id=%s, visit_date=%s, visit_time=%s, 
-            location=%s, notes=%s, status=%s WHERE id=%s AND created_by=%s
-        """, (visit.lead_id, visit.property_lead_id, visit.visit_date, visit.visit_time,
-              visit.location, visit.notes, visit.status, visit_id, current_user['id']))
+        ensure_site_visits_table(cursor)
+        update_data = visit.dict(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        allowed_fields = [
+            'lead_id', 'property_lead_id', 'visit_date', 'visit_time', 'location',
+            'visit_type', 'meeting_point', 'location_url', 'visit_order', 'client_feedback',
+            'outcome', 'interest_level', 'objections', 'quoted_price',
+            'next_followup_date', 'next_followup_time', 'notes', 'status'
+        ]
+        set_parts = []
+        values = []
+        for field in allowed_fields:
+            if field in update_data:
+                set_parts.append(f"{field}=%s")
+                values.append(update_data[field])
+
+        set_parts.append("updated_at=NOW()")
+        values.extend([visit_id, current_user['id']])
+        cursor.execute(
+            f"UPDATE site_visits SET {', '.join(set_parts)} WHERE id=%s AND created_by=%s",
+            values
+        )
         conn.commit()
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Site visit not found")
         return {"message": "Site visit updated successfully"}
 
 @api_router.delete("/site-visits/{visit_id}")
@@ -3090,14 +3372,10 @@ def get_team_performance(current_user: dict = Depends(get_current_user)):
 @api_router.get("/user/permissions")
 def get_user_permissions(current_user: dict = Depends(get_current_user)):
     """Get current user's permissions"""
-    # Check if can_export column exists, if not add it
     with get_db() as conn:
         cursor = conn.cursor()
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
-            conn.commit()
-        except:
-            pass  # Column already exists
+        ensure_user_permission_columns(cursor)
+        conn.commit()
         
         # Admins always have export permission
         if current_user['role'] == 'admin':
@@ -3118,14 +3396,10 @@ def update_user_permissions(user_id: int, can_export: bool, current_user: dict =
     
     with get_db() as conn:
         cursor = conn.cursor()
-        # Ensure column exists
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
-            conn.commit()
-        except:
-            pass
+        ensure_user_permission_columns(cursor)
         
         cursor.execute("UPDATE users SET can_export = %s WHERE id = %s", (1 if can_export else 0, user_id))
+        log_security_event(cursor, current_user['id'], "permission_update", "user", user_id, {"can_export": can_export})
         conn.commit()
         return {"message": "Permissions updated successfully"}
 
@@ -3137,12 +3411,8 @@ def get_team_members_with_permissions(current_user: dict = Depends(get_current_u
     
     with get_db() as conn:
         cursor = conn.cursor()
-        # Ensure column exists
-        try:
-            cursor.execute("ALTER TABLE users ADD COLUMN can_export TINYINT(1) DEFAULT 0")
-            conn.commit()
-        except:
-            pass
+        ensure_user_permission_columns(cursor)
+        conn.commit()
         
         cursor.execute("""
             SELECT id, username, full_name, email, role, can_export,
@@ -3156,6 +3426,26 @@ def get_team_members_with_permissions(current_user: dict = Depends(get_current_u
             member_dict['can_export'] = bool(member_dict.get('can_export', 0))
             result.append(member_dict)
         return result
+
+@api_router.get("/security/audit-logs")
+def get_security_audit_logs(limit: int = 100, current_user: dict = Depends(get_current_user)):
+    """Get recent security audit events (admin only)"""
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    safe_limit = max(1, min(limit, 500))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_security_audit_table(cursor)
+        cursor.execute("""
+            SELECT a.*, u.username, u.full_name
+            FROM security_audit_logs a
+            LEFT JOIN users u ON u.id = a.user_id
+            ORDER BY a.created_at DESC
+            LIMIT %s
+        """, (safe_limit,))
+        logs = cursor.fetchall()
+        return [dict(item) for item in logs]
 
 # ============= Bulk Import/Export =============
 
@@ -3206,22 +3496,62 @@ async def bulk_import_leads(file: UploadFile = File(...), current_user: dict = D
     return {"imported": imported, "errors": errors}
 
 @api_router.get("/leads/export")
-def export_leads(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+def export_leads(
+    lead_type: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
     """Export leads to CSV format"""
     with get_db() as conn:
         cursor = conn.cursor()
+        if not user_can_export(cursor, current_user):
+            log_security_event(cursor, current_user['id'], "export_denied", "leads", None, {
+                "lead_type": lead_type,
+                "category": category
+            })
+            conn.commit()
+            raise HTTPException(status_code=403, detail="Export permission required")
+
         query = "SELECT * FROM leads WHERE (is_deleted IS NULL OR is_deleted = 0)"
         params = []
-        
-        if lead_type:
+
+        selected_category = (category or '').lower()
+        if selected_category == "clients":
+            query += " AND LOWER(IFNULL(lead_type, '')) IN ('buyer', 'tenant')"
+        elif selected_category == "inventory":
+            query += " AND LOWER(IFNULL(lead_type, '')) IN ('seller', 'landlord', 'builder', 'owner')"
+        elif lead_type:
             query += " AND lead_type = %s"
             params.append(lead_type)
-        
+
+        query += " ORDER BY created_at DESC"
         cursor.execute(query, params)
         leads = cursor.fetchall()
-        
-        # Convert to list of dicts
-        return [dict(l) for l in leads]
+        log_security_event(cursor, current_user['id'], "leads_exported", "leads", None, {
+            "lead_type": lead_type,
+            "category": selected_category or "all",
+            "row_count": len(leads)
+        })
+        conn.commit()
+
+        columns = [
+            "id", "name", "phone", "email", "lead_type", "lead_status", "temperature",
+            "budget_min", "budget_max", "unit", "location", "address", "property_type",
+            "area_size", "floor", "bhk", "source", "created_by", "created_at", "updated_at"
+        ]
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for lead in leads:
+            writer.writerow({column: lead.get(column, "") for column in columns})
+
+        file_category = selected_category or lead_type or "all"
+        filename = f"leads_{file_category}_{datetime.now().strftime('%Y-%m-%d')}.csv"
+        return Response(
+            content="\ufeff" + output.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 # ============= Property Gallery =============
 

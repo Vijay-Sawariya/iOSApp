@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   TextInput,
   FlatList,
   Linking,
+  PanResponder,
   Platform,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
@@ -20,7 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { LOCATIONS } from '../../constants/leadOptions';
+import { LOCATIONS, canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -29,13 +30,128 @@ interface SiteVisit {
   lead_id: number;
   lead_name: string;
   lead_phone: string;
+  lead_created_by?: number | null;
   property_name: string;
   property_location: string;
   visit_date: string;
   visit_time: string;
   location: string;
+  property_lead_id?: number | null;
+  property_map_url?: string | null;
+  visit_type?: string;
+  meeting_point?: string;
+  location_url?: string;
+  visit_order?: number;
   notes: string;
   status: string;
+}
+
+interface VisitStop {
+  id: number;
+  name: string;
+  address?: string;
+  location?: string;
+  Property_locationUrl?: string;
+  property_location_url?: string;
+  area_size?: string;
+  floor?: string;
+  bhk?: string;
+  budget_max?: number;
+  unit?: string;
+  floor_pricing?: any[];
+  lead_status?: string;
+}
+
+interface VisitStopRowProps {
+  stop: VisitStop;
+  index: number;
+  total: number;
+  onReorder: (stopId: number, targetIndex: number) => void;
+  onRemove: (id: number) => void;
+  onDragStateChange: (dragging: boolean) => void;
+  formatStopLocation: (stop: VisitStop) => string;
+  formatStopPrice: (stop: VisitStop) => string;
+}
+
+function VisitStopRow({
+  stop,
+  index,
+  total,
+  onReorder,
+  onRemove,
+  onDragStateChange,
+  formatStopLocation,
+  formatStopPrice,
+}: VisitStopRowProps) {
+  const [dragging, setDragging] = useState(false);
+  const indexRef = useRef(index);
+  const totalRef = useRef(total);
+  const startIndexRef = useRef(index);
+  const lastTargetIndexRef = useRef(index);
+  const onReorderRef = useRef(onReorder);
+  const onDragStateChangeRef = useRef(onDragStateChange);
+
+  indexRef.current = index;
+  totalRef.current = total;
+  onReorderRef.current = onReorder;
+  onDragStateChangeRef.current = onDragStateChange;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 8,
+      onPanResponderGrant: () => {
+        startIndexRef.current = indexRef.current;
+        lastTargetIndexRef.current = indexRef.current;
+        setDragging(true);
+        onDragStateChangeRef.current(true);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const currentTotal = totalRef.current;
+        const rowStep = 74;
+        const requestedIndex = startIndexRef.current + Math.round(gestureState.dy / rowStep);
+        const targetIndex = Math.max(0, Math.min(currentTotal - 1, requestedIndex));
+        if (targetIndex !== lastTargetIndexRef.current) {
+          lastTargetIndexRef.current = targetIndex;
+          onReorderRef.current(stop.id, targetIndex);
+        }
+      },
+      onPanResponderRelease: () => {
+        setDragging(false);
+        onDragStateChangeRef.current(false);
+      },
+      onPanResponderTerminate: () => {
+        setDragging(false);
+        onDragStateChangeRef.current(false);
+      },
+    })
+  ).current;
+
+  return (
+    <View style={[styles.visitStopCard, dragging && styles.visitStopCardDragging]}>
+      <View style={styles.visitStopDragHandle} {...panResponder.panHandlers}>
+        <Ionicons name="reorder-three" size={24} color="#64748B" />
+      </View>
+      <View style={styles.visitStopContent}>
+        <View style={styles.visitStopTitleRow}>
+          <View style={styles.visitStopIndex}>
+            <Text style={styles.visitStopIndexText}>{index + 1}</Text>
+          </View>
+          <Text style={styles.visitStopTitle} numberOfLines={2}>{stop.name || `Inventory #${stop.id}`}</Text>
+        </View>
+        <Text style={styles.visitStopMeta} numberOfLines={3}>{formatStopLocation(stop)}</Text>
+        <Text style={styles.visitStopMeta} numberOfLines={2}>
+          {[stop.area_size ? `${stop.area_size} sq.yds` : '', stop.floor].filter(Boolean).join(' • ')}
+        </Text>
+        <Text style={styles.visitStopPrice} numberOfLines={2}>{formatStopPrice(stop)}</Text>
+      </View>
+      <View style={styles.visitStopActions}>
+        <TouchableOpacity style={styles.visitStopIconBtn} onPress={() => onRemove(stop.id)}>
+          <Ionicons name="trash" size={16} color="#DC2626" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 }
 
 interface Deal {
@@ -83,10 +199,32 @@ const TIME_OPTIONS = [
   '18:00', '18:30', '19:00', '19:30', '20:00'
 ];
 
+const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
+
+const formatDateValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getVisitDateOptions = () => {
+  const labels = ['Today', 'Tomorrow'];
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    return {
+      label: labels[index] || date.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }),
+      value: formatDateValue(date),
+    };
+  });
+};
+
 export default function MoreScreen() {
   const { user, token } = useAuth();
   const params = useLocalSearchParams();
-  const initialTab = (params.tab as string) || 'visits';
+  const requestedTab = (params.tab as string) || 'visits';
+  const initialTab = requestedTab === 'deals' ? 'visits' : requestedTab;
   const fromPopup = params.fromPopup === 'true';
   const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>(
     initialTab as any
@@ -99,11 +237,12 @@ export default function MoreScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const visitDateOptions = getVisitDateOptions();
   
   // Update active tab when params change
   useEffect(() => {
     if (params.tab) {
-      setActiveTab(params.tab as any);
+      setActiveTab(params.tab === 'deals' ? 'visits' : params.tab as any);
     }
   }, [params.tab]);
   
@@ -117,12 +256,18 @@ export default function MoreScreen() {
   // Modal states
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [showAddDealModal, setShowAddDealModal] = useState(false);
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
+  const [loadingMatches, setLoadingMatches] = useState(false);
   
   // Lead search states for Site Visit
   const [leadSearchQuery, setLeadSearchQuery] = useState('');
   const [leadSearchResults, setLeadSearchResults] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [showLeadDropdown, setShowLeadDropdown] = useState(false);
+  const [matchingInventory, setMatchingInventory] = useState<VisitStop[]>([]);
+  const [selectedStopIds, setSelectedStopIds] = useState<number[]>([]);
+  const [visitStops, setVisitStops] = useState<VisitStop[]>([]);
+  const [isVisitStopDragging, setIsVisitStopDragging] = useState(false);
   
   // Lead search states for Deal
   const [dealLeadSearchQuery, setDealLeadSearchQuery] = useState('');
@@ -132,7 +277,7 @@ export default function MoreScreen() {
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [filteredLocations, setFilteredLocations] = useState<string[]>(LOCATIONS);
+  const [filteredLocations, setFilteredLocations] = useState<string[]>([...LOCATIONS]);
   
   // Form states
   const [visitForm, setVisitForm] = useState({
@@ -141,6 +286,10 @@ export default function MoreScreen() {
     visit_date: '',
     visit_time: '',
     location: '',
+    visit_type: 'Property Visit',
+    meeting_point: '',
+    location_url: '',
+    status: 'Scheduled',
     notes: '',
   });
   
@@ -242,17 +391,234 @@ export default function MoreScreen() {
     setVisitForm({ 
       ...visitForm, 
       lead_id: lead.id.toString(), 
-      lead_name: lead.name 
+      lead_name: lead.name,
+      location: lead.location || visitForm.location,
     });
     setLeadSearchQuery(lead.name);
     setShowLeadDropdown(false);
+    setVisitStops([]);
+    setSelectedStopIds([]);
+    setMatchingInventory([]);
+  };
+
+  const formatStopLocation = (stop: VisitStop) => {
+    const parts = [stop.address, stop.location].filter(Boolean);
+    return parts.length ? parts.join(', ') : stop.name;
+  };
+
+  const getLeadMapUrl = (stop: VisitStop) => {
+    return (stop.Property_locationUrl || stop.property_location_url || '').trim();
+  };
+
+  const extractGoogleRoutePoint = (mapUrl: string) => {
+    const directUrl = mapUrl.trim();
+    if (!directUrl) return '';
+
+    const coordinateMatch = directUrl.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/)
+      || directUrl.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+    if (coordinateMatch) {
+      return `${coordinateMatch[1]},${coordinateMatch[2]}`;
+    }
+
+    const queryMatch = directUrl.match(/[?&](?:q|query|destination)=([^&]+)/);
+    if (queryMatch) {
+      return decodeURIComponent(queryMatch[1].replace(/\+/g, ' '));
+    }
+
+    const placeMatch = directUrl.match(/\/place\/([^/?]+)/);
+    if (placeMatch) {
+      return decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+    }
+
+    return directUrl;
+  };
+
+  const getStopRoutePoint = (stop: VisitStop) => {
+    const leadMapUrl = getLeadMapUrl(stop);
+    return extractGoogleRoutePoint(leadMapUrl) || formatStopLocation(stop);
+  };
+
+  const getStopMapUrl = (stop: VisitStop) => {
+    const directUrl = getLeadMapUrl(stop);
+    if (directUrl) return directUrl;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatStopLocation(stop))}`;
+  };
+
+  const getVisitMapUrl = (visit: SiteVisit) => {
+    return (visit.location_url || visit.property_map_url || '').trim();
+  };
+
+  const formatStopPrice = (stop: VisitStop) => {
+    if (Array.isArray(stop.floor_pricing) && stop.floor_pricing.length > 0) {
+      return stop.floor_pricing.map((fp: any) => {
+        const floor = fp.floor_label || fp.floor || '';
+        const amount = fp.floor_amount || fp.amount || fp.price || '';
+        return `${floor}: ${amount} Cr`;
+      }).filter(Boolean).join(' | ');
+    }
+    return stop.budget_max ? `${stop.budget_max} ${stop.unit || 'Cr'}` : 'N/A';
+  };
+
+  const openMatchingInventory = async () => {
+    if (!visitForm.lead_id) {
+      Alert.alert('Select lead', 'Please select a buyer/tenant before adding matched inventory.');
+      return;
+    }
+    setShowDatePicker(false);
+    setShowTimePicker(false);
+    setShowLeadDropdown(false);
+    setShowLocationDropdown(false);
+    setLoadingMatches(true);
+    setShowMatchingModal(true);
+    try {
+      const result = await api.getMatchingInventory(parseInt(visitForm.lead_id));
+      const matches = Array.isArray(result) ? result : (result?.matches || []);
+      setMatchingInventory(matches);
+      setSelectedStopIds(visitStops.map((stop) => stop.id));
+    } catch (error) {
+      console.error('Matching inventory error:', error);
+      Alert.alert('Error', 'Unable to fetch matching inventory');
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
+  const toggleMatchedStop = (id: number) => {
+    setSelectedStopIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+  };
+
+  const addSelectedStopsToPlan = () => {
+    const existingIds = new Set(visitStops.map((stop) => stop.id));
+    const stopsToAdd = matchingInventory.filter((item) => selectedStopIds.includes(item.id) && !existingIds.has(item.id));
+    setVisitStops((prev) => [...prev, ...stopsToAdd]);
+    setShowMatchingModal(false);
+  };
+
+  const renderMatchingInventoryPanel = () => (
+    <View style={styles.matchInventoryPanel}>
+      <View style={styles.matchInventoryPanelHeader}>
+        <View>
+          <Text style={styles.matchInventoryPanelTitle}>Matched Inventory</Text>
+          <Text style={styles.matchInventoryPanelHint}>
+            Select inventory, add to plan, then drag the Visit Order list.
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.matchInventoryCloseButton} onPress={() => setShowMatchingModal(false)}>
+          <Ionicons name="close" size={18} color="#64748B" />
+        </TouchableOpacity>
+      </View>
+      {loadingMatches ? (
+        <View style={styles.matchInventoryLoading}>
+          <ActivityIndicator size="small" color="#2563EB" />
+          <Text style={styles.emptyText}>Finding matching inventory...</Text>
+        </View>
+      ) : (
+        <>
+          <ScrollView style={styles.matchInventoryList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {matchingInventory.length > 0 ? (
+              matchingInventory.map((item) => {
+                const checked = selectedStopIds.includes(item.id);
+                return (
+                  <TouchableOpacity key={item.id} style={styles.matchInventoryRow} onPress={() => toggleMatchedStop(item.id)}>
+                    <Ionicons
+                      name={checked ? 'checkbox' : 'square-outline'}
+                      size={24}
+                      color={checked ? '#2563EB' : '#9CA3AF'}
+                    />
+                    <View style={styles.matchInventoryContent}>
+                      <Text style={styles.matchInventoryTitle}>{item.name || `Inventory #${item.id}`}</Text>
+                      <Text style={styles.matchInventoryMeta} numberOfLines={2}>{formatStopLocation(item)}</Text>
+                      <Text style={styles.matchInventoryMeta}>
+                        {[item.area_size ? `${item.area_size} sq.yds` : '', item.floor, formatStopPrice(item)].filter(Boolean).join(' • ')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>No matched inventory</Text>
+                <Text style={styles.emptyText}>Adjust matching criteria from lead details or add preferred inventory first.</Text>
+              </View>
+            )}
+          </ScrollView>
+          <TouchableOpacity
+            style={[styles.submitButton, styles.matchInventoryAddButton]}
+            onPress={addSelectedStopsToPlan}
+          >
+            <Text style={styles.submitButtonText}>
+              Add Selected to Visit Plan ({selectedStopIds.length})
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+
+  const reorderVisitStop = (stopId: number, targetIndex: number) => {
+    setVisitStops((prev) => {
+      const currentIndex = prev.findIndex((stop) => stop.id === stopId);
+      if (currentIndex < 0 || currentIndex === targetIndex) return prev;
+      const boundedTargetIndex = Math.max(0, Math.min(prev.length - 1, targetIndex));
+      const nextStops = [...prev];
+      const [moved] = nextStops.splice(currentIndex, 1);
+      nextStops.splice(boundedTargetIndex, 0, moved);
+      return nextStops;
+    });
+  };
+
+  const removeVisitStop = (id: number) => {
+    setVisitStops((prev) => prev.filter((stop) => stop.id !== id));
+    setSelectedStopIds((prev) => prev.filter((stopId) => stopId !== id));
+  };
+
+  const buildRouteUrl = () => {
+    const stops = visitStops.map(getStopRoutePoint).filter(Boolean);
+    if (stops.length === 0) return '';
+    const destination = encodeURIComponent(stops[stops.length - 1]);
+    const waypoints = stops.slice(0, -1).map((stop) => encodeURIComponent(stop)).join('%7C');
+    return `https://www.google.com/maps/dir/?api=1&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+  };
+
+  const openVisitRoute = () => {
+    if (visitStops.length === 0) {
+      Alert.alert('Add stops', 'Please add matched inventory before opening route.');
+      return;
+    }
+    Linking.openURL(buildRouteUrl());
+  };
+
+  const shareVisitPlan = () => {
+    if (visitStops.length === 0) {
+      Alert.alert('Add stops', 'Please add matched inventory before sharing a visit plan.');
+      return;
+    }
+    const lines = [
+      '*Proposed Site Visit Plan*',
+      selectedLead?.name ? `Client: ${selectedLead.name}` : '',
+      visitForm.visit_date ? `Date: ${visitForm.visit_date}${visitForm.visit_time ? ` at ${visitForm.visit_time}` : ''}` : '',
+      '',
+    ].filter(Boolean);
+    visitStops.forEach((stop, index) => {
+      lines.push(`${index + 1}. *${formatStopLocation(stop)}* (${stop.name || `Inventory #${stop.id}`})`);
+      lines.push(`Size: ${stop.area_size || '-'} sq.yds | Floor: ${stop.floor || '-'} | BHK: ${stop.bhk || '-'}`);
+      lines.push(`Price: ${formatStopPrice(stop)}`);
+      lines.push(`Link: ${getStopMapUrl(stop)}`);
+      lines.push('______________________');
+    });
+    const routeUrl = buildRouteUrl();
+    if (routeUrl) {
+      lines.push('*Trip Map*');
+      lines.push(routeUrl);
+    }
+    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`);
   };
   
   // Filter locations as user types
   const filterLocations = (query: string) => {
     setVisitForm({ ...visitForm, location: query });
     if (query.length === 0) {
-      setFilteredLocations(LOCATIONS);
+      setFilteredLocations([...LOCATIONS]);
     } else {
       const filtered = LOCATIONS.filter(loc => 
         loc.toLowerCase().includes(query.toLowerCase())
@@ -306,10 +672,10 @@ export default function MoreScreen() {
 
   // Handle date picker change
   const handleDateChange = (event: any, date?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
+    setShowDatePicker(false);
     if (date) {
       setSelectedDate(date);
-      const formattedDate = date.toISOString().split('T')[0];
+      const formattedDate = formatDateValue(date);
       setVisitForm({ ...visitForm, visit_date: formattedDate });
     }
   };
@@ -321,25 +687,55 @@ export default function MoreScreen() {
     }
     
     try {
-      const response = await fetch(`${API_URL}/api/site-visits`, {
+      const basePayload = {
+        lead_id: parseInt(visitForm.lead_id),
+        visit_date: visitForm.visit_date,
+        visit_time: visitForm.visit_time || null,
+        visit_type: visitForm.visit_type,
+        meeting_point: visitForm.meeting_point,
+        status: visitForm.status,
+        notes: visitForm.notes,
+      };
+      const payloads = visitStops.length > 0
+        ? visitStops.map((stop, index) => ({
+            ...basePayload,
+            property_lead_id: stop.id,
+            visit_order: index + 1,
+            location: formatStopLocation(stop),
+            location_url: getStopMapUrl(stop),
+          }))
+        : [{
+            ...basePayload,
+            location: visitForm.location,
+            location_url: visitForm.location_url,
+          }];
+
+      const responses = await Promise.all(payloads.map((payload) => fetch(`${API_URL}/api/site-visits`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          lead_id: parseInt(visitForm.lead_id),
-          visit_date: visitForm.visit_date,
-          visit_time: visitForm.visit_time || null,
-          location: visitForm.location,
-          notes: visitForm.notes,
-        }),
-      });
-      
-      if (response.ok) {
+        body: JSON.stringify(payload),
+      })));
+
+      if (responses.every((response) => response.ok)) {
         Alert.alert('Success', 'Site visit scheduled');
         setShowAddVisitModal(false);
-        setVisitForm({ lead_id: '', visit_date: '', visit_time: '', location: '', notes: '' });
+        setVisitStops([]);
+        setSelectedStopIds([]);
+        setVisitForm({
+          lead_id: '',
+          lead_name: '',
+          visit_date: '',
+          visit_time: '',
+          location: '',
+          visit_type: 'Property Visit',
+          meeting_point: '',
+          location_url: '',
+          status: 'Scheduled',
+          notes: '',
+        });
         fetchData();
       } else {
         Alert.alert('Error', 'Failed to schedule visit');
@@ -374,7 +770,7 @@ export default function MoreScreen() {
       if (response.ok) {
         Alert.alert('Success', 'Deal created');
         setShowAddDealModal(false);
-        setDealForm({ lead_id: '', deal_amount: '', commission_percent: '', expected_closing_date: '', notes: '' });
+        setDealForm({ lead_id: '', lead_name: '', deal_amount: '', commission_percent: '', expected_closing_date: '', notes: '' });
         fetchData();
       } else {
         Alert.alert('Error', 'Failed to create deal');
@@ -422,54 +818,37 @@ export default function MoreScreen() {
   const exportLeads = async (leadType: 'clients' | 'inventory' | 'all') => {
     setExporting(true);
     try {
-      const endpoint = leadType === 'all' ? '/api/leads' : `/api/leads/${leadType}`;
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      const query = leadType === 'all' ? '' : `?category=${leadType}`;
+      const response = await fetch(`${API_URL}/api/leads/export${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      if (!response.ok) throw new Error('Failed to fetch leads');
-      
-      const leads = await response.json();
-      
-      // Create CSV content
-      const headers = ['ID', 'Name', 'Phone', 'Email', 'Lead Type', 'Status', 'Temperature', 'Budget', 'Location', 'Property Type', 'Created At'];
-      const csvRows = [headers.join(',')];
-      
-      for (const lead of leads) {
-        const row = [
-          lead.id || '',
-          `"${(lead.name || '').replace(/"/g, '""')}"`,
-          lead.phone || '',
-          lead.email || '',
-          lead.lead_type || '',
-          lead.lead_status || '',
-          lead.temperature || '',
-          `${lead.budget_min || ''}-${lead.budget_max || ''}`,
-          `"${(lead.location || '').replace(/"/g, '""')}"`,
-          lead.property_type || '',
-          lead.created_at || ''
-        ];
-        csvRows.push(row.join(','));
+
+      if (!response.ok) {
+        let message = 'Failed to export leads';
+        try {
+          const errorData = await response.json();
+          message = errorData?.detail || message;
+        } catch {}
+        throw new Error(message);
       }
-      
-      const csvContent = csvRows.join('\n');
+
+      const csvContent = await response.text();
       const fileName = `leads_${leadType}_${new Date().toISOString().split('T')[0]}.csv`;
-      
+
       if (Platform.OS === 'web') {
-        // Web download
-        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
-        Alert.alert('Success', `Exported ${leads.length} leads`);
+        Alert.alert('Success', 'Lead export downloaded');
       } else {
-        // Mobile - save and share
-        const fileUri = FileSystem.documentDirectory + fileName;
-        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-        
+        const legacyFileSystem = FileSystem as any;
+        const fileUri = legacyFileSystem.documentDirectory + fileName;
+        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
+
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Leads' });
         } else {
@@ -478,7 +857,7 @@ export default function MoreScreen() {
       }
     } catch (error) {
       console.error('Export error:', error);
-      Alert.alert('Error', 'Failed to export leads');
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to export leads');
     } finally {
       setExporting(false);
     }
@@ -524,8 +903,9 @@ export default function MoreScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', `Exported ${deals_data.length} deals`);
       } else {
-        const fileUri = FileSystem.documentDirectory + fileName;
-        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        const legacyFileSystem = FileSystem as any;
+        const fileUri = legacyFileSystem.documentDirectory + fileName;
+        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
         
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Deals' });
@@ -541,51 +921,74 @@ export default function MoreScreen() {
     }
   };
 
-  const renderSiteVisit = ({ item }: { item: SiteVisit }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View>
-          <Text style={styles.cardTitle}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
-          <Text style={styles.cardSubtitle}>{item.location || item.property_location || 'No location'}</Text>
+  const renderSiteVisit = ({ item }: { item: SiteVisit }) => {
+    const canView = canViewSensitiveData(user?.role, user?.id, item.lead_created_by);
+    
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
+            <Text style={styles.cardSubtitle} numberOfLines={2}>{item.location || item.property_location || 'No location'}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]} numberOfLines={1}>
+              {item.status}
+            </Text>
+          </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+        <View style={styles.cardBody}>
+          <View style={styles.infoRow}>
+            <Ionicons name="calendar" size={16} color="#6B7280" />
+            <Text style={styles.infoText}>{item.visit_date} {item.visit_time ? `at ${item.visit_time}` : ''}</Text>
+          </View>
+          {item.visit_type && (
+            <View style={styles.infoRow}>
+              <Ionicons name="flag" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>{item.visit_type}</Text>
+            </View>
+          )}
+          {item.meeting_point && (
+            <View style={styles.infoRow}>
+              <Ionicons name="navigate" size={16} color="#6B7280" />
+              <Text style={styles.infoText}>Meet at: {item.meeting_point}</Text>
+            </View>
+          )}
+          {item.notes && (
+            <Text style={styles.notesText}>{item.notes}</Text>
+          )}
         </View>
-      </View>
-      <View style={styles.cardBody}>
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar" size={16} color="#6B7280" />
-          <Text style={styles.infoText}>{item.visit_date} {item.visit_time ? `at ${item.visit_time}` : ''}</Text>
-        </View>
-        {item.notes && (
-          <Text style={styles.notesText}>{item.notes}</Text>
-        )}
-      </View>
-      <View style={styles.cardActions}>
-        {item.lead_phone && (
-          <>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${item.lead_phone}`)}>
-              <Ionicons name="call" size={18} color="#10B981" />
+        <View style={styles.cardActions}>
+          {canView && item.lead_phone && (
+            <>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${item.lead_phone}`)}>
+                <Ionicons name="call" size={18} color="#10B981" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => {
+                const cleanPhone = (item.lead_phone || '').replace(/[^0-9]/g, '');
+                Linking.openURL(`https://wa.me/91${cleanPhone}`);
+              }}>
+                <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+              </TouchableOpacity>
+            </>
+          )}
+          {getVisitMapUrl(item) && (
+            <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(getVisitMapUrl(item))}>
+              <Ionicons name="map" size={18} color="#3B82F6" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => {
-              const cleanPhone = (item.lead_phone || '').replace(/[^0-9]/g, '');
-              Linking.openURL(`https://wa.me/91${cleanPhone}`);
-            }}>
-              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+          )}
+          {item.status === 'Scheduled' && (
+            <TouchableOpacity 
+              style={[styles.actionBtn, { backgroundColor: '#D1FAE5' }]} 
+              onPress={() => updateVisitStatus(item.id, 'Completed')}
+            >
+              <Ionicons name="checkmark" size={18} color="#059669" />
             </TouchableOpacity>
-          </>
-        )}
-        {item.status === 'Scheduled' && (
-          <TouchableOpacity 
-            style={[styles.actionBtn, { backgroundColor: '#D1FAE5' }]} 
-            onPress={() => updateVisitStatus(item.id, 'Completed')}
-          >
-            <Ionicons name="checkmark" size={18} color="#059669" />
-          </TouchableOpacity>
-        )}
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderDeal = ({ item }: { item: Deal }) => (
     <TouchableOpacity style={styles.card} onPress={() => router.push(`/leads/${item.lead_id}` as any)}>
@@ -767,7 +1170,7 @@ export default function MoreScreen() {
   const renderModals = () => (
     <>
       {/* Add Site Visit Modal */}
-      <Modal visible={showAddVisitModal} animationType="slide" transparent>
+      <Modal visible={showAddVisitModal} animationType="slide" transparent presentationStyle="overFullScreen">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -784,7 +1187,11 @@ export default function MoreScreen() {
                 <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.modalBody}
+              keyboardShouldPersistTaps="handled"
+              scrollEnabled={!isVisitStopDragging}
+            >
               <Text style={styles.inputLabel}>Lead *</Text>
               <View style={styles.searchContainer}>
                 <TextInput
@@ -833,34 +1240,97 @@ export default function MoreScreen() {
               )}
               
               <Text style={styles.inputLabel}>Visit Date *</Text>
-              {Platform.OS === 'web' ? (
-                <TextInput
-                  style={styles.input}
-                  value={visitForm.visit_date}
-                  onChangeText={(text) => setVisitForm({ ...visitForm, visit_date: text })}
-                  placeholder="YYYY-MM-DD (e.g., 2026-05-15)"
-                />
-              ) : (
-                <>
-                  <TouchableOpacity 
-                    style={styles.datePickerButton}
-                    onPress={() => setShowDatePicker(true)}
-                  >
-                    <Ionicons name="calendar" size={20} color="#6B7280" />
-                    <Text style={[styles.datePickerText, !visitForm.visit_date && styles.placeholderText]}>
-                      {visitForm.visit_date || 'Select date'}
-                    </Text>
-                  </TouchableOpacity>
-                  {showDatePicker && (
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(!showDatePicker)}
+              >
+                <Ionicons name="calendar" size={20} color="#6B7280" />
+                <Text style={[styles.datePickerText, !visitForm.visit_date && styles.placeholderText]}>
+                  {visitForm.visit_date || 'Select date'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+              {showDatePicker && (
+                Platform.OS === 'web' || Platform.OS === 'ios' ? (
+                  <View style={[styles.dropdownContainer, { maxHeight: 230 }]}>
+                    <ScrollView nestedScrollEnabled>
+                      {visitDateOptions.map((dateOption) => (
+                        <TouchableOpacity
+                          key={dateOption.value}
+                          style={[styles.dropdownItem, visitForm.visit_date === dateOption.value && styles.dropdownItemSelected]}
+                          onPress={() => {
+                            setVisitForm({ ...visitForm, visit_date: dateOption.value });
+                            setSelectedDate(new Date(`${dateOption.value}T10:00:00`));
+                            setShowDatePicker(false);
+                          }}
+                        >
+                          <Text style={[styles.dropdownItemText, visitForm.visit_date === dateOption.value && styles.dropdownItemTextSelected]}>
+                            {dateOption.label} - {dateOption.value}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : (
+                  <View style={styles.nativeDatePickerBox}>
                     <DateTimePicker
                       value={selectedDate}
                       mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      display="default"
                       onChange={handleDateChange}
                       minimumDate={new Date()}
                     />
-                  )}
-                </>
+                  </View>
+                )
+              )}
+
+              <View style={styles.routeActionRow}>
+                <TouchableOpacity
+                  style={[styles.secondaryRouteButton, !visitForm.lead_id && styles.secondaryRouteButtonDisabled]}
+                  onPress={openMatchingInventory}
+                >
+                  <Ionicons name="git-compare" size={18} color="#2563EB" />
+                  <Text style={styles.secondaryRouteButtonText}>
+                    {visitForm.lead_id ? 'Add Matched Inventory' : 'Select Lead to Add Inventory'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {showMatchingModal && renderMatchingInventoryPanel()}
+
+              {visitStops.length > 0 && (
+                <View style={styles.visitPlanBox}>
+                  <View style={styles.visitPlanHeader}>
+                    <View>
+                      <Text style={styles.visitPlanTitle}>Visit Order</Text>
+                      <Text style={styles.visitPlanHint}>Hold and drag the handle to arrange route</Text>
+                    </View>
+                    <Text style={styles.visitPlanCount}>{visitStops.length} stops</Text>
+                  </View>
+                  {visitStops.map((stop, index) => (
+                    <VisitStopRow
+                      key={stop.id}
+                      stop={stop}
+                      index={index}
+                      total={visitStops.length}
+                      onReorder={reorderVisitStop}
+                      onRemove={removeVisitStop}
+                      onDragStateChange={setIsVisitStopDragging}
+                      formatStopLocation={formatStopLocation}
+                      formatStopPrice={formatStopPrice}
+                    />
+                  ))}
+                  <View style={styles.routeActionRow}>
+                    <TouchableOpacity style={styles.routeButton} onPress={openVisitRoute}>
+                      <Ionicons name="map" size={17} color="#FFFFFF" />
+                      <Text style={styles.routeButtonText}>Open Route</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.routeButton, styles.whatsAppRouteButton]} onPress={shareVisitPlan}>
+                      <Ionicons name="logo-whatsapp" size={17} color="#FFFFFF" />
+                      <Text style={styles.routeButtonText}>Share Plan</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               )}
               
               <Text style={styles.inputLabel}>Visit Time</Text>
@@ -893,6 +1363,21 @@ export default function MoreScreen() {
                   </ScrollView>
                 </View>
               )}
+
+              <Text style={styles.inputLabel}>Visit Purpose</Text>
+              <View style={styles.optionRow}>
+                {VISIT_TYPES.map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.optionChip, visitForm.visit_type === type && styles.optionChipActive]}
+                    onPress={() => setVisitForm({ ...visitForm, visit_type: type })}
+                  >
+                    <Text style={[styles.optionChipText, visitForm.visit_type === type && styles.optionChipTextActive]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               
               <Text style={styles.inputLabel}>Location</Text>
               <View style={styles.searchContainer}>
@@ -908,7 +1393,7 @@ export default function MoreScreen() {
                     style={styles.clearButton}
                     onPress={() => {
                       setVisitForm({ ...visitForm, location: '' });
-                      setFilteredLocations(LOCATIONS);
+                      setFilteredLocations([...LOCATIONS]);
                     }}
                   >
                     <Ionicons name="close-circle" size={20} color="#9CA3AF" />
@@ -930,7 +1415,25 @@ export default function MoreScreen() {
                   </ScrollView>
                 </View>
               )}
-              
+
+              <Text style={styles.inputLabel}>Meeting Point</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.meeting_point}
+                onChangeText={(text) => setVisitForm({ ...visitForm, meeting_point: text })}
+                placeholder="Example: property gate, site office, broker office"
+              />
+
+              <Text style={styles.inputLabel}>Map / Location URL</Text>
+              <TextInput
+                style={styles.input}
+                value={visitForm.location_url}
+                onChangeText={(text) => setVisitForm({ ...visitForm, location_url: text })}
+                placeholder="Paste Google Maps link"
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+
               <Text style={styles.inputLabel}>Notes</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
@@ -1081,15 +1584,14 @@ export default function MoreScreen() {
           </TouchableOpacity>
           <Text style={styles.simpleHeaderTitle}>
             {activeTab === 'visits' && 'Site Visits'}
-            {activeTab === 'deals' && 'Deals & Transactions'}
             {activeTab === 'activity' && 'Activity Timeline'}
             {activeTab === 'team' && 'Team Members'}
             {activeTab === 'export' && 'Export Data'}
           </Text>
-          {(activeTab === 'visits' || activeTab === 'deals') && (
+          {activeTab === 'visits' && (
             <TouchableOpacity 
               style={styles.headerAddButton} 
-              onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+              onPress={() => setShowAddVisitModal(true)}
             >
               <Ionicons name="add" size={24} color="#3B82F6" />
             </TouchableOpacity>
@@ -1115,29 +1617,6 @@ export default function MoreScreen() {
                   <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
                     <Ionicons name="add" size={18} color="#FFFFFF" />
                     <Text style={styles.emptyButtonText}>Schedule Visit</Text>
-                  </TouchableOpacity>
-                </View>
-              }
-            />
-          )}
-
-          {activeTab === 'deals' && (
-            <FlatList
-              data={deals}
-              renderItem={renderDeal}
-              keyExtractor={(item) => item.id.toString()}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              contentContainerStyle={styles.listContainer}
-              ListEmptyComponent={
-                <View style={styles.emptyState}>
-                  <View style={styles.emptyIconContainer}>
-                    <Ionicons name="cash-outline" size={40} color="#9CA3AF" />
-                  </View>
-                  <Text style={styles.emptyTitle}>No Deals Yet</Text>
-                  <Text style={styles.emptyText}>Create your first deal to track</Text>
-                  <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
-                    <Ionicons name="add" size={18} color="#FFFFFF" />
-                    <Text style={styles.emptyButtonText}>Add Deal</Text>
                   </TouchableOpacity>
                 </View>
               }
@@ -1220,20 +1699,6 @@ export default function MoreScreen() {
                 </TouchableOpacity>
               </View>
               
-              <View style={styles.exportSection}>
-                <Text style={styles.exportSectionTitle}>Export Deals</Text>
-                <Text style={styles.exportDescription}>Download deals and transactions data</Text>
-                
-                <TouchableOpacity 
-                  style={[styles.exportButton, { backgroundColor: '#F59E0B' }]} 
-                  onPress={exportDeals}
-                  disabled={exporting}
-                >
-                  <Ionicons name="cash" size={20} color="#FFFFFF" />
-                  <Text style={styles.exportButtonText}>Export All Deals</Text>
-                </TouchableOpacity>
-              </View>
-              
               <View style={styles.exportInfo}>
                 <Ionicons name="information-circle" size={20} color="#6B7280" />
                 <Text style={styles.exportInfoText}>
@@ -1256,7 +1721,7 @@ export default function MoreScreen() {
       <View style={styles.header}>
         <View style={styles.headerGradient}>
           <Text style={styles.headerTitle}>More Features</Text>
-          <Text style={styles.headerSubtitle}>Manage visits, deals & more</Text>
+          <Text style={styles.headerSubtitle}>Manage visits, activity, team and exports</Text>
         </View>
       </View>
 
@@ -1272,18 +1737,6 @@ export default function MoreScreen() {
           </View>
           <Text style={styles.featureCardTitle}>Site Visits</Text>
           <Text style={styles.featureCardCount}>{siteVisits.length}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.featureCard, activeTab === 'deals' && styles.featureCardActive]}
-          onPress={() => setActiveTab('deals')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.featureIconContainer, { backgroundColor: '#F0FDF4' }]}>
-            <Ionicons name="cash" size={22} color="#10B981" />
-          </View>
-          <Text style={styles.featureCardTitle}>Deals</Text>
-          <Text style={styles.featureCardCount}>{deals.length}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -1331,15 +1784,14 @@ export default function MoreScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
           {activeTab === 'visits' && 'Site Visits'}
-          {activeTab === 'deals' && 'Deals & Transactions'}
           {activeTab === 'activity' && 'Activity Timeline'}
           {activeTab === 'team' && 'Team Members'}
           {activeTab === 'export' && 'Export Data'}
         </Text>
-        {(activeTab === 'visits' || activeTab === 'deals') && (
+        {activeTab === 'visits' && (
           <TouchableOpacity 
             style={styles.addButtonSmall} 
-            onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+            onPress={() => setShowAddVisitModal(true)}
           >
             <Ionicons name="add" size={18} color="#FFFFFF" />
           </TouchableOpacity>
@@ -1365,29 +1817,6 @@ export default function MoreScreen() {
                 <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
                   <Ionicons name="add" size={18} color="#FFFFFF" />
                   <Text style={styles.emptyButtonText}>Schedule Visit</Text>
-                </TouchableOpacity>
-              </View>
-            }
-          />
-        )}
-
-        {activeTab === 'deals' && (
-          <FlatList
-            data={deals}
-            renderItem={renderDeal}
-            keyExtractor={(item) => item.id.toString()}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={styles.listContainer}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIconContainer}>
-                  <Ionicons name="cash-outline" size={40} color="#9CA3AF" />
-                </View>
-                <Text style={styles.emptyTitle}>No Deals Yet</Text>
-                <Text style={styles.emptyText}>Create your first deal to track</Text>
-                <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
-                  <Ionicons name="add" size={18} color="#FFFFFF" />
-                  <Text style={styles.emptyButtonText}>Add Deal</Text>
                 </TouchableOpacity>
               </View>
             }
@@ -1465,20 +1894,6 @@ export default function MoreScreen() {
               >
                 <Ionicons name="document-text" size={20} color="#FFFFFF" />
                 <Text style={styles.exportButtonText}>Export All Leads</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.exportSection}>
-              <Text style={styles.exportSectionTitle}>Export Deals</Text>
-              <Text style={styles.exportDescription}>Download deals and transactions data</Text>
-              
-              <TouchableOpacity 
-                style={[styles.exportButton, { backgroundColor: '#F59E0B' }]} 
-                onPress={exportDeals}
-                disabled={exporting}
-              >
-                <Ionicons name="cash" size={20} color="#FFFFFF" />
-                <Text style={styles.exportButtonText}>Export All Deals</Text>
               </TouchableOpacity>
             </View>
             
@@ -1616,6 +2031,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
+    gap: 8,
+  },
+  cardHeaderText: {
+    flex: 1,
+    minWidth: 0,
   },
   cardTitle: {
     fontSize: 16,
@@ -1631,10 +2051,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    maxWidth: 96,
+    flexShrink: 0,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '700',
   },
   cardBody: {
     gap: 8,
@@ -1860,6 +2283,252 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  optionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  optionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  optionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  optionChipTextActive: {
+    color: '#2563EB',
+  },
+  routeActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  secondaryRouteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  secondaryRouteButtonDisabled: {
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F8FAFC',
+  },
+  secondaryRouteButtonText: {
+    color: '#2563EB',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  visitPlanBox: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 16,
+  },
+  visitPlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  visitPlanTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  visitPlanHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  visitPlanCount: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
+  visitStopCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 8,
+  },
+  visitStopCardDragging: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+    transform: [{ scale: 1.01 }],
+  },
+  visitStopDragHandle: {
+    width: 30,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visitStopIndex: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visitStopIndexText: {
+    color: '#1D4ED8',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  visitStopContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  visitStopTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 3,
+  },
+  visitStopTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  visitStopMeta: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  visitStopPrice: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#334155',
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  visitStopActions: {
+    flexDirection: 'row',
+  },
+  visitStopIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  whatsAppRouteButton: {
+    backgroundColor: '#16A34A',
+  },
+  routeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  matchInventoryPanel: {
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#F8FBFF',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 16,
+  },
+  matchInventoryPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
+  },
+  matchInventoryPanelTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  matchInventoryPanelHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  matchInventoryCloseButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E2E8F0',
+  },
+  matchInventoryLoading: {
+    minHeight: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  matchInventoryList: {
+    maxHeight: 280,
+  },
+  matchInventoryRow: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  matchInventoryContent: {
+    flex: 1,
+  },
+  matchInventoryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  matchInventoryMeta: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 3,
+  },
+  matchInventoryAddButton: {
+    marginBottom: 4,
   },
   // Tabs container for horizontal scroll
   tabsContainer: {
@@ -2111,6 +2780,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1F2937',
     flex: 1,
+  },
+  nativeDatePickerBox: {
+    marginBottom: 16,
   },
   placeholderText: {
     color: '#9CA3AF',

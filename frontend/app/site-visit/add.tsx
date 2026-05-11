@@ -26,6 +26,22 @@ const TIME_OPTIONS = [
   '18:00', '18:30', '19:00', '19:30', '20:00'
 ];
 
+const VISIT_TYPES = ['Property Visit', 'Client Meeting', 'Builder Meeting', 'Revisit', 'Final Negotiation'];
+
+const formatDateValue = (date: Date) => date.toISOString().split('T')[0];
+
+const getVisitDateOptions = () => {
+  const labels = ['Today', 'Tomorrow'];
+  return Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    return {
+      label: labels[index] || date.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }),
+      value: formatDateValue(date),
+    };
+  });
+};
+
 export default function AddSiteVisitScreen() {
   const { token } = useAuth();
   const params = useLocalSearchParams();
@@ -40,10 +56,11 @@ export default function AddSiteVisitScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const visitDateOptions = getVisitDateOptions();
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [filteredLocations, setFilteredLocations] = useState<string[]>(LOCATIONS);
+  const [filteredLocations, setFilteredLocations] = useState<string[]>([...LOCATIONS]);
   
   // Form state
   const [visitForm, setVisitForm] = useState({
@@ -55,6 +72,10 @@ export default function AddSiteVisitScreen() {
     visit_date: new Date().toISOString().split('T')[0],
     visit_time: '10:00',
     location: '',
+    visit_type: 'Property Visit',
+    meeting_point: '',
+    location_url: '',
+    status: 'Scheduled',
     notes: '',
   });
 
@@ -79,6 +100,7 @@ export default function AddSiteVisitScreen() {
           property_name: data.name || '',
           property_location: data.location || '',
           location: data.location || '',
+          location_url: data.Property_locationUrl || '',
         }));
       }
     } catch (error) {
@@ -120,7 +142,7 @@ export default function AddSiteVisitScreen() {
       setFilteredLocations(filtered);
       setShowLocationDropdown(true);
     } else {
-      setFilteredLocations(LOCATIONS);
+      setFilteredLocations([...LOCATIONS]);
       setShowLocationDropdown(false);
     }
   };
@@ -266,19 +288,40 @@ export default function AddSiteVisitScreen() {
             <Text style={styles.inputLabel}>Visit Date *</Text>
             <TouchableOpacity
               style={styles.dateInput}
-              onPress={() => setShowDatePicker(true)}
+              onPress={() => setShowDatePicker(!showDatePicker)}
             >
               <Ionicons name="calendar-outline" size={20} color="#6B7280" />
               <Text style={styles.dateInputText}>{visitForm.visit_date || 'Select date'}</Text>
+              <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
             </TouchableOpacity>
             {showDatePicker && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleDateChange}
-                minimumDate={new Date()}
-              />
+              Platform.OS === 'web' ? (
+                <View style={styles.dropdown}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                    {visitDateOptions.map((dateOption) => (
+                      <TouchableOpacity
+                        key={dateOption.value}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setVisitForm(prev => ({ ...prev, visit_date: dateOption.value }));
+                          setSelectedDate(new Date(`${dateOption.value}T10:00:00`));
+                          setShowDatePicker(false);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>{dateOption.label} - {dateOption.value}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleDateChange}
+                  minimumDate={new Date()}
+                />
+              )
             )}
           </View>
 
@@ -300,6 +343,47 @@ export default function AddSiteVisitScreen() {
                 onChange={handleTimeChange}
               />
             )}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Visit Purpose</Text>
+            <View style={styles.optionRow}>
+              {VISIT_TYPES.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.optionChip, visitForm.visit_type === type && styles.optionChipActive]}
+                  onPress={() => setVisitForm(prev => ({ ...prev, visit_type: type }))}
+                >
+                  <Text style={[styles.optionChipText, visitForm.visit_type === type && styles.optionChipTextActive]}>
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Meeting Point</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.meeting_point}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, meeting_point: text }))}
+              placeholder="Example: property gate, site office, broker office"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Map / Location URL</Text>
+            <TextInput
+              style={styles.input}
+              value={visitForm.location_url}
+              onChangeText={(text) => setVisitForm(prev => ({ ...prev, location_url: text }))}
+              placeholder="Paste Google Maps link"
+              placeholderTextColor="#9CA3AF"
+              autoCapitalize="none"
+              keyboardType="url"
+            />
           </View>
 
           {/* Notes */}
@@ -487,6 +571,31 @@ const styles = StyleSheet.create({
   dropdownItemText: {
     fontSize: 15,
     color: '#1F2937',
+  },
+  optionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  optionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  optionChipTextActive: {
+    color: '#2563EB',
   },
   saveButton: {
     flexDirection: 'row',
