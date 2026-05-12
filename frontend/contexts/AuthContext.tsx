@@ -74,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true);
   const appState = useRef(AppState.currentState);
 
   // Update last activity timestamp
@@ -150,9 +151,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Initialize API token first, then load stored auth
-    initializeAuthToken().then(() => {
-      loadStoredAuth();
-    });
+    const bootstrapAuth = async () => {
+      try {
+        await initializeAuthToken();
+        await loadStoredAuth();
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    bootstrapAuth();
+
+    // Failsafe: prevent login screen from being stuck disabled forever
+    const initTimeout = setTimeout(() => {
+      setIsInitializing(false);
+      setLoading(false);
+    }, 8000);
+
+    return () => clearTimeout(initTimeout);
   }, []);
 
   const loadStoredAuth = async () => {
@@ -248,7 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data = null;
       }
 
-      if (response.ok) {
+      if (response.ok && data?.access_token && data?.user) {
         setToken(data.access_token);
         setUser(data.user);
         setAuthToken(data.access_token);  // Set token for API calls
@@ -257,8 +273,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Set last activity on successful login
         await updateLastActivity();
         return true;
+      } else if (response.ok) {
+        Alert.alert('Login Failed', 'Unexpected server response. Please try again.');
+        return false;
       } else {
-        Alert.alert('Login Failed', data.detail || 'Invalid credentials');
+        Alert.alert('Login Failed', data?.detail || 'Invalid credentials');
         return false;
       }
     } catch (error) {
@@ -334,8 +353,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const combinedLoading = loading || isInitializing;
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateLastActivity }}>
+    <AuthContext.Provider value={{ user, token, loading: combinedLoading, login, register, logout, updateLastActivity }}>
       {children}
     </AuthContext.Provider>
   );
