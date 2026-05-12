@@ -3,7 +3,7 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAuthToken, initializeAuthToken } from '../services/api';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
 
 // Inactivity timeout: 2 days in milliseconds
 const INACTIVITY_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
@@ -206,6 +206,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (username: string, password: string): Promise<boolean> => {
+    if (!API_URL) {
+      Alert.alert(
+        'Configuration Error',
+        'Server URL is missing. Please reinstall/update the app or contact support.'
+      );
+      return false;
+    }
+
+    setLoading(true);
+
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
@@ -215,7 +225,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await response.json();
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
 
       if (response.ok) {
         setToken(data.access_token);
@@ -234,6 +249,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       Alert.alert('Error', 'Failed to connect to server');
       console.error('Login error:', error);
       return false;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -243,6 +260,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fullName: string,
     email: string
   ): Promise<boolean> => {
+    if (!API_URL) {
+      Alert.alert(
+        'Configuration Error',
+        'Server URL is missing. Please reinstall/update the app or contact support.'
+      );
+      return false;
+    }
+
     try {
       const registerResponse = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
