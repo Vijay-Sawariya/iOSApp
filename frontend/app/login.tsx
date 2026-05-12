@@ -18,7 +18,8 @@ import { router } from 'expo-router';
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const { login, loading } = useAuth();
+  const { login } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -26,9 +27,14 @@ export default function LoginScreen() {
       return;
     }
 
-    const success = await login(username, password);
-    if (success) {
-      router.replace('/(tabs)/dashboard');
+    setSubmitting(true);
+    try {
+      const success = await login(username.trim(), password);
+      if (success) {
+        router.replace('/(tabs)/dashboard');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -72,12 +78,12 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, submitting && styles.buttonDisabled]}
             onPress={handleLogin}
-            disabled={loading}
+            disabled={submitting}
           >
             <Text style={styles.buttonText}>
-              {loading ? 'Please wait...' : 'Login'}
+              {submitting ? 'Please wait...' : 'Login'}
             </Text>
           </TouchableOpacity>
         </View>
