@@ -24,7 +24,7 @@
 		7FF23B1FECEF5456B786ADEE /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-SagarHome/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = SagarHome/SplashScreen.storyboard; sourceTree = "<group>"; };
 		AB010C82A069A4723B02A420 /* Pods-SagarHome.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SagarHome.release.xcconfig"; path = "Target Support Files/Pods-SagarHome/Pods-SagarHome.release.xcconfig"; sourceTree = "<group>"; };
-		AFF4DB3ABDBCC73213D353C0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = SagarHome/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		AFF4DB3ABDBCC73213D353C0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = SagarHome/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = SagarHome/AppDelegate.swift; sourceTree = "<group>"; };
@@ -128,7 +128,6 @@
 				F9A1B3B169D2C3635F84506C /* Pods-SagarHome.debug.xcconfig */,
 				AB010C82A069A4723B02A420 /* Pods-SagarHome.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -350,7 +349,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SagarHome/SagarHome.entitlements;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = DDUV75KC9T;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -371,6 +372,7 @@
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sagarhomelms.lms;
 				PRODUCT_NAME = SagarHome;
+				PROVISIONING_PROFILE_SPECIFIER = "*[expo] com.sagarhome.lms AppStore 2026-05-06T13:21:52.400Z";
 				SWIFT_OBJC_BRIDGING_HEADER = "SagarHome/SagarHome-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -386,7 +388,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = SagarHome/SagarHome.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = DDUV75KC9T;
+				"DEVELOPMENT_TEAM[sdk=*]" = DDUV75KC9T;
+				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = DDUV75KC9T;
 				INFOPLIST_FILE = SagarHome/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -402,6 +410,8 @@
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sagarhomelms.lms;
 				PRODUCT_NAME = SagarHome;
+				PROVISIONING_PROFILE_SPECIFIER = "*[expo] com.sagarhome.lms AppStore 2026-05-06T13:21:52.400Z";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "*[expo] com.sagarhomelms.lms AppStore 2026-05-07T03:25:32.417Z";
 				SWIFT_OBJC_BRIDGING_HEADER = "SagarHome/SagarHome-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
