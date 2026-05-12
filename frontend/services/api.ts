@@ -2,7 +2,7 @@ import { cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from './database';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
 
 let authToken: string | null = null;
 let isOfflineMode = false;
