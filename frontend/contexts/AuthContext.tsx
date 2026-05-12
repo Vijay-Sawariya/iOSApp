@@ -3,7 +3,23 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAuthToken, initializeAuthToken } from '../services/api';
 
+
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
+const REQUEST_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = REQUEST_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 // Inactivity timeout: 2 days in milliseconds
 const INACTIVITY_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
@@ -217,7 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetchWithTimeout(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,7 +262,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to connect to server');
+      if (error instanceof Error && error.name === 'AbortError') {
+        Alert.alert('Login Timeout', 'The server took too long to respond. Please check your connection and try again.');
+      } else {
+        Alert.alert('Error', 'Failed to connect to server');
+      }
       console.error('Login error:', error);
       return false;
     } finally {
@@ -269,7 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const registerResponse = await fetch(`${API_URL}/api/auth/register`, {
+      const registerResponse = await fetchWithTimeout(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -291,7 +311,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to connect to server');
+      if (error instanceof Error && error.name === 'AbortError') {
+        Alert.alert('Registration Timeout', 'The server took too long to respond. Please check your connection and try again.');
+      } else {
+        Alert.alert('Error', 'Failed to connect to server');
+      }
       console.error('Register error:', error);
       return false;
     }
