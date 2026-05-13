@@ -1,4 +1,4 @@
-import { cacheService } from './cacheService';
+import { CACHE_KEYS, cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from './database';
 
@@ -41,31 +41,17 @@ const getHeaders = () => {
   };
 };
 
-// Helper function to fetch with offline fallback
+// Helper function to fetch with stale-while-revalidate cache behavior
 const fetchWithCache = async <T>(
   url: string,
   cacheKey: string,
   cacheSetter: (data: T) => Promise<void>,
   cacheGetter: () => Promise<T | null>
 ): Promise<T> => {
-  const isOnline = await cacheService.isOnline();
-  
-  if (!isOnline || isOfflineMode) {
-    // Offline - return cached data
-    const cached = await cacheGetter();
-    if (cached) {
-      return cached;
-    }
-    throw new Error('No cached data available. Please connect to the internet.');
-  }
-  
-  try {
-    // Online - fetch from API
+  const refreshFromNetwork = async (): Promise<T> => {
     const response = await fetch(url, { headers: getHeaders() });
     if (!response.ok) {
-      // Check for auth errors
       if (response.status === 401 || response.status === 403) {
-        // Try to get error message from response
         let errorMsg = 'Authentication error. Please log in again.';
         try {
           const errorData = await response.json();
@@ -73,26 +59,36 @@ const fetchWithCache = async <T>(
         } catch {}
         throw new Error(errorMsg);
       }
-      
-      // If API fails for other reasons, try cache
-      const cached = await cacheGetter();
-      if (cached) {
-        return cached;
-      }
       throw new Error(`API request failed with status ${response.status}`);
     }
-    
+
     const data = await response.json();
-    // Cache the response
     await cacheSetter(data);
     await cacheService.updateLastSync();
     return data;
-  } catch (error) {
-    // Network error - try cache
-    const cached = await cacheGetter();
-    if (cached) {
-      return cached;
+  };
+
+  const cached = await cacheGetter();
+  if (cached) {
+    if (!isOfflineMode) {
+      void cacheService.isOnline().then((isOnline) => {
+        if (!isOnline) return;
+        return refreshFromNetwork().catch((error) => {
+          console.log(`Background refresh failed for ${cacheKey}:`, error);
+        });
+      });
     }
+    return cached;
+  }
+
+  const isOnline = await cacheService.isOnline();
+  if (!isOnline || isOfflineMode) {
+    throw new Error('No cached data available. Please connect to the internet.');
+  }
+
+  try {
+    return await refreshFromNetwork();
+  } catch (error) {
     throw error;
   }
 };
@@ -107,6 +103,19 @@ export const api = {
   // Clear all cache
   clearCache: () => cacheService.clearAll(),
 
+  // Warm the high-traffic screens after login without blocking navigation.
+  preloadCoreData: async () => {
+    await Promise.allSettled([
+      api.getDashboardStats(),
+      api.getClientLeads(),
+      api.getInventoryLeads(),
+      api.getBuilders(),
+      api.getReminders(),
+      api.getUrgentFollowups(5),
+      api.getSmartMatches(3),
+    ]);
+  },
+
   // Dashboard
   getDashboardStats: async () => {
     return fetchWithCache(
@@ -119,19 +128,21 @@ export const api = {
 
   // AI Features
   getUrgentFollowups: async (limit: number = 10) => {
-    const response = await fetch(`${API_URL}/api/ai/urgent-followups?limit=${limit}`, {
-      headers: getHeaders(),
-    });
-    if (!response.ok) throw new Error('Failed to fetch urgent followups');
-    return response.json();
+    return fetchWithCache(
+      `${API_URL}/api/ai/urgent-followups?limit=${limit}`,
+      `urgent_followups_${limit}`,
+      (data) => cacheService.cacheUrgentFollowups(limit, data),
+      () => cacheService.getUrgentFollowups(limit)
+    );
   },
 
   getSmartMatches: async (limit: number = 5) => {
-    const response = await fetch(`${API_URL}/api/ai/smart-matches?limit=${limit}`, {
-      headers: getHeaders(),
-    });
-    if (!response.ok) throw new Error('Failed to fetch smart matches');
-    return response.json();
+    return fetchWithCache(
+      `${API_URL}/api/ai/smart-matches?limit=${limit}`,
+      `smart_matches_${limit}`,
+      (data) => cacheService.cacheSmartMatches(limit, data),
+      () => cacheService.getSmartMatches(limit)
+    );
   },
 
   generateAIMessage: async (leadId: number, messageType: string, customContext?: string) => {
@@ -253,6 +264,9 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to create lead');
+    await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+    await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+    await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
     return response.json();
   },
 
@@ -269,8 +283,10 @@ export const api = {
     });
     if (!response.ok) throw new Error('Failed to update lead');
     
-    // Invalidate cache for this lead
     await cacheService.remove(`cache_lead_${id}`);
+    await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+    await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+    await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
     
     return response.json();
   },
@@ -286,6 +302,10 @@ export const api = {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to delete lead');
+    await cacheService.remove(`cache_lead_${id}`);
+    await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+    await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+    await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
     return response.json();
   },
 
@@ -328,6 +348,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to create builder');
+    await cacheService.remove(CACHE_KEYS.BUILDERS);
     return response.json();
   },
 
@@ -343,6 +364,8 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to update builder');
+    await cacheService.remove(CACHE_KEYS.BUILDERS);
+    await cacheService.remove(`cache_builder_${id}`);
     return response.json();
   },
 
@@ -357,6 +380,8 @@ export const api = {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to delete builder');
+    await cacheService.remove(CACHE_KEYS.BUILDERS);
+    await cacheService.remove(`cache_builder_${id}`);
     return response.json();
   },
 
@@ -382,6 +407,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to create reminder');
+    await cacheService.remove(CACHE_KEYS.REMINDERS);
     return response.json();
   },
 
@@ -397,6 +423,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to update reminder');
+    await cacheService.remove(CACHE_KEYS.REMINDERS);
     return response.json();
   },
 
@@ -411,6 +438,7 @@ export const api = {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to delete reminder');
+    await cacheService.remove(CACHE_KEYS.REMINDERS);
     return response.json();
   },
 
@@ -466,6 +494,9 @@ export const api = {
       body: JSON.stringify({ ...data, lead_id: parseInt(leadId) }),
     });
     if (!response.ok) throw new Error('Failed to create followup');
+    await cacheService.remove(`cache_followups_${leadId}`);
+    await cacheService.remove(`${CACHE_KEYS.URGENT_FOLLOWUPS}_5`);
+    await cacheService.remove(`${CACHE_KEYS.URGENT_FOLLOWUPS}_10`);
     return response.json();
   },
 

@@ -270,3 +270,4 @@ credentials.json
 *.pem
 *.key
 .credentials
+*.log

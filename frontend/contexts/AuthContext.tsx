@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setAuthToken, initializeAuthToken } from '../services/api';
+import { api, setAuthToken, initializeAuthToken } from '../services/api';
 
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
@@ -208,6 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(storedToken);
           setUser(user);
           setAuthToken(storedToken);  // Set token for API calls
+          void api.preloadCoreData();
           // Update last activity since user is active
           await updateLastActivity();
         }
@@ -270,6 +271,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthToken(data.access_token);  // Set token for API calls
         await storage.setItem('token', data.access_token);
         await storage.setItem('user', JSON.stringify(data.user));
+        void api.preloadCoreData();
         // Set last activity on successful login
         await updateLastActivity();
         return true;

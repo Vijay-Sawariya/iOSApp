@@ -1354,6 +1354,64 @@ def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depe
         leads = cursor.fetchall()
         return [dict(l) for l in leads]
 
+@api_router.get("/leads/export")
+def export_leads(
+    lead_type: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Export leads to CSV format"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if not user_can_export(cursor, current_user):
+            log_security_event(cursor, current_user['id'], "export_denied", "leads", None, {
+                "lead_type": lead_type,
+                "category": category
+            })
+            conn.commit()
+            raise HTTPException(status_code=403, detail="Export permission required")
+
+        query = "SELECT * FROM leads WHERE (is_deleted IS NULL OR is_deleted = 0)"
+        params = []
+
+        selected_category = (category or '').lower()
+        if selected_category == "clients":
+            query += " AND LOWER(IFNULL(lead_type, '')) IN ('buyer', 'tenant')"
+        elif selected_category == "inventory":
+            query += " AND LOWER(IFNULL(lead_type, '')) IN ('seller', 'landlord', 'builder', 'owner')"
+        elif lead_type:
+            query += " AND lead_type = %s"
+            params.append(lead_type)
+
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        leads = cursor.fetchall()
+        log_security_event(cursor, current_user['id'], "leads_exported", "leads", None, {
+            "lead_type": lead_type,
+            "category": selected_category or "all",
+            "row_count": len(leads)
+        })
+        conn.commit()
+
+        columns = [
+            "id", "name", "phone", "email", "lead_type", "lead_status", "temperature",
+            "budget_min", "budget_max", "unit", "location", "address", "property_type",
+            "area_size", "floor", "bhk", "source", "created_by", "created_at", "updated_at"
+        ]
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for lead in leads:
+            writer.writerow({column: lead.get(column, "") for column in columns})
+
+        file_category = selected_category or lead_type or "all"
+        filename = f"leads_{file_category}_{datetime.now().strftime('%Y-%m-%d')}.csv"
+        return Response(
+            content="\ufeff" + output.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
 @api_router.get("/leads/{lead_id}")
 def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
@@ -3494,64 +3552,6 @@ async def bulk_import_leads(file: UploadFile = File(...), current_user: dict = D
         conn.commit()
     
     return {"imported": imported, "errors": errors}
-
-@api_router.get("/leads/export")
-def export_leads(
-    lead_type: Optional[str] = None,
-    category: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
-    """Export leads to CSV format"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        if not user_can_export(cursor, current_user):
-            log_security_event(cursor, current_user['id'], "export_denied", "leads", None, {
-                "lead_type": lead_type,
-                "category": category
-            })
-            conn.commit()
-            raise HTTPException(status_code=403, detail="Export permission required")
-
-        query = "SELECT * FROM leads WHERE (is_deleted IS NULL OR is_deleted = 0)"
-        params = []
-
-        selected_category = (category or '').lower()
-        if selected_category == "clients":
-            query += " AND LOWER(IFNULL(lead_type, '')) IN ('buyer', 'tenant')"
-        elif selected_category == "inventory":
-            query += " AND LOWER(IFNULL(lead_type, '')) IN ('seller', 'landlord', 'builder', 'owner')"
-        elif lead_type:
-            query += " AND lead_type = %s"
-            params.append(lead_type)
-
-        query += " ORDER BY created_at DESC"
-        cursor.execute(query, params)
-        leads = cursor.fetchall()
-        log_security_event(cursor, current_user['id'], "leads_exported", "leads", None, {
-            "lead_type": lead_type,
-            "category": selected_category or "all",
-            "row_count": len(leads)
-        })
-        conn.commit()
-
-        columns = [
-            "id", "name", "phone", "email", "lead_type", "lead_status", "temperature",
-            "budget_min", "budget_max", "unit", "location", "address", "property_type",
-            "area_size", "floor", "bhk", "source", "created_by", "created_at", "updated_at"
-        ]
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
-        writer.writeheader()
-        for lead in leads:
-            writer.writerow({column: lead.get(column, "") for column in columns})
-
-        file_category = selected_category or lead_type or "all"
-        filename = f"leads_{file_category}_{datetime.now().strftime('%Y-%m-%d')}.csv"
-        return Response(
-            content="\ufeff" + output.getvalue(),
-            media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-        )
 
 # ============= Property Gallery =============
 

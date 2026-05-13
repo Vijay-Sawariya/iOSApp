@@ -19,7 +19,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
-import * as FileSystem from 'expo-file-system';
+import { CACHE_KEYS, cacheService } from '../../services/cacheService';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { LOCATIONS, canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
@@ -302,45 +303,70 @@ export default function MoreScreen() {
     notes: '',
   });
 
+  const applyCachedMoreData = async () => {
+    const [permissions, visits, team, activity] = await Promise.all([
+      cacheService.getUserPermissions(),
+      cacheService.getSiteVisits(),
+      cacheService.getTeamMembers(),
+      cacheService.getActivityLogs(),
+    ]);
+
+    if (permissions) {
+      setCanExport(permissions.can_export || permissions.is_admin);
+    }
+    if (visits) {
+      setSiteVisits(visits);
+    }
+    if (team && user?.role === 'admin') {
+      setTeamMembers(team);
+    }
+    if (activity) {
+      setActivityLogs(activity);
+    }
+
+    return Boolean(permissions || visits || team || activity);
+  };
+
   const fetchData = async () => {
     try {
+      const showedCachedData = await applyCachedMoreData();
+      if (showedCachedData && !refreshing) {
+        setLoading(false);
+      }
+
       const headers = { Authorization: `Bearer ${token}` };
       
-      // Fetch user permissions
-      const permRes = await fetch(`${API_URL}/api/user/permissions`, { headers });
-      if (permRes.ok) {
-        const permData = await permRes.json();
+      const [permissionsResult, visitsResult, teamResult, activityResult] = await Promise.allSettled([
+        fetch(`${API_URL}/api/user/permissions`, { headers }),
+        fetch(`${API_URL}/api/site-visits`, { headers }),
+        user?.role === 'admin'
+          ? fetch(`${API_URL}/api/team/members-with-permissions`, { headers })
+          : Promise.resolve(null),
+        fetch(`${API_URL}/api/activity-logs`, { headers }),
+      ]);
+
+      if (permissionsResult.status === 'fulfilled' && permissionsResult.value.ok) {
+        const permData = await permissionsResult.value.json();
         setCanExport(permData.can_export || permData.is_admin);
+        await cacheService.cacheUserPermissions(permData);
       }
       
-      // Fetch site visits
-      const visitsRes = await fetch(`${API_URL}/api/site-visits`, { headers });
-      if (visitsRes.ok) {
-        const visitsData = await visitsRes.json();
+      if (visitsResult.status === 'fulfilled' && visitsResult.value.ok) {
+        const visitsData = await visitsResult.value.json();
         setSiteVisits(visitsData);
+        await cacheService.cacheSiteVisits(visitsData);
       }
       
-      // Fetch deals
-      const dealsRes = await fetch(`${API_URL}/api/deals`, { headers });
-      if (dealsRes.ok) {
-        const dealsData = await dealsRes.json();
-        setDeals(dealsData);
+      if (teamResult.status === 'fulfilled' && teamResult.value?.ok) {
+        const teamData = await teamResult.value.json();
+        setTeamMembers(teamData);
+        await cacheService.cacheTeamMembers(teamData);
       }
       
-      // Fetch team members (admin only)
-      if (user?.role === 'admin') {
-        const teamRes = await fetch(`${API_URL}/api/team/members-with-permissions`, { headers });
-        if (teamRes.ok) {
-          const teamData = await teamRes.json();
-          setTeamMembers(teamData);
-        }
-      }
-      
-      // Fetch activity logs
-      const activityRes = await fetch(`${API_URL}/api/activity-logs`, { headers });
-      if (activityRes.ok) {
-        const activityData = await activityRes.json();
+      if (activityResult.status === 'fulfilled' && activityResult.value.ok) {
+        const activityData = await activityResult.value.json();
         setActivityLogs(activityData);
+        await cacheService.cacheActivityLogs(activityData);
       }
     } catch (error) {
       console.error('Fetch error:', error);
@@ -721,6 +747,7 @@ export default function MoreScreen() {
 
       if (responses.every((response) => response.ok)) {
         Alert.alert('Success', 'Site visit scheduled');
+        await cacheService.remove(CACHE_KEYS.SITE_VISITS);
         setShowAddVisitModal(false);
         setVisitStops([]);
         setSelectedStopIds([]);
@@ -792,6 +819,7 @@ export default function MoreScreen() {
       });
       
       if (response.ok) {
+        await cacheService.remove(CACHE_KEYS.SITE_VISITS);
         fetchData();
       }
     } catch (error) {
@@ -845,9 +873,8 @@ export default function MoreScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', 'Lead export downloaded');
       } else {
-        const legacyFileSystem = FileSystem as any;
-        const fileUri = legacyFileSystem.documentDirectory + fileName;
-        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
 
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Leads' });
@@ -903,9 +930,8 @@ export default function MoreScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', `Exported ${deals_data.length} deals`);
       } else {
-        const legacyFileSystem = FileSystem as any;
-        const fileUri = legacyFileSystem.documentDirectory + fileName;
-        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
         
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Deals' });
