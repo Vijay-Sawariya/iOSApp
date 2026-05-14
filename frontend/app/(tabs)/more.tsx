@@ -222,12 +222,12 @@ const getVisitDateOptions = () => {
 };
 
 export default function MoreScreen() {
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
   const params = useLocalSearchParams();
   const requestedTab = (params.tab as string) || 'visits';
   const initialTab = requestedTab === 'deals' ? 'visits' : requestedTab;
   const fromPopup = params.fromPopup === 'true';
-  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>(
+  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export' | 'settings'>(
     initialTab as any
   );
   const [loading, setLoading] = useState(true);
@@ -1613,6 +1613,7 @@ export default function MoreScreen() {
             {activeTab === 'activity' && 'Activity Timeline'}
             {activeTab === 'team' && 'Team Members'}
             {activeTab === 'export' && 'Export Data'}
+            {activeTab === 'settings' && 'Settings'}
           </Text>
           {activeTab === 'visits' && (
             <TouchableOpacity 
@@ -1733,6 +1734,30 @@ export default function MoreScreen() {
               </View>
             </ScrollView>
           )}
+
+          {activeTab === 'settings' && (
+            <ScrollView style={styles.settingsContainer} contentContainerStyle={styles.settingsContent}>
+              <View style={styles.settingsSection}>
+                <View style={styles.settingsProfileIcon}>
+                  <Ionicons name="person" size={28} color="#3B82F6" />
+                </View>
+                <Text style={styles.settingsName}>{user?.full_name || user?.username || 'User'}</Text>
+                <Text style={styles.settingsMeta}>{user?.email || 'No email available'}</Text>
+                <Text style={styles.settingsRole}>{user?.role || 'Team member'}</Text>
+              </View>
+
+              <TouchableOpacity style={styles.settingsAction} onPress={logout}>
+                <View style={styles.settingsActionIcon}>
+                  <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+                </View>
+                <View style={styles.settingsActionText}>
+                  <Text style={styles.settingsActionTitle}>Log out</Text>
+                  <Text style={styles.settingsActionSubtitle}>Sign out from this device</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            </ScrollView>
+          )}
         </View>
 
         {/* Modals */}
@@ -1804,6 +1829,18 @@ export default function MoreScreen() {
             <Text style={styles.featureCardCount}>CSV</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity 
+          style={[styles.featureCard, activeTab === 'settings' && styles.featureCardActive]}
+          onPress={() => setActiveTab('settings')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.featureIconContainer, { backgroundColor: '#F3F4F6' }]}>
+            <Ionicons name="settings" size={22} color="#6B7280" />
+          </View>
+          <Text style={styles.featureCardTitle}>Settings</Text>
+          <Text style={styles.featureCardCount}>Account</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Section Title */}
@@ -1813,6 +1850,7 @@ export default function MoreScreen() {
           {activeTab === 'activity' && 'Activity Timeline'}
           {activeTab === 'team' && 'Team Members'}
           {activeTab === 'export' && 'Export Data'}
+          {activeTab === 'settings' && 'Settings'}
         </Text>
         {activeTab === 'visits' && (
           <TouchableOpacity 
@@ -1929,6 +1967,30 @@ export default function MoreScreen() {
                 Exports are generated in CSV format which can be opened in Excel, Google Sheets, or any spreadsheet application.
               </Text>
             </View>
+          </ScrollView>
+        )}
+
+        {activeTab === 'settings' && (
+          <ScrollView style={styles.settingsContainer} contentContainerStyle={styles.settingsContent}>
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsProfileIcon}>
+                <Ionicons name="person" size={28} color="#3B82F6" />
+              </View>
+              <Text style={styles.settingsName}>{user?.full_name || user?.username || 'User'}</Text>
+              <Text style={styles.settingsMeta}>{user?.email || 'No email available'}</Text>
+              <Text style={styles.settingsRole}>{user?.role || 'Team member'}</Text>
+            </View>
+
+            <TouchableOpacity style={styles.settingsAction} onPress={logout}>
+              <View style={styles.settingsActionIcon}>
+                <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+              </View>
+              <View style={styles.settingsActionText}>
+                <Text style={styles.settingsActionTitle}>Log out</Text>
+                <Text style={styles.settingsActionSubtitle}>Sign out from this device</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
           </ScrollView>
         )}
       </View>
@@ -2709,6 +2771,77 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     lineHeight: 18,
+  },
+  settingsContainer: {
+    flex: 1,
+  },
+  settingsContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  settingsSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  settingsProfileIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  settingsName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  settingsMeta: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  settingsRole: {
+    fontSize: 12,
+    color: '#3B82F6',
+    fontWeight: '700',
+    textTransform: 'capitalize',
+    marginTop: 8,
+  },
+  settingsAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    gap: 12,
+  },
+  settingsActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsActionText: {
+    flex: 1,
+  },
+  settingsActionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  settingsActionSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
   // Search and Dropdown styles
   searchContainer: {

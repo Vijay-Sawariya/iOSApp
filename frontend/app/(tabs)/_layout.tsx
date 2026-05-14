@@ -135,7 +135,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               label="Settings"
               color="#6B7280"
               bgColor="#F3F4F6"
-              onPress={onClose}
+              onPress={() => handleMenuItemPress('settings')}
             />
           </View>
         </Pressable>
