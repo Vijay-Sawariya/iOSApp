@@ -1907,24 +1907,14 @@ def get_reminders(
     """Get all actions/reminders with lead information"""
     with get_db() as conn:
         cursor = conn.cursor()
-        is_admin = str(current_user.get('role', '')).strip().lower() == 'admin'
-        if is_admin:
-            cursor.execute(
-                """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
-                   FROM actions a
-                   LEFT JOIN leads l ON a.lead_id = l.id
-                   ORDER BY a.due_date ASC, a.due_time ASC LIMIT %s OFFSET %s""",
-                (limit, skip)
-            )
-        else:
-            cursor.execute(
-                """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
-                   FROM actions a
-                   LEFT JOIN leads l ON a.lead_id = l.id
-                   WHERE a.user_id = %s
-                   ORDER BY a.due_date ASC, a.due_time ASC LIMIT %s OFFSET %s""",
-                (current_user['id'], limit, skip)
-            )
+        cursor.execute(
+            """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
+               FROM actions a
+               LEFT JOIN leads l ON a.lead_id = l.id
+               WHERE a.user_id = %s
+               ORDER BY a.due_date ASC, a.due_time ASC LIMIT %s OFFSET %s""",
+            (current_user['id'], limit, skip)
+        )
         actions = cursor.fetchall()
         
         # Convert to expected frontend format
@@ -3003,7 +2993,7 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
             ensure_site_visits_table(cursor)
             conn.commit()
             
-            is_admin = str(current_user.get('role', '')).lower() == 'admin'
+           
             query = """
                 SELECT sv.*, 
                        l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
@@ -3013,15 +3003,12 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
                 FROM site_visits sv
                 LEFT JOIN leads l ON sv.lead_id = l.id
                 LEFT JOIN leads p ON sv.property_lead_id = p.id
+                 WHERE sv.created_by = %s
             """
-            params = []
-
-            if not is_admin:
-                query += " WHERE sv.created_by = %s"
-                params.append(current_user['id'])
+            params = [current_user['id']]
 
             if status:
-                query += " AND sv.status = %s" if params else " WHERE sv.status = %s"
+                query += " AND sv.status = %s" 
                 params.append(status)
             
             query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC, COALESCE(sv.visit_order, 999) ASC"
