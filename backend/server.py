@@ -1907,7 +1907,7 @@ def get_reminders(
     """Get all actions/reminders with lead information"""
     with get_db() as conn:
         cursor = conn.cursor()
-        is_admin = str(current_user.get('role', '')).lower() == 'admin'
+        is_admin = str(current_user.get('role', '')).strip().lower() == 'admin'
         if is_admin:
             cursor.execute(
                 """SELECT a.*, l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by
