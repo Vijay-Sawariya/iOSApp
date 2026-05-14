@@ -271,3 +271,8 @@ credentials.json
 *.key
 .credentials
 *.log
+/frontend/.metro-cache
+/frontend/.metro-cache
+/frontend/.metro-cache/cache
+/frontend/.metro-cache
+/frontend/.metro-cache/cache/0d
