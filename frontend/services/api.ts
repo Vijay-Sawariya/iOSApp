@@ -33,6 +33,13 @@ export const setOfflineMode = (offline: boolean) => {
 
 export const getOfflineMode = () => isOfflineMode;
 
+
+const getUserScopedCacheKey = (baseKey: string): string => {
+  if (!authToken) return `${baseKey}_anon`;
+  const tokenSuffix = authToken.slice(-16);
+  return `${baseKey}_${tokenSuffix}`;
+};
+
 const getHeaders = () => {
   console.log('getHeaders - authToken present:', !!authToken);
   return {
@@ -387,11 +394,12 @@ export const api = {
 
   // Reminders
   getReminders: async () => {
+    const cacheKey = getUserScopedCacheKey(CACHE_KEYS.REMINDERS);
     return fetchWithCache(
       `${API_URL}/api/reminders`,
       'reminders',
-      (data) => cacheService.cacheReminders(data),
-      () => cacheService.getReminders()
+      (data) => cacheService.set(cacheKey, data),
+      () => cacheService.get(cacheKey)
     );
   },
 
