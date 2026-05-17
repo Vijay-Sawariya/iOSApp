@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { installedAppVersion } from '../constants/appVersion';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
@@ -52,6 +53,7 @@ export default function LoginScreen() {
           />
           <Text style={styles.title}>Sagar Home</Text>
           <Text style={styles.subtitle}>Sign in to continue</Text>
+          <Text style={styles.versionText}>{installedAppVersion}</Text>
         </View>
 
         <View style={styles.form}>
@@ -120,6 +122,11 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6B7280',
+    marginTop: 8,
+  },
+  versionText: {
+    fontSize: 12,
+    color: '#9CA3AF',
     marginTop: 8,
   },
   form: {
