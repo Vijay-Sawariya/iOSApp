@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import { CACHE_KEYS, cacheService } from '../../services/cacheService';
+import { installedAppVersion } from '../../constants/appVersion';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { LOCATIONS, canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
@@ -1746,6 +1747,16 @@ export default function MoreScreen() {
                 <Text style={styles.settingsRole}>{user?.role || 'Team member'}</Text>
               </View>
 
+              <View style={styles.versionCard}>
+                <View style={styles.versionIcon}>
+                  <Ionicons name="phone-portrait-outline" size={20} color="#3B82F6" />
+                </View>
+                <View style={styles.settingsActionText}>
+                  <Text style={styles.settingsActionTitle}>Installed app version</Text>
+                  <Text style={styles.settingsActionSubtitle}>{installedAppVersion}</Text>
+                </View>
+              </View>
+
               <TouchableOpacity style={styles.settingsAction} onPress={logout}>
                 <View style={styles.settingsActionIcon}>
                   <Ionicons name="log-out-outline" size={20} color="#DC2626" />
@@ -1979,6 +1990,16 @@ export default function MoreScreen() {
               <Text style={styles.settingsName}>{user?.full_name || user?.username || 'User'}</Text>
               <Text style={styles.settingsMeta}>{user?.email || 'No email available'}</Text>
               <Text style={styles.settingsRole}>{user?.role || 'Team member'}</Text>
+            </View>
+
+            <View style={styles.versionCard}>
+              <View style={styles.versionIcon}>
+                <Ionicons name="phone-portrait-outline" size={20} color="#3B82F6" />
+              </View>
+              <View style={styles.settingsActionText}>
+                <Text style={styles.settingsActionTitle}>Installed app version</Text>
+                <Text style={styles.settingsActionSubtitle}>{installedAppVersion}</Text>
+              </View>
             </View>
 
             <TouchableOpacity style={styles.settingsAction} onPress={logout}>
@@ -2821,6 +2842,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     gap: 12,
+  },
+  versionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    gap: 12,
+    marginBottom: 12,
+  },
+  versionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   settingsActionIcon: {
     width: 40,
