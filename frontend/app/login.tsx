@@ -46,8 +46,8 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Image 
-            source={require('../assets/images/logo.png')} 
+          <Image
+            source={require('../assets/images/icon.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -111,6 +111,7 @@ const styles = StyleSheet.create({
   logo: {
     width: 100,
     height: 100,
+    borderRadius: 22,
     marginBottom: 16,
   },
   title: {
