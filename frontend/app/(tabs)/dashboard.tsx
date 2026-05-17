@@ -636,13 +636,15 @@ const styles = StyleSheet.create({
   todayWorkGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
   todayWorkCard: {
-    width: '48%',
+    width: '47%',
     borderRadius: 12,
     padding: 12,
     minHeight: 100,
+    marginBottom: 10,
   },
   todayWorkIcon: {
     width: 32,
