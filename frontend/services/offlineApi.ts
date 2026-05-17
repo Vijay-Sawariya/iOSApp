@@ -14,6 +14,10 @@ import { api, getAuthToken } from './api';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
+type LeadFetchOptions = {
+  forceNetwork?: boolean;
+};
+
 class OfflineApiService {
   private async isOnline(): Promise<boolean> {
     try {
@@ -43,9 +47,9 @@ class OfflineApiService {
   }
 
   // ============ CLIENT LEADS ============
-  async getClientLeads(): Promise<any[]> {
+  async getClientLeads(options?: LeadFetchOptions): Promise<any[]> {
     try {
-      return await api.getClientLeads();
+      return await api.getClientLeads(options);
     } catch (error) {
       console.log('Cached API fetch failed, falling back to SQLite');
       return syncService.getClientLeads();
@@ -53,9 +57,9 @@ class OfflineApiService {
   }
 
   // ============ INVENTORY LEADS ============
-  async getInventoryLeads(): Promise<any[]> {
+  async getInventoryLeads(options?: LeadFetchOptions): Promise<any[]> {
     try {
-      return await api.getInventoryLeads();
+      return await api.getInventoryLeads(options);
     } catch (error) {
       console.log('Cached API fetch failed, falling back to SQLite');
       return syncService.getInventoryLeads();

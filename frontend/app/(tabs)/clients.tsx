@@ -149,9 +149,9 @@ www.sagarhome.com`;
     return { total, buyers, tenants, agents };
   }, [leads]);
 
-  const loadLeads = async () => {
+  const loadLeads = async (forceNetwork = false) => {
     try {
-      const data = await offlineApi.getClientLeads();
+      const data = await offlineApi.getClientLeads({ forceNetwork });
       setLeads(data);
       applyFilters(data, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch);
     } catch (error) {
@@ -283,8 +283,11 @@ www.sagarhome.com`;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadLeads();
-    setRefreshing(false);
+    try {
+      await loadLeads(true);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleSearch = (text: string) => {

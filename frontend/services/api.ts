@@ -7,6 +7,10 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
 let authToken: string | null = null;
 let isOfflineMode = false;
 
+type CacheFetchOptions = {
+  forceNetwork?: boolean;
+};
+
 export const setAuthToken = (token: string | null) => {
   console.log('setAuthToken called with:', token ? 'token present' : 'null');
   authToken = token;
@@ -53,7 +57,8 @@ const fetchWithCache = async <T>(
   url: string,
   cacheKey: string,
   cacheSetter: (data: T) => Promise<void>,
-  cacheGetter: () => Promise<T | null>
+  cacheGetter: () => Promise<T | null>,
+  options: CacheFetchOptions = {}
 ): Promise<T> => {
   const refreshFromNetwork = async (): Promise<T> => {
     const response = await fetch(url, { headers: getHeaders() });
@@ -75,6 +80,16 @@ const fetchWithCache = async <T>(
     return data;
   };
 
+  const isOnline = await cacheService.isOnline();
+
+  if (options.forceNetwork) {
+    if (!isOnline || isOfflineMode) {
+      throw new Error('Live refresh requires an internet connection.');
+    }
+
+    return refreshFromNetwork();
+  }
+
   const cached = await cacheGetter();
   if (cached) {
     if (!isOfflineMode) {
@@ -88,7 +103,6 @@ const fetchWithCache = async <T>(
     return cached;
   }
 
-  const isOnline = await cacheService.isOnline();
   if (!isOnline || isOfflineMode) {
     throw new Error('No cached data available. Please connect to the internet.');
   }
@@ -176,22 +190,24 @@ export const api = {
   },
 
   // Leads - Clients (Buyer, Tenant)
-  getClientLeads: async () => {
+  getClientLeads: async (options?: CacheFetchOptions) => {
     return fetchWithCache(
       `${API_URL}/api/leads/clients`,
       'leads_clients',
       (data) => cacheService.cacheClientLeads(data),
-      () => cacheService.getClientLeads()
+      () => cacheService.getClientLeads(),
+      options
     );
   },
 
   // Leads - Inventory (Seller, Landlord, Builder)
-  getInventoryLeads: async () => {
+  getInventoryLeads: async (options?: CacheFetchOptions) => {
     return fetchWithCache(
       `${API_URL}/api/leads/inventory`,
       'leads_inventory',
       (data) => cacheService.cacheInventoryLeads(data),
-      () => cacheService.getInventoryLeads()
+      () => cacheService.getInventoryLeads(),
+      options
     );
   },
 

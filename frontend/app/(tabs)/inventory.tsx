@@ -136,18 +136,18 @@ export default function InventoryLeadsScreen() {
   }), [leads]);
 
   // Load clients (buyers/tenants) for the dropdown
-  const loadClients = async () => {
+  const loadClients = async (forceNetwork = false) => {
     try {
-      const data = await offlineApi.getClientLeads();
+      const data = await offlineApi.getClientLeads({ forceNetwork });
       setClients(data);
     } catch (error) {
       console.error('Failed to load clients:', error);
     }
   };
 
-  const loadLeads = async () => {
+  const loadLeads = async (forceNetwork = false) => {
     try {
-      const data = await offlineApi.getInventoryLeads();
+      const data = await offlineApi.getInventoryLeads({ forceNetwork });
       setLeads(data);
       // Apply filters with current state values
       applyFilters(
@@ -390,8 +390,14 @@ export default function InventoryLeadsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadLeads();
-    setRefreshing(false);
+    try {
+      await Promise.all([
+        loadLeads(true),
+        loadClients(true),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleSearch = (text: string) => {
