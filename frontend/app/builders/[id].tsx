@@ -146,7 +146,7 @@ export default function BuilderDetailScreen() {
 
   const formatFloorPricing = (pricing?: { floor_label: string; floor_amount: number }[], unit?: string | null): string => {
     if (!pricing || pricing.length === 0) return '';
-    const unitStr = formatUnit(unit);
+    const unitStr = formatUnit(unit ?? null);
     return pricing.map(p => `${p.floor_label}: ${p.floor_amount}${unitStr}`).join(' | ');
   };
 

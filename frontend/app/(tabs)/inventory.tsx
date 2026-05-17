@@ -136,18 +136,18 @@ export default function InventoryLeadsScreen() {
   }), [leads]);
 
   // Load clients (buyers/tenants) for the dropdown
-  const loadClients = async () => {
+  const loadClients = async (forceNetwork = false) => {
     try {
-      const data = await offlineApi.getClientLeads();
+      const data = await offlineApi.getClientLeads({ forceNetwork });
       setClients(data);
     } catch (error) {
       console.error('Failed to load clients:', error);
     }
   };
 
-  const loadLeads = async () => {
+  const loadLeads = async (forceNetwork = false) => {
     try {
-      const data = await offlineApi.getInventoryLeads();
+      const data = await offlineApi.getInventoryLeads({ forceNetwork });
       setLeads(data);
       // Apply filters with current state values
       applyFilters(
@@ -390,8 +390,14 @@ export default function InventoryLeadsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadLeads();
-    setRefreshing(false);
+    try {
+      await Promise.all([
+        loadLeads(true),
+        loadClients(true),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleSearch = (text: string) => {
@@ -533,7 +539,7 @@ export default function InventoryLeadsScreen() {
     if ((item as any).sample_flat === '1' || (item as any).sample_flat === 1) amenitiesList.push('Sample Flat');
     if ((item as any).main_road === '1' || (item as any).main_road === 1) amenitiesList.push('Main Road');
     if ((item as any).parking === '1' || (item as any).parking === 1) amenitiesList.push('Parking');
-    if ((item as any).lift === '1' || (item as any).lift === 1 || item.lift === 'Yes') amenitiesList.push('Lift');
+    if ((item as any).lift === '1' || (item as any).lift === 1 || (item as any).lift === 'Yes') amenitiesList.push('Lift');
     if ((item as any).stilt === '1' || (item as any).stilt === 1) amenitiesList.push('Stilt');
 
     // Get aging info
@@ -905,8 +911,8 @@ export default function InventoryLeadsScreen() {
                     Showing {filteredLeads.length} of {leads.length} results
                   </Text>
                   {hasActiveFilters() && (
-                    <TouchableOpacity onPress={clearAllFilters} style={styles.clearFiltersBtn}>
-                      <Text style={styles.clearFiltersText}>Clear Filters</Text>
+                    <TouchableOpacity onPress={clearAllFilters} style={styles.resultClearFiltersBtn}>
+                      <Text style={styles.resultClearFiltersText}>Clear Filters</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -2175,13 +2181,13 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     fontWeight: '500',
   },
-  clearFiltersBtn: {
+  resultClearFiltersBtn: {
     paddingHorizontal: 12,
     paddingVertical: 4,
     backgroundColor: '#3B82F6',
     borderRadius: 4,
   },
-  clearFiltersText: {
+  resultClearFiltersText: {
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '600',

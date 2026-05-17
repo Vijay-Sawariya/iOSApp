@@ -8,14 +8,20 @@ const CACHE_KEYS = {
   BUILDERS: 'cache_builders',
   REMINDERS: 'cache_reminders',
   DASHBOARD_STATS: 'cache_dashboard_stats',
+  URGENT_FOLLOWUPS: 'cache_urgent_followups',
+  SMART_MATCHES: 'cache_smart_matches',
+  USER_PERMISSIONS: 'cache_user_permissions',
+  SITE_VISITS: 'cache_site_visits',
+  TEAM_MEMBERS: 'cache_team_members',
+  ACTIVITY_LOGS: 'cache_activity_logs',
   LEAD_DETAIL_PREFIX: 'cache_lead_',
   LEAD_FOLLOWUPS_PREFIX: 'cache_followups_',
   BUILDER_DETAIL_PREFIX: 'cache_builder_',
   LAST_SYNC: 'cache_last_sync',
 };
 
-// Cache expiry time (24 hours in milliseconds)
-const CACHE_EXPIRY = 24 * 60 * 60 * 1000;
+// Keep read-heavy LMS data warm for field use. Network refresh still runs in the background.
+const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000;
 
 interface CacheData<T> {
   data: T;
@@ -146,6 +152,54 @@ class CacheService {
 
   async getDashboardStats(): Promise<any | null> {
     return this.get<any>(CACHE_KEYS.DASHBOARD_STATS);
+  }
+
+  async cacheUrgentFollowups(limit: number, data: any[]): Promise<void> {
+    await this.set(`${CACHE_KEYS.URGENT_FOLLOWUPS}_${limit}`, data);
+  }
+
+  async getUrgentFollowups(limit: number): Promise<any[] | null> {
+    return this.get<any[]>(`${CACHE_KEYS.URGENT_FOLLOWUPS}_${limit}`);
+  }
+
+  async cacheSmartMatches(limit: number, data: any[]): Promise<void> {
+    await this.set(`${CACHE_KEYS.SMART_MATCHES}_${limit}`, data);
+  }
+
+  async getSmartMatches(limit: number): Promise<any[] | null> {
+    return this.get<any[]>(`${CACHE_KEYS.SMART_MATCHES}_${limit}`);
+  }
+
+  async cacheUserPermissions(data: any): Promise<void> {
+    await this.set(CACHE_KEYS.USER_PERMISSIONS, data);
+  }
+
+  async getUserPermissions(): Promise<any | null> {
+    return this.get<any>(CACHE_KEYS.USER_PERMISSIONS);
+  }
+
+  async cacheSiteVisits(data: any[]): Promise<void> {
+    await this.set(CACHE_KEYS.SITE_VISITS, data);
+  }
+
+  async getSiteVisits(): Promise<any[] | null> {
+    return this.get<any[]>(CACHE_KEYS.SITE_VISITS);
+  }
+
+  async cacheTeamMembers(data: any[]): Promise<void> {
+    await this.set(CACHE_KEYS.TEAM_MEMBERS, data);
+  }
+
+  async getTeamMembers(): Promise<any[] | null> {
+    return this.get<any[]>(CACHE_KEYS.TEAM_MEMBERS);
+  }
+
+  async cacheActivityLogs(data: any[]): Promise<void> {
+    await this.set(CACHE_KEYS.ACTIVITY_LOGS, data);
+  }
+
+  async getActivityLogs(): Promise<any[] | null> {
+    return this.get<any[]>(CACHE_KEYS.ACTIVITY_LOGS);
   }
 
   async cacheLead(id: string, data: any): Promise<void> {

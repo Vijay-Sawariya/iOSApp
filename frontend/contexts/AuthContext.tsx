@@ -1,9 +1,25 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setAuthToken, initializeAuthToken } from '../services/api';
+import { api, setAuthToken, initializeAuthToken } from '../services/api';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
+const REQUEST_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = REQUEST_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 // Inactivity timeout: 2 days in milliseconds
 const INACTIVITY_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
@@ -58,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true);
   const appState = useRef(AppState.currentState);
 
   // Update last activity timestamp
@@ -134,9 +151,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Initialize API token first, then load stored auth
-    initializeAuthToken().then(() => {
-      loadStoredAuth();
-    });
+    const bootstrapAuth = async () => {
+      try {
+        await initializeAuthToken();
+        await loadStoredAuth();
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    bootstrapAuth();
+
+    // Failsafe: prevent login screen from being stuck disabled forever
+    const initTimeout = setTimeout(() => {
+      setIsInitializing(false);
+      setLoading(false);
+    }, 8000);
+
+    return () => clearTimeout(initTimeout);
   }, []);
 
   const loadStoredAuth = async () => {
@@ -176,6 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(storedToken);
           setUser(user);
           setAuthToken(storedToken);  // Set token for API calls
+          void api.preloadCoreData();
           // Update last activity since user is active
           await updateLastActivity();
         }
@@ -206,8 +239,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (username: string, password: string): Promise<boolean> => {
+    if (!API_URL) {
+      Alert.alert(
+        'Configuration Error',
+        'Server URL is missing. Please reinstall/update the app or contact support.'
+      );
+      return false;
+    }
+
+    setLoading(true);
+
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetchWithTimeout(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -215,25 +258,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await response.json();
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
 
-      if (response.ok) {
+      if (response.ok && data?.access_token && data?.user) {
         setToken(data.access_token);
         setUser(data.user);
         setAuthToken(data.access_token);  // Set token for API calls
         await storage.setItem('token', data.access_token);
         await storage.setItem('user', JSON.stringify(data.user));
+        void api.preloadCoreData();
         // Set last activity on successful login
         await updateLastActivity();
         return true;
+      } else if (response.ok) {
+        Alert.alert('Login Failed', 'Unexpected server response. Please try again.');
+        return false;
       } else {
-        Alert.alert('Login Failed', data.detail || 'Invalid credentials');
+        Alert.alert('Login Failed', data?.detail || 'Invalid credentials');
         return false;
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to connect to server');
+      if (error instanceof Error && error.name === 'AbortError') {
+        Alert.alert('Login Timeout', 'The server took too long to respond. Please check your connection and try again.');
+      } else {
+        Alert.alert('Error', 'Failed to connect to server');
+      }
       console.error('Login error:', error);
       return false;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -243,8 +301,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fullName: string,
     email: string
   ): Promise<boolean> => {
+    if (!API_URL) {
+      Alert.alert(
+        'Configuration Error',
+        'Server URL is missing. Please reinstall/update the app or contact support.'
+      );
+      return false;
+    }
+
     try {
-      const registerResponse = await fetch(`${API_URL}/api/auth/register`, {
+      const registerResponse = await fetchWithTimeout(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -266,7 +332,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to connect to server');
+      if (error instanceof Error && error.name === 'AbortError') {
+        Alert.alert('Registration Timeout', 'The server took too long to respond. Please check your connection and try again.');
+      } else {
+        Alert.alert('Error', 'Failed to connect to server');
+      }
       console.error('Register error:', error);
       return false;
     }
@@ -285,8 +355,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const combinedLoading = loading || isInitializing;
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateLastActivity }}>
+    <AuthContext.Provider value={{ user, token, loading: combinedLoading, login, register, logout, updateLastActivity }}>
       {children}
     </AuthContext.Provider>
   );

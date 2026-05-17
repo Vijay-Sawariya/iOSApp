@@ -16,6 +16,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { CACHE_KEYS, cacheService } from '../../services/cacheService';
 import { LOCATIONS } from '../../constants/leadOptions';
 
 // Time options for dropdown
@@ -180,6 +181,8 @@ export default function AddSiteVisitScreen() {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to create site visit');
       }
+
+      await cacheService.remove(CACHE_KEYS.SITE_VISITS);
 
       Alert.alert('Success', 'Site visit scheduled successfully', [
         { text: 'OK', onPress: () => router.back() }

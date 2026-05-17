@@ -19,7 +19,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
-import * as FileSystem from 'expo-file-system';
+import { CACHE_KEYS, cacheService } from '../../services/cacheService';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { LOCATIONS, canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 
@@ -221,12 +222,12 @@ const getVisitDateOptions = () => {
 };
 
 export default function MoreScreen() {
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
   const params = useLocalSearchParams();
   const requestedTab = (params.tab as string) || 'visits';
   const initialTab = requestedTab === 'deals' ? 'visits' : requestedTab;
   const fromPopup = params.fromPopup === 'true';
-  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export'>(
+  const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export' | 'settings'>(
     initialTab as any
   );
   const [loading, setLoading] = useState(true);
@@ -302,45 +303,70 @@ export default function MoreScreen() {
     notes: '',
   });
 
+  const applyCachedMoreData = async () => {
+    const [permissions, visits, team, activity] = await Promise.all([
+      cacheService.getUserPermissions(),
+      cacheService.getSiteVisits(),
+      cacheService.getTeamMembers(),
+      cacheService.getActivityLogs(),
+    ]);
+
+    if (permissions) {
+      setCanExport(permissions.can_export || permissions.is_admin);
+    }
+    if (visits) {
+      setSiteVisits(visits);
+    }
+    if (team && user?.role === 'admin') {
+      setTeamMembers(team);
+    }
+    if (activity) {
+      setActivityLogs(activity);
+    }
+
+    return Boolean(permissions || visits || team || activity);
+  };
+
   const fetchData = async () => {
     try {
+      const showedCachedData = await applyCachedMoreData();
+      if (showedCachedData && !refreshing) {
+        setLoading(false);
+      }
+
       const headers = { Authorization: `Bearer ${token}` };
       
-      // Fetch user permissions
-      const permRes = await fetch(`${API_URL}/api/user/permissions`, { headers });
-      if (permRes.ok) {
-        const permData = await permRes.json();
+      const [permissionsResult, visitsResult, teamResult, activityResult] = await Promise.allSettled([
+        fetch(`${API_URL}/api/user/permissions`, { headers }),
+        fetch(`${API_URL}/api/site-visits`, { headers }),
+        user?.role === 'admin'
+          ? fetch(`${API_URL}/api/team/members-with-permissions`, { headers })
+          : Promise.resolve(null),
+        fetch(`${API_URL}/api/activity-logs`, { headers }),
+      ]);
+
+      if (permissionsResult.status === 'fulfilled' && permissionsResult.value.ok) {
+        const permData = await permissionsResult.value.json();
         setCanExport(permData.can_export || permData.is_admin);
+        await cacheService.cacheUserPermissions(permData);
       }
       
-      // Fetch site visits
-      const visitsRes = await fetch(`${API_URL}/api/site-visits`, { headers });
-      if (visitsRes.ok) {
-        const visitsData = await visitsRes.json();
+      if (visitsResult.status === 'fulfilled' && visitsResult.value.ok) {
+        const visitsData = await visitsResult.value.json();
         setSiteVisits(visitsData);
+        await cacheService.cacheSiteVisits(visitsData);
       }
       
-      // Fetch deals
-      const dealsRes = await fetch(`${API_URL}/api/deals`, { headers });
-      if (dealsRes.ok) {
-        const dealsData = await dealsRes.json();
-        setDeals(dealsData);
+      if (teamResult.status === 'fulfilled' && teamResult.value?.ok) {
+        const teamData = await teamResult.value.json();
+        setTeamMembers(teamData);
+        await cacheService.cacheTeamMembers(teamData);
       }
       
-      // Fetch team members (admin only)
-      if (user?.role === 'admin') {
-        const teamRes = await fetch(`${API_URL}/api/team/members-with-permissions`, { headers });
-        if (teamRes.ok) {
-          const teamData = await teamRes.json();
-          setTeamMembers(teamData);
-        }
-      }
-      
-      // Fetch activity logs
-      const activityRes = await fetch(`${API_URL}/api/activity-logs`, { headers });
-      if (activityRes.ok) {
-        const activityData = await activityRes.json();
+      if (activityResult.status === 'fulfilled' && activityResult.value.ok) {
+        const activityData = await activityResult.value.json();
         setActivityLogs(activityData);
+        await cacheService.cacheActivityLogs(activityData);
       }
     } catch (error) {
       console.error('Fetch error:', error);
@@ -721,6 +747,7 @@ export default function MoreScreen() {
 
       if (responses.every((response) => response.ok)) {
         Alert.alert('Success', 'Site visit scheduled');
+        await cacheService.remove(CACHE_KEYS.SITE_VISITS);
         setShowAddVisitModal(false);
         setVisitStops([]);
         setSelectedStopIds([]);
@@ -792,6 +819,7 @@ export default function MoreScreen() {
       });
       
       if (response.ok) {
+        await cacheService.remove(CACHE_KEYS.SITE_VISITS);
         fetchData();
       }
     } catch (error) {
@@ -845,9 +873,8 @@ export default function MoreScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', 'Lead export downloaded');
       } else {
-        const legacyFileSystem = FileSystem as any;
-        const fileUri = legacyFileSystem.documentDirectory + fileName;
-        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
 
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Leads' });
@@ -903,9 +930,8 @@ export default function MoreScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Success', `Exported ${deals_data.length} deals`);
       } else {
-        const legacyFileSystem = FileSystem as any;
-        const fileUri = legacyFileSystem.documentDirectory + fileName;
-        await legacyFileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: legacyFileSystem.EncodingType.UTF8 });
+        const fileUri = FileSystem.documentDirectory + fileName;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
         
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Deals' });
@@ -1587,6 +1613,7 @@ export default function MoreScreen() {
             {activeTab === 'activity' && 'Activity Timeline'}
             {activeTab === 'team' && 'Team Members'}
             {activeTab === 'export' && 'Export Data'}
+            {activeTab === 'settings' && 'Settings'}
           </Text>
           {activeTab === 'visits' && (
             <TouchableOpacity 
@@ -1707,6 +1734,30 @@ export default function MoreScreen() {
               </View>
             </ScrollView>
           )}
+
+          {activeTab === 'settings' && (
+            <ScrollView style={styles.settingsContainer} contentContainerStyle={styles.settingsContent}>
+              <View style={styles.settingsSection}>
+                <View style={styles.settingsProfileIcon}>
+                  <Ionicons name="person" size={28} color="#3B82F6" />
+                </View>
+                <Text style={styles.settingsName}>{user?.full_name || user?.username || 'User'}</Text>
+                <Text style={styles.settingsMeta}>{user?.email || 'No email available'}</Text>
+                <Text style={styles.settingsRole}>{user?.role || 'Team member'}</Text>
+              </View>
+
+              <TouchableOpacity style={styles.settingsAction} onPress={logout}>
+                <View style={styles.settingsActionIcon}>
+                  <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+                </View>
+                <View style={styles.settingsActionText}>
+                  <Text style={styles.settingsActionTitle}>Log out</Text>
+                  <Text style={styles.settingsActionSubtitle}>Sign out from this device</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            </ScrollView>
+          )}
         </View>
 
         {/* Modals */}
@@ -1778,6 +1829,18 @@ export default function MoreScreen() {
             <Text style={styles.featureCardCount}>CSV</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity 
+          style={[styles.featureCard, activeTab === 'settings' && styles.featureCardActive]}
+          onPress={() => setActiveTab('settings')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.featureIconContainer, { backgroundColor: '#F3F4F6' }]}>
+            <Ionicons name="settings" size={22} color="#6B7280" />
+          </View>
+          <Text style={styles.featureCardTitle}>Settings</Text>
+          <Text style={styles.featureCardCount}>Account</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Section Title */}
@@ -1787,6 +1850,7 @@ export default function MoreScreen() {
           {activeTab === 'activity' && 'Activity Timeline'}
           {activeTab === 'team' && 'Team Members'}
           {activeTab === 'export' && 'Export Data'}
+          {activeTab === 'settings' && 'Settings'}
         </Text>
         {activeTab === 'visits' && (
           <TouchableOpacity 
@@ -1903,6 +1967,30 @@ export default function MoreScreen() {
                 Exports are generated in CSV format which can be opened in Excel, Google Sheets, or any spreadsheet application.
               </Text>
             </View>
+          </ScrollView>
+        )}
+
+        {activeTab === 'settings' && (
+          <ScrollView style={styles.settingsContainer} contentContainerStyle={styles.settingsContent}>
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsProfileIcon}>
+                <Ionicons name="person" size={28} color="#3B82F6" />
+              </View>
+              <Text style={styles.settingsName}>{user?.full_name || user?.username || 'User'}</Text>
+              <Text style={styles.settingsMeta}>{user?.email || 'No email available'}</Text>
+              <Text style={styles.settingsRole}>{user?.role || 'Team member'}</Text>
+            </View>
+
+            <TouchableOpacity style={styles.settingsAction} onPress={logout}>
+              <View style={styles.settingsActionIcon}>
+                <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+              </View>
+              <View style={styles.settingsActionText}>
+                <Text style={styles.settingsActionTitle}>Log out</Text>
+                <Text style={styles.settingsActionSubtitle}>Sign out from this device</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
           </ScrollView>
         )}
       </View>
@@ -2683,6 +2771,77 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     lineHeight: 18,
+  },
+  settingsContainer: {
+    flex: 1,
+  },
+  settingsContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  settingsSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  settingsProfileIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  settingsName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  settingsMeta: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  settingsRole: {
+    fontSize: 12,
+    color: '#3B82F6',
+    fontWeight: '700',
+    textTransform: 'capitalize',
+    marginTop: 8,
+  },
+  settingsAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    gap: 12,
+  },
+  settingsActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsActionText: {
+    flex: 1,
+  },
+  settingsActionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  settingsActionSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
   // Search and Dropdown styles
   searchContainer: {

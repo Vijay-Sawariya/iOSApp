@@ -11,9 +11,12 @@
 import NetInfo from '@react-native-community/netinfo';
 import { syncService } from './syncService';
 import { api, getAuthToken } from './api';
-import * as db from './database';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+type LeadFetchOptions = {
+  forceNetwork?: boolean;
+};
 
 class OfflineApiService {
   private async isOnline(): Promise<boolean> {
@@ -44,55 +47,35 @@ class OfflineApiService {
   }
 
   // ============ CLIENT LEADS ============
-  async getClientLeads(): Promise<any[]> {
-    const online = await this.isOnline();
-    
-    if (online) {
-      try {
-        return await this.fetchFromNetwork('/api/leads/clients');
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getClientLeads();
-      }
+  async getClientLeads(options?: LeadFetchOptions): Promise<any[]> {
+    try {
+      return await api.getClientLeads(options);
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getClientLeads();
     }
-    
-    // Offline - use SQLite
-    return syncService.getClientLeads();
   }
 
   // ============ INVENTORY LEADS ============
-  async getInventoryLeads(): Promise<any[]> {
-    const online = await this.isOnline();
-    
-    if (online) {
-      try {
-        return await this.fetchFromNetwork('/api/leads/inventory');
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getInventoryLeads();
-      }
+  async getInventoryLeads(options?: LeadFetchOptions): Promise<any[]> {
+    try {
+      return await api.getInventoryLeads(options);
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getInventoryLeads();
     }
-    
-    // Offline - use SQLite
-    return syncService.getInventoryLeads();
   }
 
   // ============ SINGLE LEAD ============
   async getLead(id: string | number): Promise<any | null> {
-    const online = await this.isOnline();
     const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
     
-    if (online) {
-      try {
-        return await this.fetchFromNetwork(`/api/leads/${id}`);
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getLead(numericId);
-      }
+    try {
+      return await api.getLead(String(id));
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getLead(numericId);
     }
-    
-    // Offline - use SQLite
-    return syncService.getLead(numericId);
   }
 
   async getMatchingInventory(leadId: number, filters: any = {}): Promise<any> {
@@ -121,240 +104,98 @@ class OfflineApiService {
 
   // ============ BUILDERS ============
   async getBuilders(): Promise<any[]> {
-    const online = await this.isOnline();
-    
-    if (online) {
-      try {
-        return await this.fetchFromNetwork('/api/builders');
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getBuilders();
-      }
+    try {
+      return await api.getBuilders();
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getBuilders();
     }
-    
-    // Offline - use SQLite
-    return syncService.getBuilders();
   }
 
   // ============ SINGLE BUILDER ============
   async getBuilder(id: string | number): Promise<any | null> {
-    const online = await this.isOnline();
     const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
     
-    if (online) {
-      try {
-        return await this.fetchFromNetwork(`/api/builders/${id}`);
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getBuilder(numericId);
-      }
+    try {
+      return await api.getBuilder(String(id));
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getBuilder(numericId);
     }
-    
-    // Offline - use SQLite
-    return syncService.getBuilder(numericId);
   }
 
   // ============ FOLLOWUPS/CONVERSATIONS ============
   async getLeadFollowups(leadId: string | number): Promise<any[]> {
-    const online = await this.isOnline();
     const numericId = typeof leadId === 'string' ? parseInt(leadId, 10) : leadId;
     
-    if (online) {
-      try {
-        return await this.fetchFromNetwork(`/api/leads/${leadId}/followups`);
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getFollowups(numericId);
-      }
+    try {
+      return await api.getLeadFollowups(String(leadId));
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getFollowups(numericId);
     }
-    
-    // Offline - use SQLite
-    return syncService.getFollowups(numericId);
   }
 
   // ============ DASHBOARD STATS ============
   async getDashboardStats(): Promise<any> {
-    const online = await this.isOnline();
-    
-    if (online) {
-      try {
-        return await this.fetchFromNetwork('/api/dashboard/stats');
-      } catch (error) {
-        console.log('Network fetch failed, falling back to SQLite');
-        return syncService.getDashboardStats();
-      }
+    try {
+      return await api.getDashboardStats();
+    } catch (error) {
+      console.log('Cached API fetch failed, falling back to SQLite');
+      return syncService.getDashboardStats();
     }
-    
-    // Offline - use SQLite
-    return syncService.getDashboardStats();
   }
 
   // ============ WRITE OPERATIONS (Always require network) ============
   
   async createLead(data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      return db.queuePendingLeadCreate(data);
-    }
-    
-    const response = await fetch(`${API_URL}/api/leads`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error('Failed to create lead');
-    return response.json();
+    return api.createLead(data);
   }
 
   async updateLead(id: string, data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot update lead while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/leads/${id}`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error('Failed to update lead');
-    return response.json();
+    return api.updateLead(id, data);
   }
 
   async deleteLead(id: string): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot delete lead while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/leads/${id}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-    
-    if (!response.ok) {
-      let errorMsg = 'Failed to delete lead';
-      try {
-        const errorData = await response.json();
-        errorMsg = errorData.detail || errorMsg;
-      } catch {}
-      throw new Error(errorMsg);
-    }
-    
-    return response.json();
+    return api.deleteLead(id);
   }
 
   async createBuilder(data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot create builder while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/builders`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error('Failed to create builder');
-    return response.json();
+    return api.createBuilder(data);
   }
 
   async updateBuilder(id: string, data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot update builder while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/builders/${id}`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error('Failed to update builder');
-    return response.json();
+    return api.updateBuilder(id, data);
   }
 
   async deleteBuilder(id: string): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot delete builder while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/builders/${id}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-    if (!response.ok) throw new Error('Failed to delete builder');
-    return response.json();
+    return api.deleteBuilder(id);
   }
 
   async createFollowup(leadId: string, data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot create followup while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/followups`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({ ...data, lead_id: parseInt(leadId) }),
-    });
-    if (!response.ok) throw new Error('Failed to create followup');
-    return response.json();
+    return api.createFollowup(leadId, data);
   }
 
   // ============ REMINDERS ============
   async getReminders(): Promise<any[]> {
-    const online = await this.isOnline();
-    if (!online) {
-      // Reminders not cached in SQLite currently
+    try {
+      return await api.getReminders();
+    } catch (error) {
+      console.log('Cached API fetch failed, reminders cache unavailable');
       return [];
     }
-    return this.fetchFromNetwork('/api/reminders');
   }
 
   async createReminder(data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot create reminder while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/reminders`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error('Failed to create reminder');
-    return response.json();
+    return api.createReminder(data);
   }
 
   async updateReminder(id: string, data: any): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot update reminder while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/reminders/${id}`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error('Failed to update reminder');
-    return response.json();
+    return api.updateReminder(id, data);
   }
 
   async deleteReminder(id: string): Promise<any> {
-    const online = await this.isOnline();
-    if (!online) {
-      throw new Error('Cannot delete reminder while offline. Please connect to the internet.');
-    }
-    
-    const response = await fetch(`${API_URL}/api/reminders/${id}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-    if (!response.ok) throw new Error('Failed to delete reminder');
-    return response.json();
+    return api.deleteReminder(id);
   }
 
   // ============ WHATSAPP ============
