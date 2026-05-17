@@ -9,12 +9,10 @@ import {
   Modal, 
   Text,
   Pressable,
-  Dimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { colors, gradients, radii, shadows } from '../../constants/theme';
 
 // Create context for More menu
 const MoreMenuContext = createContext<{
@@ -46,7 +44,7 @@ const TabIcon = ({
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         >
-          <Ionicons name={name} size={20} color="#FFFFFF" />
+          <Ionicons name={name} size={20} color={colors.white} />
         </LinearGradient>
       </View>
     );
@@ -54,7 +52,7 @@ const TabIcon = ({
   
   return (
     <View style={styles.iconContainerInactive}>
-      <Ionicons name={name} size={22} color="#9CA3AF" />
+      <Ionicons name={name} size={22} color={colors.inkSubtle} />
     </View>
   );
 };
@@ -101,15 +99,15 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
             <MenuItem 
               icon="location"
               label="Site Visits"
-              color="#3B82F6"
-              bgColor="#EFF6FF"
+              color={colors.primary}
+              bgColor={colors.primarySoft}
               onPress={() => handleMenuItemPress('visits')}
             />
             <MenuItem 
               icon="time"
               label="Activity"
-              color="#F59E0B"
-              bgColor="#FEF3C7"
+              color={colors.amber}
+              bgColor={colors.amberSoft}
               onPress={() => handleMenuItemPress('activity')}
             />
           </View>
@@ -119,22 +117,22 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
             <MenuItem 
               icon="people"
               label="Team"
-              color="#8B5CF6"
-              bgColor="#F3E8FF"
+              color={colors.purple}
+              bgColor={colors.purpleSoft}
               onPress={() => handleMenuItemPress('team')}
             />
             <MenuItem 
               icon="download"
               label="Export"
-              color="#EF4444"
-              bgColor="#FEE2E2"
+              color={colors.danger}
+              bgColor={colors.dangerSoft}
               onPress={() => handleMenuItemPress('export')}
             />
             <MenuItem 
               icon="settings"
               label="Settings"
-              color="#6B7280"
-              bgColor="#F3F4F6"
+              color={colors.inkMuted}
+              bgColor={colors.surfaceMuted}
               onPress={() => handleMenuItemPress('settings')}
             />
           </View>
@@ -155,18 +153,18 @@ export default function TabLayout() {
     <MoreMenuContext.Provider value={{ showMenu: showMoreMenu, setShowMenu: setShowMoreMenu }}>
       <Tabs
         screenOptions={{
-          tabBarActiveTintColor: '#1F2937',
-          tabBarInactiveTintColor: '#9CA3AF',
+          tabBarActiveTintColor: colors.ink,
+          tabBarInactiveTintColor: colors.inkSubtle,
           tabBarStyle: {
-            backgroundColor: '#FFFFFF',
+            backgroundColor: colors.surfaceRaised,
             borderTopWidth: 0,
             height: tabBarHeight,
             paddingBottom: tabBarPaddingBottom,
             paddingTop: 10,
-            shadowColor: '#000',
+            shadowColor: '#1F2933',
             shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: 0.1,
-            shadowRadius: 12,
+            shadowOpacity: 0.08,
+            shadowRadius: 18,
             elevation: 20,
           },
           tabBarLabelStyle: {
@@ -175,9 +173,9 @@ export default function TabLayout() {
             marginTop: 4,
           },
           headerStyle: {
-            backgroundColor: '#3B82F6',
+            backgroundColor: colors.primary,
           },
-          headerTintColor: '#FFFFFF',
+          headerTintColor: colors.white,
           headerTitleStyle: {
             fontWeight: '600',
           },
@@ -192,7 +190,7 @@ export default function TabLayout() {
               <TabIcon 
                 name="grid" 
                 focused={focused} 
-                gradientColors={['#3B82F6', '#1D4ED8']}
+                gradientColors={gradients.primary}
               />
             ),
           }}
@@ -206,7 +204,7 @@ export default function TabLayout() {
               <TabIcon 
                 name="people" 
                 focused={focused} 
-                gradientColors={['#10B981', '#059669']}
+                gradientColors={['#2F855A', '#246B47']}
               />
             ),
           }}
@@ -220,7 +218,7 @@ export default function TabLayout() {
               <TabIcon 
                 name="home" 
                 focused={focused} 
-                gradientColors={['#8B5CF6', '#7C3AED']}
+                gradientColors={['#6D5BD0', '#5040A8']}
               />
             ),
           }}
@@ -234,7 +232,7 @@ export default function TabLayout() {
               <TabIcon 
                 name="business" 
                 focused={focused} 
-                gradientColors={['#F59E0B', '#D97706']}
+                gradientColors={['#B7791F', '#8A5A15']}
               />
             ),
           }}
@@ -248,7 +246,7 @@ export default function TabLayout() {
               <TabIcon 
                 name="notifications" 
                 focused={focused} 
-                gradientColors={['#EF4444', '#DC2626']}
+                gradientColors={['#C2413D', '#9F312D']}
               />
             ),
           }}
@@ -266,7 +264,7 @@ export default function TabLayout() {
             headerShown: false,
             tabBarIcon: ({ focused }) => (
               <View style={styles.iconContainerInactive}>
-                <Ionicons name="apps" size={22} color="#9CA3AF" />
+                <Ionicons name="apps" size={22} color={colors.inkSubtle} />
               </View>
             ),
           }}
@@ -304,7 +302,7 @@ const styles = StyleSheet.create({
   gradientBackground: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -314,16 +312,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   menuContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
     padding: 20,
     paddingTop: 12,
+    ...shadows.card,
   },
   menuHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.border,
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: 16,
@@ -331,7 +330,7 @@ const styles = StyleSheet.create({
   menuTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -354,7 +353,7 @@ const styles = StyleSheet.create({
   menuIconContainer: {
     width: 56,
     height: 56,
-    borderRadius: 16,
+    borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -362,7 +361,7 @@ const styles = StyleSheet.create({
   menuLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.ink,
     textAlign: 'center',
   },
 });

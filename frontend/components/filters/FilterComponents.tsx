@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  ScrollView,
   FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface FilterChipProps {
   label: string;
@@ -22,7 +22,7 @@ export const FilterChip: React.FC<FilterChipProps> = ({
   label, 
   isActive, 
   onPress,
-  color = '#3B82F6' 
+  color = colors.primary 
 }) => {
   return (
     <TouchableOpacity
@@ -109,23 +109,23 @@ export const SearchablePickerModal: React.FC<SearchablePickerModalProps> = ({
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{title}</Text>
             <TouchableOpacity onPress={handleClose}>
-              <Ionicons name="close" size={24} color="#374151" />
+              <Ionicons name="close" size={24} color={colors.ink} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color="#9CA3AF" />
+            <Ionicons name="search" size={20} color={colors.inkSubtle} />
             <TextInput
               style={styles.searchInput}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder={searchPlaceholder}
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.inkSubtle}
               autoCapitalize="none"
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                <Ionicons name="close-circle" size={20} color={colors.inkSubtle} />
               </TouchableOpacity>
             )}
           </View>
@@ -149,7 +149,7 @@ export const SearchablePickerModal: React.FC<SearchablePickerModalProps> = ({
               >
                 <Text style={styles.optionText}>{item}</Text>
                 {selectedValues.includes(item) && (
-                  <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+                  <Ionicons name="checkmark-circle" size={22} color={colors.accent} />
                 )}
               </TouchableOpacity>
             )}
@@ -198,17 +198,17 @@ export const TextFilterInput: React.FC<TextFilterInputProps> = ({
 }) => {
   return (
     <View style={styles.textFilterContainer}>
-      <Ionicons name={icon as any} size={18} color="#9CA3AF" />
+      <Ionicons name={icon as any} size={18} color={colors.inkSubtle} />
       <TextInput
         style={styles.textFilterInput}
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.inkSubtle}
         value={value}
         onChangeText={onChangeText}
       />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChangeText('')}>
-          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+          <Ionicons name="close-circle" size={18} color={colors.inkSubtle} />
         </TouchableOpacity>
       )}
     </View>
@@ -241,7 +241,7 @@ export const RangeFilterInput: React.FC<RangeFilterInputProps> = ({
         <TextInput
           style={styles.rangeInput}
           placeholder={minPlaceholder}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.inkSubtle}
           value={minValue}
           onChangeText={onMinChange}
           keyboardType="numeric"
@@ -250,7 +250,7 @@ export const RangeFilterInput: React.FC<RangeFilterInputProps> = ({
         <TextInput
           style={styles.rangeInput}
           placeholder={maxPlaceholder}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.inkSubtle}
           value={maxValue}
           onChangeText={onMaxChange}
           keyboardType="numeric"
@@ -279,7 +279,7 @@ export const MultiSelectButton: React.FC<MultiSelectButtonProps> = ({
       ]}>
         {selectedCount > 0 ? `${selectedCount} selected` : `Select ${label.toLowerCase()}`}
       </Text>
-      <Ionicons name="chevron-down" size={20} color="#6B7280" />
+      <Ionicons name="chevron-down" size={20} color={colors.inkMuted} />
     </TouchableOpacity>
   );
 };
@@ -318,18 +318,18 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     marginRight: 8,
     marginBottom: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceMuted,
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#6B7280',
+    color: colors.inkMuted,
   },
   filterChipTextActive: {
-    color: '#FFFFFF',
+    color: colors.white,
   },
   
   // Stats Bar
@@ -337,40 +337,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceRaised,
     marginHorizontal: 16,
     marginVertical: 8,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    borderRadius: radii.md,
+    ...shadows.card,
   },
   statItem: {
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: radii.sm,
   },
   statItemActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
   },
   statCount: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
   },
   statCountActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   statLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 2,
   },
   statLabelActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   
   // Modal
@@ -380,9 +376,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
     maxHeight: '80%',
     minHeight: 300,
   },
@@ -392,30 +388,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.ink,
   },
   
   // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceMuted,
     marginHorizontal: 16,
     marginVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: radii.sm,
   },
   searchInput: {
     flex: 1,
     height: 44,
     marginLeft: 10,
     fontSize: 15,
-    color: '#1F2937',
+    color: colors.ink,
   },
   
   // Options
@@ -425,11 +421,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: colors.border,
   },
   optionText: {
     fontSize: 15,
-    color: '#1F2937',
+    color: colors.ink,
   },
   emptyResult: {
     padding: 40,
@@ -437,19 +433,19 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: colors.inkSubtle,
   },
   doneButton: {
-    backgroundColor: '#1F2937',
+    backgroundColor: colors.primary,
     margin: 16,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: radii.sm,
     alignItems: 'center',
   },
   doneText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   
   // Filter Section
@@ -459,7 +455,7 @@ const styles = StyleSheet.create({
   filterSectionLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.ink,
     marginBottom: 8,
   },
   
@@ -467,8 +463,8 @@ const styles = StyleSheet.create({
   textFilterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radii.sm,
     paddingHorizontal: 12,
     marginBottom: 8,
   },
@@ -477,7 +473,7 @@ const styles = StyleSheet.create({
     height: 40,
     marginLeft: 8,
     fontSize: 14,
-    color: '#1F2937',
+    color: colors.ink,
   },
   
   // Range Filter
@@ -490,21 +486,21 @@ const styles = StyleSheet.create({
   },
   rangeInput: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderRadius: radii.sm,
     padding: 10,
     fontSize: 14,
-    color: '#1F2937',
+    color: colors.ink,
   },
   rangeSeparator: {
     marginHorizontal: 8,
-    color: '#6B7280',
+    color: colors.inkMuted,
   },
   
   // Multi Select Button
   multiSelectButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.sm,
     padding: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -512,10 +508,10 @@ const styles = StyleSheet.create({
   },
   multiSelectText: {
     fontSize: 14,
-    color: '#1F2937',
+    color: colors.ink,
   },
   multiSelectPlaceholder: {
-    color: '#9CA3AF',
+    color: colors.inkSubtle,
   },
   
   // Selected Tags
@@ -527,10 +523,10 @@ const styles = StyleSheet.create({
   selectedTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E0E7FF',
+    backgroundColor: colors.primarySoft,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: radii.pill,
     marginRight: 6,
     marginBottom: 6,
   },

@@ -14,6 +14,7 @@ import {
   getTemperatureColor,
   formatFloorPricing,
 } from '../../constants/leadOptions';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface LeadCardProps {
   lead: Lead;
@@ -95,7 +96,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             )}
             {hasMapUrl && (
               <TouchableOpacity style={styles.mapIconButton} onPress={openMapUrl}>
-                <Ionicons name="map" size={16} color="#3B82F6" />
+                <Ionicons name="map" size={16} color={colors.primary} />
               </TouchableOpacity>
             )}
           </View>
@@ -127,7 +128,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             style={styles.actionButton}
             onPress={() => router.push(`/leads/edit/${lead.id}` as any)}
           >
-            <Ionicons name="create-outline" size={18} color="#3B82F6" />
+            <Ionicons name="create-outline" size={18} color={colors.primary} />
             <Text style={styles.actionText}>Edit</Text>
           </TouchableOpacity>
           {onDelete && (
@@ -147,14 +148,12 @@ export const LeadCard: React.FC<LeadCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
     overflow: 'hidden',
   },
   content: {
@@ -179,18 +178,18 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.ink,
   },
   createdBy: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: colors.inkSubtle,
     marginTop: 2,
     fontStyle: 'italic',
   },
   typeBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: radii.pill,
   },
   typeText: {
     fontSize: 12,
@@ -210,12 +209,12 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginLeft: 6,
     flex: 1,
   },
   mapLink: {
-    color: '#3B82F6',
+    color: colors.primary,
     textDecorationLine: 'underline',
   },
   mapIconButton: {
@@ -231,30 +230,30 @@ const styles = StyleSheet.create({
   propertyText: {
     fontSize: 12,
     color: '#374151',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: radii.xs,
   },
   statusText: {
     fontSize: 12,
-    color: '#059669',
-    backgroundColor: '#ECFDF5',
+    color: colors.accent,
+    backgroundColor: colors.accentSoft,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: radii.xs,
   },
   pricingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 8,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: colors.accentSoft,
     padding: 8,
-    borderRadius: 6,
+    borderRadius: radii.sm,
   },
   pricingText: {
     fontSize: 13,
-    color: '#10B981',
+    color: colors.accent,
     marginLeft: 6,
     fontWeight: '500',
     flex: 1,
@@ -262,7 +261,7 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: colors.border,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
@@ -276,7 +275,7 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginLeft: 4,
   },
 });
