@@ -276,3 +276,12 @@ credentials.json
 /frontend/.metro-cache/cache
 /frontend/.metro-cache
 /frontend/.metro-cache/cache/0d
+-e 
+# Environment and credential files
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,13 @@ import {
   RefreshControl,
   ActivityIndicator,
   Linking,
-  Alert,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
-import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
+import { canViewSensitiveData } from '../../constants/leadOptions';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface DashboardStats {
   total_leads: number;
@@ -121,7 +121,7 @@ export default function DashboardScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3B82F6" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading Dashboard...</Text>
       </View>
     );
@@ -197,8 +197,8 @@ export default function DashboardScreen() {
       title: 'Smart matches',
       count: smartMatches.length,
       icon: 'sparkles',
-      color: '#2563EB',
-      bg: '#EFF6FF',
+      color: colors.primary,
+      bg: colors.primarySoft,
       route: smartMatches[0] ? `/leads/${smartMatches[0].inventory_id}` : '/inventory',
     },
   ];
@@ -333,7 +333,7 @@ export default function DashboardScreen() {
 
         {/* Weekly Performance */}
         <View style={styles.performanceWidget}>
-          <Text style={styles.widgetTitle}>📊 Weekly Performance</Text>
+          <Text style={styles.widgetTitle}>Weekly Performance</Text>
           <View style={styles.performanceGrid}>
             <View style={styles.performanceItem}>
               <Text style={styles.performanceValue}>{stats?.leads_this_week || 0}</Text>
@@ -352,7 +352,7 @@ export default function DashboardScreen() {
 
         {/* Lead Conversion Funnel */}
         <View style={styles.funnelWidget}>
-          <Text style={styles.widgetTitle}>🎯 Client Lead Funnel</Text>
+          <Text style={styles.widgetTitle}>Client Lead Funnel</Text>
           <View style={styles.funnelContainer}>
             {[
               { label: 'New', value: stats?.new_leads || 0, color: '#6366F1' },
@@ -377,7 +377,7 @@ export default function DashboardScreen() {
         {smartMatches.length > 0 && (
           <View style={styles.matchWidget}>
             <View style={styles.matchHeader}>
-              <Text style={styles.widgetTitle}>🤖 AI Smart Matches</Text>
+              <Text style={styles.widgetTitle}>Smart Matches</Text>
               <View style={styles.aiBadge}>
                 <Text style={styles.aiBadgeText}>AI Powered</Text>
               </View>
@@ -470,13 +470,13 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
   },
   loadingText: {
     marginTop: 12,
@@ -509,12 +509,13 @@ const styles = StyleSheet.create({
   },
   // Urgent Followups Widget
   urgentWidget: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 16,
     borderLeftWidth: 4,
-    borderLeftColor: '#DC2626',
+    borderLeftColor: colors.danger,
+    ...shadows.card,
   },
   urgentHeader: {
     flexDirection: 'row',
@@ -530,10 +531,10 @@ const styles = StyleSheet.create({
   urgentTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#DC2626',
+    color: colors.danger,
   },
   urgentBadge: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.dangerSoft,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -541,7 +542,7 @@ const styles = StyleSheet.create({
   urgentBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#DC2626',
+    color: colors.danger,
   },
   urgentItem: {
     flexDirection: 'row',
@@ -549,10 +550,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: colors.border,
   },
   missedItem: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.dangerSoft,
     marginHorizontal: -16,
     paddingHorizontal: 16,
   },
@@ -562,11 +563,11 @@ const styles = StyleSheet.create({
   urgentItemName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.ink,
   },
   urgentItemTitle: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 2,
   },
   urgentItemStatus: {
@@ -574,11 +575,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   missedText: {
-    color: '#DC2626',
+    color: colors.danger,
     fontWeight: '600',
   },
   todayText: {
-    color: '#D97706',
+    color: colors.amber,
     fontWeight: '600',
   },
   urgentActions: {
@@ -586,7 +587,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionBtn: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceMuted,
     padding: 10,
     borderRadius: 10,
   },
@@ -600,14 +601,15 @@ const styles = StyleSheet.create({
   viewAllText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: colors.primary,
   },
   // Work Today
   todayWorkWidget: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 16,
+    ...shadows.card,
   },
   todayWorkHeader: {
     flexDirection: 'row',
@@ -618,18 +620,18 @@ const styles = StyleSheet.create({
   todayWorkTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#111827',
+    color: colors.ink,
   },
   todayWorkSubtitle: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 3,
   },
   todayWorkRefresh: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -640,7 +642,7 @@ const styles = StyleSheet.create({
   },
   todayWorkCard: {
     width: '48%',
-    borderRadius: 12,
+    borderRadius: radii.md,
     padding: 12,
     minHeight: 100,
   },
@@ -658,14 +660,14 @@ const styles = StyleSheet.create({
   },
   todayWorkLabel: {
     fontSize: 12,
-    color: '#374151',
+    color: colors.ink,
     fontWeight: '600',
     marginTop: 2,
   },
   nextActionPanel: {
     marginTop: 14,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.md,
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -678,18 +680,18 @@ const styles = StyleSheet.create({
   nextActionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#6B7280',
+    color: colors.inkMuted,
     textTransform: 'uppercase',
   },
   nextActionName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.ink,
     marginTop: 3,
   },
   nextActionTitle: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 2,
   },
   nextActionButtons: {
@@ -700,12 +702,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
   nextActionCta: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 10,
@@ -717,15 +719,16 @@ const styles = StyleSheet.create({
   },
   // Performance Widget
   performanceWidget: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 16,
+    ...shadows.card,
   },
   widgetTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 16,
   },
   performanceGrid: {
@@ -738,19 +741,20 @@ const styles = StyleSheet.create({
   performanceValue: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#3B82F6',
+    color: colors.primary,
   },
   performanceLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 4,
   },
   // Funnel Widget
   funnelWidget: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 16,
+    ...shadows.card,
   },
   funnelContainer: {
     gap: 10,
@@ -774,20 +778,21 @@ const styles = StyleSheet.create({
   funnelValue: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   funnelLabel: {
     width: 76,
     fontSize: 11,
-    color: '#6B7280',
+    color: colors.inkMuted,
     flexShrink: 0,
   },
   // Match Widget
   matchWidget: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 16,
+    ...shadows.card,
   },
   matchHeader: {
     flexDirection: 'row',
@@ -796,7 +801,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   aiBadge: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: colors.purpleSoft,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -804,14 +809,14 @@ const styles = StyleSheet.create({
   aiBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#6366F1',
+    color: colors.purple,
   },
   matchItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.surfaceMuted,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: radii.md,
     marginBottom: 10,
   },
   matchContent: {
@@ -826,17 +831,17 @@ const styles = StyleSheet.create({
   matchBuyerName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: colors.primary,
   },
   matchInventoryName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#10B981',
+    color: colors.accent,
     maxWidth: 120,
   },
   matchLocation: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 4,
   },
   matchReasons: {
@@ -844,12 +849,12 @@ const styles = StyleSheet.create({
   },
   matchReason: {
     fontSize: 11,
-    color: '#059669',
+    color: colors.accent,
   },
   matchScore: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: radii.sm,
     marginLeft: 10,
   },
   matchScoreText: {
@@ -866,8 +871,9 @@ const styles = StyleSheet.create({
   statCard: {
     width: '47%',
     padding: 16,
-    borderRadius: 16,
+    borderRadius: radii.lg,
     position: 'relative',
+    ...shadows.card,
   },
   statValue: {
     fontSize: 28,
@@ -875,7 +881,7 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 4,
   },
   statIcon: {
@@ -886,14 +892,15 @@ const styles = StyleSheet.create({
   },
   // Quick Actions
   quickActions: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
+    ...shadows.card,
   },
   quickActionsTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 16,
   },
   actionsRow: {
@@ -903,15 +910,15 @@ const styles = StyleSheet.create({
   },
   actionCard: {
     width: '47%',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.surfaceMuted,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: radii.md,
     alignItems: 'center',
     gap: 8,
   },
   actionText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.ink,
   },
 });

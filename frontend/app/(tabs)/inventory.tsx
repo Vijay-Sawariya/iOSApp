@@ -24,7 +24,6 @@ import InventoryFileUpload from '../../components/InventoryFileUpload';
 import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 import {
   Lead,
-  FloorPricing,
   getTypeColor,
   formatFloorPricing,
   normalizeSearchText,
@@ -34,10 +33,10 @@ import {
   FACINGS,
   canViewSensitiveData,
   maskPhone,
-  maskAddress,
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
+import { colors, radii, shadows } from '../../constants/theme';
 
 // Filter arrays
 const LOCATION_OPTIONS = [...LOCATIONS];
@@ -1537,13 +1536,13 @@ export default function InventoryLeadsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   headerSafeArea: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   blueHeader: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -1552,8 +1551,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: '700',
+    color: colors.white,
   },
   headerActions: {
     flexDirection: 'row',
@@ -1563,18 +1562,18 @@ const styles = StyleSheet.create({
   headerIconBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   contentArea: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
   statsBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
@@ -1582,41 +1581,41 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: radii.md,
     marginHorizontal: 4,
   },
   statItemActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: colors.primary,
   },
   statNumber: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#374151',
+    color: colors.ink,
   },
   statNumberActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   statLabel: {
     fontSize: 11,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginTop: 2,
   },
   statLabelActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceRaised,
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 8,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     height: 48,
   },
   searchInput: {
@@ -1624,16 +1623,17 @@ const styles = StyleSheet.create({
     height: 48,
     marginLeft: 12,
     fontSize: 16,
-    color: '#1F2937',
+    color: colors.ink,
   },
   filterScrollContainer: {
     maxHeight: 400,
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
+    ...shadows.card,
   },
   filterScrollContent: {
     padding: 16,
@@ -1847,25 +1847,23 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   leadCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
     overflow: 'hidden',
   },
   agingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   agingBadge: {
     flexDirection: 'row',
@@ -1913,12 +1911,12 @@ const styles = StyleSheet.create({
   leadName: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 2,
   },
   createdByText: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: colors.inkSubtle,
   },
   typeBadgeContainer: {
     flexDirection: 'row',
@@ -1947,12 +1945,12 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 14,
-    color: '#4B5563',
+    color: colors.inkMuted,
     marginLeft: 8,
     flex: 1,
   },
   linkText: {
-    color: '#3B82F6',
+    color: colors.primary,
     textDecorationLine: 'underline',
   },
   whatsappButton: {
@@ -1971,24 +1969,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tag: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
   },
   tagText: {
     fontSize: 12,
-    color: '#374151',
+    color: colors.ink,
     fontWeight: '500',
   },
   statusTag: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#86EFAC',
+    backgroundColor: colors.accentSoft,
+    borderColor: '#BFE6CF',
   },
   statusTagText: {
-    color: '#16A34A',
+    color: colors.accent,
   },
   amenitiesText: {
     fontSize: 12,
@@ -2155,15 +2153,11 @@ const styles = StyleSheet.create({
     bottom: 90,
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
+    ...shadows.floating,
   },
   resultCountContainer: {
     flexDirection: 'row',

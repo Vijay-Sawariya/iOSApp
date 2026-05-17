@@ -6,6 +6,7 @@ import {
   TextInput,
   TextInputProps,
 } from 'react-native';
+import { colors, radii } from '../../constants/theme';
 
 interface FormInputProps extends TextInputProps {
   label: string;
@@ -33,7 +34,7 @@ export const FormInput: React.FC<FormInputProps> = ({
           error && styles.inputError,
           !editable && styles.inputDisabled
         ]}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.inkSubtle}
         editable={editable}
         {...textInputProps}
       />
@@ -49,37 +50,37 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#374151',
+    color: colors.ink,
     marginBottom: 6,
   },
   required: {
-    color: '#EF4444',
+    color: colors.danger,
   },
   locked: {
-    color: '#9CA3AF',
+    color: colors.inkSubtle,
     fontWeight: '400',
     fontStyle: 'italic',
   },
   input: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
     padding: 12,
     fontSize: 15,
-    color: '#1F2937',
+    color: colors.ink,
     minHeight: 48,
   },
   inputError: {
-    borderColor: '#EF4444',
+    borderColor: colors.danger,
   },
   inputDisabled: {
-    backgroundColor: '#F3F4F6',
-    color: '#9CA3AF',
+    backgroundColor: colors.surfaceMuted,
+    color: colors.inkSubtle,
   },
   errorText: {
     fontSize: 12,
-    color: '#EF4444',
+    color: colors.danger,
     marginTop: 4,
   },
 });
