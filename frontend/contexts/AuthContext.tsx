@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
+import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, setAuthToken, initializeAuthToken } from '../services/api';
 
@@ -64,7 +65,7 @@ interface AuthContextType {
   loading: boolean;
   login: (username: string, password: string) => Promise<boolean>;
   register: (username: string, password: string, fullName: string, email: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateLastActivity: () => void;
 }
 
@@ -343,16 +344,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    try {
-      setUser(null);
-      setToken(null);
-      setAuthToken(null);  // Clear token for API calls
-      await storage.deleteItem('token');
-      await storage.deleteItem('user');
-      await storage.deleteItem('lastActivity');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    await performLogout();
+    router.replace('/login');
   };
 
   const combinedLoading = loading || isInitializing;

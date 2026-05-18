@@ -3102,37 +3102,51 @@ class DealCreate(BaseModel):
     notes: Optional[str] = None
     expected_closing_date: Optional[str] = None
 
+
+def ensure_deals_table(cursor, conn):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS deals (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT,
+            property_lead_id INT,
+            deal_amount DECIMAL(15,2),
+            commission_percent DECIMAL(5,2),
+            commission_amount DECIMAL(15,2),
+            status VARCHAR(50) DEFAULT 'Negotiation',
+            payment_received DECIMAL(15,2) DEFAULT 0,
+            notes TEXT,
+            expected_closing_date DATE,
+            created_by INT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+
+    column_definitions = {
+        'property_lead_id': 'INT',
+        'commission_amount': 'DECIMAL(15,2)',
+        'status': "VARCHAR(50) DEFAULT 'Negotiation'",
+        'payment_received': 'DECIMAL(15,2) DEFAULT 0',
+        'notes': 'TEXT',
+        'expected_closing_date': 'DATE',
+        'created_by': 'INT',
+        'created_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+    }
+    for column, definition in column_definitions.items():
+        try:
+            cursor.execute(f"ALTER TABLE deals ADD COLUMN {column} {definition}")
+            conn.commit()
+        except Exception:
+            pass
+
+
 @api_router.get("/deals")
 def get_deals(current_user: dict = Depends(get_current_user), status: Optional[str] = None):
     """Get all deals"""
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            # First check if table exists, create if not
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS deals (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    lead_id INT,
-                    property_lead_id INT,
-                    deal_amount DECIMAL(15,2),
-                    commission_percent DECIMAL(5,2),
-                    commission_amount DECIMAL(15,2),
-                    status VARCHAR(50) DEFAULT 'Negotiation',
-                    payment_received DECIMAL(15,2) DEFAULT 0,
-                    notes TEXT,
-                    expected_closing_date DATE,
-                    created_by INT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
-            
-            # Try to add missing columns if table already existed
-            try:
-                cursor.execute("ALTER TABLE deals ADD COLUMN property_lead_id INT")
-                conn.commit()
-            except:
-                pass  # Column already exists
+            ensure_deals_table(cursor, conn)
             
             # Check if property_lead_id column exists
             cursor.execute("SHOW COLUMNS FROM deals LIKE 'property_lead_id'")
@@ -3180,30 +3194,43 @@ def create_deal(deal: DealCreate, current_user: dict = Depends(get_current_user)
     """Create a new deal"""
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_deals_table(cursor, conn)
         commission = deal.commission_amount or (deal.deal_amount * deal.commission_percent / 100 if deal.deal_amount and deal.commission_percent else 0)
+        deal_status = deal.status or 'Negotiation'
         cursor.execute("""
             INSERT INTO deals (lead_id, property_lead_id, deal_amount, commission_percent, commission_amount, 
             status, payment_received, notes, expected_closing_date, created_by, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         """, (deal.lead_id, deal.property_lead_id, deal.deal_amount, deal.commission_percent, commission,
-              deal.status or 'Negotiation', deal.payment_received or 0, deal.notes, deal.expected_closing_date, current_user['id']))
+              deal_status, deal.payment_received or 0, deal.notes, deal.expected_closing_date, current_user['id']))
+        deal_id = cursor.lastrowid
+        if deal_status in ('Closed', 'Payment'):
+            cursor.execute("UPDATE leads SET lead_status = 'Won' WHERE id = %s", (deal.lead_id,))
+            if deal.property_lead_id:
+                cursor.execute("UPDATE leads SET lead_status = 'Sold' WHERE id = %s", (deal.property_lead_id,))
         conn.commit()
-        return {"id": cursor.lastrowid, "message": "Deal created successfully"}
+        return {"id": deal_id, "message": "Conversion logged successfully"}
 
 @api_router.put("/deals/{deal_id}")
 def update_deal(deal_id: int, deal: DealCreate, current_user: dict = Depends(get_current_user)):
     """Update a deal"""
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_deals_table(cursor, conn)
         commission = deal.commission_amount or (deal.deal_amount * deal.commission_percent / 100 if deal.deal_amount and deal.commission_percent else 0)
+        deal_status = deal.status or 'Negotiation'
         cursor.execute("""
             UPDATE deals SET lead_id=%s, property_lead_id=%s, deal_amount=%s, commission_percent=%s, 
             commission_amount=%s, status=%s, payment_received=%s, notes=%s, expected_closing_date=%s
             WHERE id=%s
         """, (deal.lead_id, deal.property_lead_id, deal.deal_amount, deal.commission_percent, commission,
-              deal.status, deal.payment_received, deal.notes, deal.expected_closing_date, deal_id))
+              deal_status, deal.payment_received, deal.notes, deal.expected_closing_date, deal_id))
+        if deal_status in ('Closed', 'Payment'):
+            cursor.execute("UPDATE leads SET lead_status = 'Won' WHERE id = %s", (deal.lead_id,))
+            if deal.property_lead_id:
+                cursor.execute("UPDATE leads SET lead_status = 'Sold' WHERE id = %s", (deal.property_lead_id,))
         conn.commit()
-        return {"message": "Deal updated successfully"}
+        return {"message": "Conversion updated successfully"}
 
 @api_router.delete("/deals/{deal_id}")
 def delete_deal(deal_id: int, current_user: dict = Depends(get_current_user)):
