@@ -12,6 +12,7 @@ const CACHE_KEYS = {
   SMART_MATCHES: 'cache_smart_matches',
   USER_PERMISSIONS: 'cache_user_permissions',
   SITE_VISITS: 'cache_site_visits',
+  DEALS: 'cache_deals',
   TEAM_MEMBERS: 'cache_team_members',
   ACTIVITY_LOGS: 'cache_activity_logs',
   LEAD_DETAIL_PREFIX: 'cache_lead_',
@@ -184,6 +185,14 @@ class CacheService {
 
   async getSiteVisits(): Promise<any[] | null> {
     return this.get<any[]>(CACHE_KEYS.SITE_VISITS);
+  }
+
+  async cacheDeals(data: any[]): Promise<void> {
+    await this.set(CACHE_KEYS.DEALS, data);
+  }
+
+  async getDeals(): Promise<any[] | null> {
+    return this.get<any[]>(CACHE_KEYS.DEALS);
   }
 
   async cacheTeamMembers(data: any[]): Promise<void> {

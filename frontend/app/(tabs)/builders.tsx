@@ -32,6 +32,7 @@ export default function BuildersScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'company' | null>(null);
   const { isOnline } = useOffline();
+  const companyCount = new Set(builders.map((builder) => builder.company_name).filter(Boolean)).size;
 
   const loadBuilders = async () => {
     try {
@@ -172,21 +173,32 @@ export default function BuildersScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Builders</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Ionicons
+                name="options-outline"
+                size={22}
+                color={(sortBy || searchQuery) ? '#FFD700' : '#FFFFFF'}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
       {/* White Content Area */}
       <View style={styles.contentArea}>
         {/* Stats Bar */}
-        <View style={styles.statsBarContainer}>
-          <View style={styles.statsBar}>
-            <View style={styles.statItemTotal}>
-              <Text style={styles.statNumberTotal}>{filteredBuilders.length}</Text>
-              <Text style={styles.statLabelTotal}>Total</Text>
-            </View>
-            <View style={styles.statItemInfo}>
-              <Text style={styles.statSubtitle}>Companies & Contractors</Text>
-            </View>
+        <View style={styles.statsBar}>
+          <View style={[styles.statItem, styles.statItemActive]}>
+            <Text style={[styles.statNumber, styles.statNumberActive]}>{filteredBuilders.length}</Text>
+            <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{companyCount}</Text>
+            <Text style={styles.statLabel}>Companies</Text>
           </View>
         </View>
 
@@ -206,49 +218,49 @@ export default function BuildersScreen() {
           )}
         </View>
 
-      {showFilters && (
-        <View style={styles.filterContainer}>
-          <View style={styles.filterSection}>
-            <Text style={styles.filterLabel}>Sort by:</Text>
-            <View style={styles.filterOptions}>
-              <TouchableOpacity
-                style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
-                onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
-              >
-                <Ionicons name="person" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterChip, sortBy === 'company' && styles.filterChipActive]}
-                onPress={() => handleSort(sortBy === 'company' ? null : 'company')}
-              >
-                <Ionicons name="business" size={14} color={sortBy === 'company' ? '#FFFFFF' : '#6B7280'} />
-                <Text style={[styles.filterChipText, sortBy === 'company' && styles.filterChipTextActive]}> Company</Text>
-              </TouchableOpacity>
+        {showFilters && (
+          <View style={styles.filterContainer}>
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Sort by:</Text>
+              <View style={styles.filterOptions}>
+                <TouchableOpacity
+                  style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
+                  onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
+                >
+                  <Ionicons name="person" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
+                  <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.filterChip, sortBy === 'company' && styles.filterChipActive]}
+                  onPress={() => handleSort(sortBy === 'company' ? null : 'company')}
+                >
+                  <Ionicons name="business" size={14} color={sortBy === 'company' ? '#FFFFFF' : '#6B7280'} />
+                  <Text style={[styles.filterChipText, sortBy === 'company' && styles.filterChipTextActive]}> Company</Text>
+                </TouchableOpacity>
+              </View>
             </View>
+            {(sortBy || searchQuery) && (
+              <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+                <Text style={styles.clearFiltersText}>Clear Filters</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          {(sortBy || searchQuery) && (
-            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
-              <Text style={styles.clearFiltersText}>Clear Filters</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+        )}
 
-      <FlatList
-        data={filteredBuilders}
-        renderItem={renderBuilder}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="business-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No builders found</Text>
-            <Text style={styles.emptySubtext}>Tap + to add your first builder</Text>
-          </View>
-        }
-      />
+        <FlatList
+          data={filteredBuilders}
+          renderItem={renderBuilder}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="business-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyText}>No builders found</Text>
+              <Text style={styles.emptySubtext}>Tap + to add your first builder</Text>
+            </View>
+          }
+        />
       </View>
 
       <TouchableOpacity style={styles.fab} onPress={() => router.push('/builders/add')}>
@@ -276,7 +288,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   contentArea: {
@@ -296,41 +308,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  statsBarContainer: {
+  statsBar: {
+    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
-  statsBar: {
-    flexDirection: 'row',
+  statItem: {
+    flex: 1,
     alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 4,
   },
-  statItemTotal: {
+  statItemActive: {
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#3B82F6',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    marginRight: 12,
   },
-  statNumberTotal: {
+  statNumber: {
     fontSize: 22,
     fontWeight: '700',
+    color: '#1F2937',
+  },
+  statNumberActive: {
     color: '#3B82F6',
   },
-  statLabelTotal: {
+  statLabel: {
     fontSize: 12,
-    color: '#3B82F6',
+    color: '#6B7280',
     marginTop: 2,
   },
-  statItemInfo: {
-    flex: 1,
-  },
-  statSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
+  statLabelActive: {
+    color: '#3B82F6',
   },
   header: {
     backgroundColor: '#3B82F6',
@@ -347,7 +357,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginVertical: 8,
+    marginTop: 12,
+    marginBottom: 8,
     paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1,
