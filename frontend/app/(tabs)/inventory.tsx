@@ -623,12 +623,27 @@ export default function InventoryLeadsScreen() {
           {(item.address || item.location) && (
             <View style={styles.infoRow}>
               <Ionicons name="location" size={14} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
-              <Text 
-                style={[styles.infoText, canViewData && hasMapUrl && styles.linkText]} 
-                numberOfLines={2}
-              >
-                {displayAddressLocation}
-              </Text>
+              {canViewData && hasMapUrl ? (
+                <TouchableOpacity
+                  style={styles.locationLink}
+                  onPress={() => openMapUrl(item.Property_locationUrl!)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.infoText, styles.linkText]}
+                    numberOfLines={2}
+                  >
+                    {displayAddressLocation}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text
+                  style={styles.infoText}
+                  numberOfLines={2}
+                >
+                  {displayAddressLocation}
+                </Text>
+              )}
               {canViewData && hasMapUrl && (
                 <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
                   <Ionicons name="open-outline" size={14} color="#3B82F6" style={{ marginLeft: 4 }} />
@@ -1952,6 +1967,9 @@ const styles = StyleSheet.create({
   linkText: {
     color: colors.primary,
     textDecorationLine: 'underline',
+  },
+  locationLink: {
+    flex: 1,
   },
   whatsappButton: {
     padding: 4,
