@@ -1225,11 +1225,12 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
               {showLogDatePicker && (
                 <DateTimePicker
+                  style={styles.compactDatePicker}
                   value={parseInputDate(logDate)}
                   mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  display={Platform.OS === 'ios' ? 'compact' : 'default'}
                   onChange={(_, date) => {
-                    if (Platform.OS !== 'ios') setShowLogDatePicker(false);
+                    setShowLogDatePicker(false);
                     if (date) setLogDate(formatDateForInput(date));
                   }}
                 />
@@ -1278,11 +1279,12 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
               {showNextDatePicker && (
                 <DateTimePicker
+                  style={styles.compactDatePicker}
                   value={parseInputDate(nextReminderDate)}
                   mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  display={Platform.OS === 'ios' ? 'compact' : 'default'}
                   onChange={(_, date) => {
-                    if (Platform.OS !== 'ios') setShowNextDatePicker(false);
+                    setShowNextDatePicker(false);
                     if (date) setNextReminderDate(formatDateForInput(date));
                   }}
                 />
@@ -2015,6 +2017,11 @@ const styles = StyleSheet.create({
   dateSelectorText: {
     fontSize: 14,
     color: '#1F2937',
+  },
+  compactDatePicker: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    marginBottom: 4,
   },
 
   optionChip: {
