@@ -16,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -45,6 +45,14 @@ const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
 const CHANNELS = ['Call', 'WhatsApp', 'SMS', 'Email', 'Visit'];
 const OUTCOMES = ['Connected', 'No Answer', 'Call Back', 'Left VM', 'Rescheduled', 'Not Interested', 'Deal Won', 'Deal Lost', 'Other'];
 
+
+const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
+const parseInputDate = (dateValue: string) => {
+  if (!dateValue) return new Date();
+  const parsed = new Date(`${dateValue}T09:00:00`);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams();
   const [lead, setLead] = useState<any>(null);
@@ -62,6 +70,8 @@ export default function LeadDetailScreen() {
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [nextReminderDate, setNextReminderDate] = useState('');
   const [savingLog, setSavingLog] = useState(false);
+  const [showLogDatePicker, setShowLogDatePicker] = useState(false);
+  const [showNextDatePicker, setShowNextDatePicker] = useState(false);
   
   // File upload state
   const [images, setImages] = useState<any[]>([]);
@@ -1200,37 +1210,46 @@ export default function LeadDetailScreen() {
             
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalLabel}>{'Date of Conversation'}</Text>
-              <TextInput
-                style={styles.dateInput}
-                placeholder="YYYY-MM-DD"
-                value={logDate}
-                onChangeText={setLogDate}
-              />
+              <TouchableOpacity style={styles.dateSelector} onPress={() => setShowLogDatePicker(true)}>
+                <Text style={styles.dateSelectorText}>{logDate || 'Select date'}</Text>
+                <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+              {showLogDatePicker && (
+                <DateTimePicker
+                  value={parseInputDate(logDate)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_, date) => {
+                    if (Platform.OS !== 'ios') setShowLogDatePicker(false);
+                    if (date) setLogDate(formatDateForInput(date));
+                  }}
+                />
+              )}
               
               <Text style={styles.modalLabel}>{'Channel'}</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={logChannel}
-                  onValueChange={setLogChannel}
-                  style={styles.picker}
-                >
-                  {CHANNELS.map((channel) => (
-                    <Picker.Item key={channel} label={channel} value={channel} />
-                  ))}
-                </Picker>
+              <View style={styles.optionWrap}>
+                {CHANNELS.map((channel) => (
+                  <TouchableOpacity
+                    key={channel}
+                    style={[styles.optionChip, logChannel === channel && styles.optionChipActive]}
+                    onPress={() => setLogChannel(channel)}
+                  >
+                    <Text style={[styles.optionChipText, logChannel === channel && styles.optionChipTextActive]}>{channel}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
               
               <Text style={styles.modalLabel}>{'Outcome'}</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={logOutcome}
-                  onValueChange={setLogOutcome}
-                  style={styles.picker}
-                >
-                  {OUTCOMES.map((outcome) => (
-                    <Picker.Item key={outcome} label={outcome} value={outcome} />
-                  ))}
-                </Picker>
+              <View style={styles.optionWrap}>
+                {OUTCOMES.map((outcome) => (
+                  <TouchableOpacity
+                    key={outcome}
+                    style={[styles.optionChip, logOutcome === outcome && styles.optionChipActive]}
+                    onPress={() => setLogOutcome(outcome)}
+                  >
+                    <Text style={[styles.optionChipText, logOutcome === outcome && styles.optionChipTextActive]}>{outcome}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
               
               <Text style={styles.modalLabel}>{'Notes'}</Text>
@@ -1244,12 +1263,21 @@ export default function LeadDetailScreen() {
               />
               
               <Text style={styles.modalLabel}>{'Next Reminder Date (Optional)'}</Text>
-              <TextInput
-                style={styles.dateInput}
-                placeholder="YYYY-MM-DD"
-                value={nextReminderDate}
-                onChangeText={setNextReminderDate}
-              />
+              <TouchableOpacity style={styles.dateSelector} onPress={() => setShowNextDatePicker(true)}>
+                <Text style={styles.dateSelectorText}>{nextReminderDate || 'Select next reminder date'}</Text>
+                <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+              {showNextDatePicker && (
+                <DateTimePicker
+                  value={parseInputDate(nextReminderDate)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_, date) => {
+                    if (Platform.OS !== 'ios') setShowNextDatePicker(false);
+                    if (date) setNextReminderDate(formatDateForInput(date));
+                  }}
+                />
+              )}
             </ScrollView>
             
             <View style={styles.modalActions}>
@@ -1949,14 +1977,45 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 12,
   },
-  pickerContainer: {
+  optionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dateSelector: {
     backgroundColor: '#F3F4F6',
     borderRadius: 10,
-    overflow: 'hidden',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  picker: {
-    height: 50,
+  dateSelectorText: {
+    fontSize: 14,
     color: '#1F2937',
+  },
+
+  optionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionChipActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#3B82F6',
+  },
+  optionChipText: {
+    fontSize: 13,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  optionChipTextActive: {
+    color: '#1D4ED8',
+    fontWeight: '600',
   },
   notesInput: {
     backgroundColor: '#F3F4F6',
