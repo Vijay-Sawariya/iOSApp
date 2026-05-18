@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
@@ -205,22 +206,59 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.userName}>{user?.full_name || user?.username || 'User'}</Text>
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>Welcome back,</Text>
+            <Text style={styles.userName}>{user?.full_name || user?.username || 'User'}</Text>
+          </View>
+          <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+            <Ionicons name="log-out-outline" size={24} color={colors.white} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-          <Ionicons name="log-out-outline" size={24} color="#6B7280" />
-        </TouchableOpacity>
-      </View>
+      </SafeAreaView>
 
       <ScrollView
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.overviewWidget}>
+          <TouchableOpacity style={styles.overviewItem} onPress={() => router.push('/clients' as any)}>
+            <Text style={styles.overviewValue}>{stats?.client_leads || 0}</Text>
+            <Text style={styles.overviewLabel}>Clients</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.overviewItem} onPress={() => router.push('/inventory' as any)}>
+            <Text style={styles.overviewValue}>{stats?.inventory_leads || 0}</Text>
+            <Text style={styles.overviewLabel}>Inventory</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.overviewItem} onPress={() => router.push('/builders' as any)}>
+            <Text style={styles.overviewValue}>{stats?.total_builders || 0}</Text>
+            <Text style={styles.overviewLabel}>Builders</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.healthWidget}>
+          <View style={styles.healthHeader}>
+            <Text style={styles.widgetTitle}>Business Health</Text>
+            <Ionicons name="pulse" size={18} color={colors.accent} />
+          </View>
+          <View style={styles.healthRows}>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Active follow-ups</Text>
+              <Text style={styles.healthValue}>{stats?.pending_reminders || 0}</Text>
+            </View>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Available inventory</Text>
+              <Text style={styles.healthValue}>{stats?.available_inventory || 0}</Text>
+            </View>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Weekly conversions</Text>
+              <Text style={styles.healthValue}>{stats?.leads_converted_this_week || 0}</Text>
+            </View>
+          </View>
+        </View>
+
         {/* Work Today */}
         <View style={styles.todayWorkWidget}>
           <View style={styles.todayWorkHeader}>
@@ -472,6 +510,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  headerSafeArea: {
+    backgroundColor: colors.primary,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -487,25 +528,88 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 50,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: colors.primary,
   },
   greeting: {
     fontSize: 14,
-    color: '#6B7280',
+    color: 'rgba(255,255,255,0.78)',
   },
   userName: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.white,
   },
   logoutBtn: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollView: {
     flex: 1,
     padding: 16,
+  },
+  overviewWidget: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  overviewItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  overviewValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  overviewLabel: {
+    fontSize: 11,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  healthWidget: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  healthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  healthRows: {
+    marginTop: 4,
+  },
+  healthRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  healthLabel: {
+    fontSize: 13,
+    color: colors.inkMuted,
+  },
+  healthValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.ink,
   },
   // Urgent Followups Widget
   urgentWidget: {
