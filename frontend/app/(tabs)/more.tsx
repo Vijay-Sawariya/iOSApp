@@ -168,6 +168,7 @@ interface Deal {
   status: string;
   payment_received: number;
   expected_closing_date: string;
+  notes?: string | null;
 }
 
 interface TeamMember {
@@ -226,7 +227,7 @@ export default function MoreScreen() {
   const { user, token, logout } = useAuth();
   const params = useLocalSearchParams();
   const requestedTab = (params.tab as string) || 'visits';
-  const initialTab = requestedTab === 'deals' ? 'visits' : requestedTab;
+  const initialTab = requestedTab;
   const fromPopup = params.fromPopup === 'true';
   const [activeTab, setActiveTab] = useState<'visits' | 'deals' | 'team' | 'activity' | 'export' | 'settings'>(
     initialTab as any
@@ -244,7 +245,7 @@ export default function MoreScreen() {
   // Update active tab when params change
   useEffect(() => {
     if (params.tab) {
-      setActiveTab(params.tab === 'deals' ? 'visits' : params.tab as any);
+      setActiveTab(params.tab as any);
     }
   }, [params.tab]);
   
@@ -300,14 +301,34 @@ export default function MoreScreen() {
     lead_name: '',
     deal_amount: '',
     commission_percent: '',
+    payment_received: '',
     expected_closing_date: '',
+    status: 'Closed',
     notes: '',
   });
 
+  const resetDealForm = () => {
+    setDealForm({
+      lead_id: '',
+      lead_name: '',
+      deal_amount: '',
+      commission_percent: '',
+      payment_received: '',
+      expected_closing_date: '',
+      status: 'Closed',
+      notes: '',
+    });
+    setSelectedDealLead(null);
+    setDealLeadSearchQuery('');
+    setDealLeadSearchResults([]);
+    setShowDealLeadDropdown(false);
+  };
+
   const applyCachedMoreData = async () => {
-    const [permissions, visits, team, activity] = await Promise.all([
+    const [permissions, visits, cachedDeals, team, activity] = await Promise.all([
       cacheService.getUserPermissions(),
       cacheService.getSiteVisits(),
+      cacheService.getDeals(),
       cacheService.getTeamMembers(),
       cacheService.getActivityLogs(),
     ]);
@@ -318,6 +339,9 @@ export default function MoreScreen() {
     if (visits) {
       setSiteVisits(visits);
     }
+    if (cachedDeals) {
+      setDeals(cachedDeals);
+    }
     if (team && user?.role === 'admin') {
       setTeamMembers(team);
     }
@@ -325,7 +349,7 @@ export default function MoreScreen() {
       setActivityLogs(activity);
     }
 
-    return Boolean(permissions || visits || team || activity);
+    return Boolean(permissions || visits || cachedDeals || team || activity);
   };
 
   const fetchData = async () => {
@@ -337,9 +361,10 @@ export default function MoreScreen() {
 
       const headers = { Authorization: `Bearer ${token}` };
       
-      const [permissionsResult, visitsResult, teamResult, activityResult] = await Promise.allSettled([
+      const [permissionsResult, visitsResult, dealsResult, teamResult, activityResult] = await Promise.allSettled([
         fetch(`${API_URL}/api/user/permissions`, { headers }),
         fetch(`${API_URL}/api/site-visits`, { headers }),
+        fetch(`${API_URL}/api/deals`, { headers }),
         user?.role === 'admin'
           ? fetch(`${API_URL}/api/team/members-with-permissions`, { headers })
           : Promise.resolve(null),
@@ -358,6 +383,12 @@ export default function MoreScreen() {
         await cacheService.cacheSiteVisits(visitsData);
       }
       
+      if (dealsResult.status === 'fulfilled' && dealsResult.value.ok) {
+        const dealsData = await dealsResult.value.json();
+        setDeals(dealsData);
+        await cacheService.cacheDeals(dealsData);
+      }
+
       if (teamResult.status === 'fulfilled' && teamResult.value?.ok) {
         const teamData = await teamResult.value.json();
         setTeamMembers(teamData);
@@ -775,10 +806,29 @@ export default function MoreScreen() {
 
   const handleAddDeal = async () => {
     if (!dealForm.lead_id || !dealForm.deal_amount) {
-      Alert.alert('Error', 'Please fill in required fields');
+      Alert.alert('Error', 'Please select a lead and enter the conversion amount');
       return;
     }
-    
+
+    const dealAmount = Number(dealForm.deal_amount);
+    const commissionPercent = dealForm.commission_percent ? Number(dealForm.commission_percent) : null;
+    const paymentReceived = dealForm.payment_received ? Number(dealForm.payment_received) : 0;
+
+    if (Number.isNaN(dealAmount) || dealAmount <= 0) {
+      Alert.alert('Error', 'Please enter a valid conversion amount');
+      return;
+    }
+
+    if (commissionPercent !== null && Number.isNaN(commissionPercent)) {
+      Alert.alert('Error', 'Please enter a valid commission percentage');
+      return;
+    }
+
+    if (Number.isNaN(paymentReceived)) {
+      Alert.alert('Error', 'Please enter a valid payment received amount');
+      return;
+    }
+
     try {
       const response = await fetch(`${API_URL}/api/deals`, {
         method: 'POST',
@@ -787,24 +837,34 @@ export default function MoreScreen() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          lead_id: parseInt(dealForm.lead_id),
-          deal_amount: parseFloat(dealForm.deal_amount),
-          commission_percent: dealForm.commission_percent ? parseFloat(dealForm.commission_percent) : null,
+          lead_id: parseInt(dealForm.lead_id, 10),
+          deal_amount: dealAmount,
+          commission_percent: commissionPercent,
+          payment_received: paymentReceived,
           expected_closing_date: dealForm.expected_closing_date || null,
+          status: dealForm.status,
           notes: dealForm.notes,
         }),
       });
-      
+
       if (response.ok) {
-        Alert.alert('Success', 'Deal created');
+        Alert.alert('Success', 'Conversion logged successfully');
+        await cacheService.remove(CACHE_KEYS.DEALS);
+        await cacheService.remove(CACHE_KEYS.ACTIVITY_LOGS);
+        await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
         setShowAddDealModal(false);
-        setDealForm({ lead_id: '', lead_name: '', deal_amount: '', commission_percent: '', expected_closing_date: '', notes: '' });
+        resetDealForm();
         fetchData();
       } else {
-        Alert.alert('Error', 'Failed to create deal');
+        let message = 'Failed to log conversion';
+        try {
+          const errorData = await response.json();
+          message = errorData?.detail || message;
+        } catch {}
+        Alert.alert('Error', message);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to create deal');
+      Alert.alert('Error', 'Failed to log conversion');
     }
   };
 
@@ -898,7 +958,7 @@ export default function MoreScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
       
-      if (!response.ok) throw new Error('Failed to fetch deals');
+      if (!response.ok) throw new Error('Failed to fetch conversions');
       
       const deals_data = await response.json();
       
@@ -935,14 +995,14 @@ export default function MoreScreen() {
         await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
         
         if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Deals' });
+          await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export Conversions' });
         } else {
           Alert.alert('Success', `Saved to ${fileUri}`);
         }
       }
     } catch (error) {
       console.error('Export error:', error);
-      Alert.alert('Error', 'Failed to export deals');
+      Alert.alert('Error', 'Failed to export conversions');
     } finally {
       setExporting(false);
     }
@@ -1020,19 +1080,19 @@ export default function MoreScreen() {
   const renderDeal = ({ item }: { item: Deal }) => (
     <TouchableOpacity style={styles.card} onPress={() => router.push(`/leads/${item.lead_id}` as any)}>
       <View style={styles.cardHeader}>
-        <View>
+        <View style={styles.cardHeaderText}>
           <Text style={styles.cardTitle}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
-          <Text style={styles.cardSubtitle}>{item.property_location || 'Property Deal'}</Text>
+          <Text style={styles.cardSubtitle}>{item.property_name || item.property_location || 'Logged conversion'}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status || 'Closed') + '20' }]}>
+          <Text style={[styles.statusText, { color: getStatusColor(item.status || 'Closed') }]}>{item.status || 'Closed'}</Text>
         </View>
       </View>
       <View style={styles.cardBody}>
         <View style={styles.dealStats}>
           <View style={styles.dealStat}>
-            <Text style={styles.dealStatLabel}>Deal Value</Text>
-            <Text style={styles.dealStatValue}>₹{item.deal_amount} Cr</Text>
+            <Text style={styles.dealStatLabel}>Conversion</Text>
+            <Text style={styles.dealStatValue}>₹{item.deal_amount || 0} Cr</Text>
           </View>
           <View style={styles.dealStat}>
             <Text style={styles.dealStatLabel}>Commission</Text>
@@ -1049,6 +1109,7 @@ export default function MoreScreen() {
             <Text style={styles.infoText}>Expected: {item.expected_closing_date}</Text>
           </View>
         )}
+        {item.notes && <Text style={styles.notesText}>{item.notes}</Text>}
       </View>
     </TouchableOpacity>
   );
@@ -1479,17 +1540,15 @@ export default function MoreScreen() {
         </View>
       </Modal>
 
-      {/* Add Deal Modal */}
+      {/* Log Conversion Modal */}
       <Modal visible={showAddDealModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Deal</Text>
+              <Text style={styles.modalTitle}>Log Conversion</Text>
               <TouchableOpacity onPress={() => {
                 setShowAddDealModal(false);
-                setDealLeadSearchQuery('');
-                setDealLeadSearchResults([]);
-                setShowDealLeadDropdown(false);
+                resetDealForm();
               }}>
                 <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
@@ -1542,7 +1601,7 @@ export default function MoreScreen() {
                 </View>
               )}
               
-              <Text style={styles.inputLabel}>Deal Amount (Cr) *</Text>
+              <Text style={styles.inputLabel}>Conversion Amount (Cr) *</Text>
               <TextInput
                 style={styles.input}
                 value={dealForm.deal_amount}
@@ -1559,6 +1618,30 @@ export default function MoreScreen() {
                 placeholder="e.g., 2"
                 keyboardType="decimal-pad"
               />
+
+              <Text style={styles.inputLabel}>Payment Received</Text>
+              <TextInput
+                style={styles.input}
+                value={dealForm.payment_received}
+                onChangeText={(text) => setDealForm({ ...dealForm, payment_received: text })}
+                placeholder="e.g., 50000"
+                keyboardType="decimal-pad"
+              />
+
+              <Text style={styles.inputLabel}>Conversion Status</Text>
+              <View style={styles.statusOptionRow}>
+                {['Closed', 'Payment', 'Agreement', 'Negotiation'].map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[styles.statusOption, dealForm.status === status && styles.statusOptionActive]}
+                    onPress={() => setDealForm({ ...dealForm, status })}
+                  >
+                    <Text style={[styles.statusOptionText, dealForm.status === status && styles.statusOptionTextActive]}>
+                      {status}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               
               <Text style={styles.inputLabel}>Expected Closing Date</Text>
               <TextInput
@@ -1579,7 +1662,7 @@ export default function MoreScreen() {
               />
               
               <TouchableOpacity style={styles.submitButton} onPress={handleAddDeal}>
-                <Text style={styles.submitButtonText}>Create Deal</Text>
+                <Text style={styles.submitButtonText}>Log Conversion</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -1611,15 +1694,16 @@ export default function MoreScreen() {
           </TouchableOpacity>
           <Text style={styles.simpleHeaderTitle}>
             {activeTab === 'visits' && 'Site Visits'}
+            {activeTab === 'deals' && 'Conversions'}
             {activeTab === 'activity' && 'Activity Timeline'}
             {activeTab === 'team' && 'Team Members'}
             {activeTab === 'export' && 'Export Data'}
             {activeTab === 'settings' && 'Settings'}
           </Text>
-          {activeTab === 'visits' && (
-            <TouchableOpacity 
-              style={styles.headerAddButton} 
-              onPress={() => setShowAddVisitModal(true)}
+          {(activeTab === 'visits' || activeTab === 'deals') && (
+            <TouchableOpacity
+              style={styles.headerAddButton}
+              onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
             >
               <Ionicons name="add" size={24} color="#3B82F6" />
             </TouchableOpacity>
@@ -1645,6 +1729,29 @@ export default function MoreScreen() {
                   <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
                     <Ionicons name="add" size={18} color="#FFFFFF" />
                     <Text style={styles.emptyButtonText}>Schedule Visit</Text>
+                  </TouchableOpacity>
+                </View>
+              }
+            />
+          )}
+
+          {activeTab === 'deals' && (
+            <FlatList
+              data={deals}
+              renderItem={renderDeal}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={styles.listContainer}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="trending-up-outline" size={40} color="#9CA3AF" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Conversions Logged</Text>
+                  <Text style={styles.emptyText}>Log your first successful deal conversion</Text>
+                  <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.emptyButtonText}>Log Conversion</Text>
                   </TouchableOpacity>
                 </View>
               }
@@ -1801,6 +1908,18 @@ export default function MoreScreen() {
           <Text style={styles.featureCardCount}>{siteVisits.length}</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.featureCard, activeTab === 'deals' && styles.featureCardActive]}
+          onPress={() => setActiveTab('deals')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.featureIconContainer, { backgroundColor: '#DCFCE7' }]}>
+            <Ionicons name="trending-up" size={22} color="#16A34A" />
+          </View>
+          <Text style={styles.featureCardTitle}>Conversions</Text>
+          <Text style={styles.featureCardCount}>{deals.length}</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={[styles.featureCard, activeTab === 'activity' && styles.featureCardActive]}
           onPress={() => setActiveTab('activity')}
@@ -1858,15 +1977,16 @@ export default function MoreScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
           {activeTab === 'visits' && 'Site Visits'}
+          {activeTab === 'deals' && 'Conversions'}
           {activeTab === 'activity' && 'Activity Timeline'}
           {activeTab === 'team' && 'Team Members'}
           {activeTab === 'export' && 'Export Data'}
           {activeTab === 'settings' && 'Settings'}
         </Text>
-        {activeTab === 'visits' && (
-          <TouchableOpacity 
-            style={styles.addButtonSmall} 
-            onPress={() => setShowAddVisitModal(true)}
+        {(activeTab === 'visits' || activeTab === 'deals') && (
+          <TouchableOpacity
+            style={styles.addButtonSmall}
+            onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
           >
             <Ionicons name="add" size={18} color="#FFFFFF" />
           </TouchableOpacity>
@@ -1892,6 +2012,29 @@ export default function MoreScreen() {
                 <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
                   <Ionicons name="add" size={18} color="#FFFFFF" />
                   <Text style={styles.emptyButtonText}>Schedule Visit</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
+        )}
+
+        {activeTab === 'deals' && (
+          <FlatList
+            data={deals}
+            renderItem={renderDeal}
+            keyExtractor={(item) => item.id.toString()}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            contentContainerStyle={styles.listContainer}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="trending-up-outline" size={40} color="#9CA3AF" />
+              </View>
+                <Text style={styles.emptyTitle}>No Conversions Logged</Text>
+                <Text style={styles.emptyText}>Log your first successful deal conversion</Text>
+                <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddDealModal(true)}>
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                  <Text style={styles.emptyButtonText}>Log Conversion</Text>
                 </TouchableOpacity>
               </View>
             }
@@ -1969,6 +2112,14 @@ export default function MoreScreen() {
               >
                 <Ionicons name="document-text" size={20} color="#FFFFFF" />
                 <Text style={styles.exportButtonText}>Export All Leads</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.exportButton, { backgroundColor: '#16A34A' }]}
+                onPress={exportDeals}
+                disabled={exporting}
+              >
+                <Ionicons name="trending-up" size={20} color="#FFFFFF" />
+                <Text style={styles.exportButtonText}>Export Conversions</Text>
               </TouchableOpacity>
             </View>
             
@@ -2379,6 +2530,32 @@ const styles = StyleSheet.create({
   textArea: {
     height: 80,
     textAlignVertical: 'top',
+  },
+  statusOptionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  statusOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  statusOptionActive: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#16A34A',
+  },
+  statusOptionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  statusOptionTextActive: {
+    color: '#15803D',
   },
   submitButton: {
     backgroundColor: '#3B82F6',
