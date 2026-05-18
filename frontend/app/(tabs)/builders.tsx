@@ -14,6 +14,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { useOffline } from '../../contexts/OfflineContext';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface Builder {
   id: string;
@@ -273,13 +274,13 @@ export default function BuildersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   headerSafeArea: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   blueHeader: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -289,61 +290,61 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   contentArea: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   headerIconBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   statsBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: radii.md,
     marginHorizontal: 4,
   },
   statItemActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: colors.primary,
   },
   statNumber: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
   },
   statNumberActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 11,
+    color: colors.inkMuted,
     marginTop: 2,
   },
   statLabelActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   header: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     padding: 20,
     paddingTop: 16,
   },
@@ -355,14 +356,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceRaised,
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 8,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     height: 48,
   },
   searchInput: {
@@ -370,22 +371,20 @@ const styles = StyleSheet.create({
     height: 48,
     marginLeft: 12,
     fontSize: 16,
-    color: '#1F2937',
+    color: colors.ink,
   },
   filterButton: {
     padding: 8,
   },
   filterContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceRaised,
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 12,
     padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   filterSection: {
     marginBottom: 8,
@@ -393,7 +392,7 @@ const styles = StyleSheet.create({
   filterLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginBottom: 8,
   },
   filterOptions: {
@@ -405,18 +404,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     marginRight: 8,
     marginBottom: 4,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceMuted,
   },
   filterChipActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#6B7280',
+    color: colors.inkMuted,
   },
   filterChipTextActive: {
     color: '#FFFFFF',
@@ -429,23 +428,19 @@ const styles = StyleSheet.create({
   clearFiltersText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#EF4444',
+    color: colors.danger,
   },
   listContent: {
     padding: 16,
-    paddingTop: 8,
     paddingBottom: 100,
-    backgroundColor: '#F9FAFB',
   },
   builderCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
     overflow: 'hidden',
   },
   builderContent: {
@@ -456,8 +451,8 @@ const styles = StyleSheet.create({
   builderIcon: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -468,12 +463,12 @@ const styles = StyleSheet.create({
   builderName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 2,
   },
   companyName: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginBottom: 4,
   },
   createdByText: {
@@ -500,7 +495,7 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: colors.border,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
@@ -536,17 +531,13 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 20,
+    bottom: 90,
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.floating,
   },
 });

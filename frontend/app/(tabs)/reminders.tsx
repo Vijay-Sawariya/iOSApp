@@ -15,6 +15,7 @@ import { notificationService } from '../../services/notificationService';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface Reminder {
   id: number;
@@ -391,13 +392,13 @@ export default function RemindersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   headerSafeArea: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   blueHeader: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -407,77 +408,75 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.white,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   headerIconBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   contentArea: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
   statsBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: radii.md,
     marginHorizontal: 4,
   },
   statItemActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: colors.primary,
   },
   statNumber: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.ink,
   },
   statNumberActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 11,
+    color: colors.inkMuted,
     marginTop: 2,
   },
   statLabelActive: {
-    color: '#3B82F6',
+    color: colors.primary,
   },
   listContent: {
     padding: 16,
     paddingBottom: 100,
   },
   reminderCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   overdueCard: {
     borderLeftWidth: 4,
-    borderLeftColor: '#EF4444',
+    borderLeftColor: colors.danger,
   },
   reminderHeader: {
     flexDirection: 'row',
@@ -486,8 +485,8 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 40,
     height: 40,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -501,12 +500,12 @@ const styles = StyleSheet.create({
   reminderTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 4,
   },
   reminderType: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginBottom: 6,
   },
   clientRow: {
@@ -607,17 +606,13 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 20,
+    bottom: 90,
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.floating,
   },
 });

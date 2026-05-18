@@ -12,6 +12,7 @@ import {
   Modal,
   Image,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -1199,7 +1200,10 @@ export default function LeadDetailScreen() {
         transparent={true}
         onRequestClose={() => setShowLogModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{'Log Conversation'}</Text>
@@ -1208,7 +1212,12 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={styles.modalLabel}>{'Date of Conversation'}</Text>
               <TouchableOpacity style={styles.dateSelector} onPress={() => setShowLogDatePicker(true)}>
                 <Text style={styles.dateSelectorText}>{logDate || 'Select date'}</Text>
@@ -1300,7 +1309,7 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <MatchingLeadsModal
@@ -1951,19 +1960,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 40,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    maxHeight: '82%',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   modalTitle: {
     fontSize: 20,
@@ -1976,6 +1991,12 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginBottom: 8,
     marginTop: 12,
+  },
+  modalScroll: {
+    flexGrow: 0,
+  },
+  modalScrollContent: {
+    paddingBottom: 12,
   },
   optionWrap: {
     flexDirection: 'row',
@@ -2024,7 +2045,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
     textAlignVertical: 'top',
-    minHeight: 80,
+    minHeight: 110,
+    maxHeight: 150,
   },
   dateInput: {
     backgroundColor: '#F3F4F6',
@@ -2036,7 +2058,7 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    marginTop: 20,
+    marginTop: 12,
   },
   cancelButton: {
     flex: 1,
