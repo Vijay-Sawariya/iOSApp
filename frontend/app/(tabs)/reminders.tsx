@@ -138,7 +138,7 @@ export default function RemindersScreen() {
   const loadReminders = async () => {
     try {
       const data = await api.getReminders();
-      setReminders(data);
+      setReminders(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load reminders:', error);
     }
@@ -331,54 +331,55 @@ export default function RemindersScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Follow-ups</Text>
-          <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>{pendingCount} pending</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/reminders/add')}>
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
-            All ({reminders.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'pending' && styles.filterTabActive]}
-          onPress={() => setFilter('pending')}
-        >
-          <Text style={[styles.filterText, filter === 'pending' && styles.filterTextActive]}>
-            Pending ({pendingCount})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'completed' && styles.filterTabActive]}
-          onPress={() => setFilter('completed')}
-        >
-          <Text style={[styles.filterText, filter === 'completed' && styles.filterTextActive]}>
-            Done ({completedCount})
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <View style={styles.contentArea}>
+        {/* Stats Bar */}
+        <View style={styles.statsBar}>
+          <TouchableOpacity
+            style={[styles.statItem, filter === 'all' && styles.statItemActive]}
+            onPress={() => setFilter('all')}
+          >
+            <Text style={[styles.statNumber, filter === 'all' && styles.statNumberActive]}>{reminders.length}</Text>
+            <Text style={[styles.statLabel, filter === 'all' && styles.statLabelActive]}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statItem, filter === 'pending' && styles.statItemActive]}
+            onPress={() => setFilter('pending')}
+          >
+            <Text style={[styles.statNumber, filter === 'pending' && styles.statNumberActive]}>{pendingCount}</Text>
+            <Text style={[styles.statLabel, filter === 'pending' && styles.statLabelActive]}>Pending</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statItem, filter === 'completed' && styles.statItemActive]}
+            onPress={() => setFilter('completed')}
+          >
+            <Text style={[styles.statNumber, filter === 'completed' && styles.statNumberActive]}>{completedCount}</Text>
+            <Text style={[styles.statLabel, filter === 'completed' && styles.statLabelActive]}>Done</Text>
+          </TouchableOpacity>
+        </View>
 
-      <FlatList
-        data={sortedReminders}
-        renderItem={renderReminder}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="notifications-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No follow-ups found</Text>
-            <Text style={styles.emptySubtext}>Tap + to add your first follow-up</Text>
-          </View>
-        }
-      />
+        <FlatList
+          data={sortedReminders}
+          renderItem={renderReminder}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="notifications-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyText}>No follow-ups found</Text>
+              <Text style={styles.emptySubtext}>Tap + to add your first follow-up</Text>
+            </View>
+          }
+        />
+      </View>
 
       <TouchableOpacity style={styles.fab} onPress={() => router.push('/reminders/add')}>
         <Ionicons name="add" size={28} color="#FFFFFF" />
@@ -390,7 +391,7 @@ export default function RemindersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#3B82F6',
   },
   headerSafeArea: {
     backgroundColor: '#3B82F6',
@@ -398,52 +399,66 @@ const styles = StyleSheet.create({
   blueHeader: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  headerBadge: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
+  contentArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
   },
-  filterContainer: {
+  statsBar: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 4,
   },
-  filterTabActive: {
-    backgroundColor: '#3B82F6',
+  statItemActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
   },
-  filterText: {
-    fontSize: 13,
-    fontWeight: '500',
+  statNumber: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  statNumberActive: {
+    color: '#3B82F6',
+  },
+  statLabel: {
+    fontSize: 12,
     color: '#6B7280',
+    marginTop: 2,
   },
-  filterTextActive: {
-    color: '#FFFFFF',
+  statLabelActive: {
+    color: '#3B82F6',
   },
   listContent: {
     padding: 16,
