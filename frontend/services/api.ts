@@ -44,6 +44,15 @@ const getUserScopedCacheKey = (baseKey: string): string => {
   return `${baseKey}_${tokenSuffix}`;
 };
 
+const invalidateReminderCaches = async () => {
+  await Promise.all([
+    cacheService.remove(CACHE_KEYS.REMINDERS),
+    cacheService.remove(getUserScopedCacheKey(CACHE_KEYS.REMINDERS)),
+    cacheService.remove(`${CACHE_KEYS.URGENT_FOLLOWUPS}_5`),
+    cacheService.remove(`${CACHE_KEYS.URGENT_FOLLOWUPS}_10`),
+  ]);
+};
+
 const getHeaders = () => {
   console.log('getHeaders - authToken present:', !!authToken);
   return {
@@ -431,7 +440,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to create reminder');
-    await cacheService.remove(CACHE_KEYS.REMINDERS);
+    await invalidateReminderCaches();
     return response.json();
   },
 
@@ -447,7 +456,7 @@ export const api = {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error('Failed to update reminder');
-    await cacheService.remove(CACHE_KEYS.REMINDERS);
+    await invalidateReminderCaches();
     return response.json();
   },
 
@@ -461,8 +470,9 @@ export const api = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete reminder');
-    await cacheService.remove(CACHE_KEYS.REMINDERS);
+    if (!response.ok && response.status !== 404) throw new Error('Failed to delete reminder');
+    await invalidateReminderCaches();
+    if (response.status === 404) return { message: 'Reminder already deleted' };
     return response.json();
   },
 

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -135,6 +136,7 @@ export default function RemindersScreen() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [deletingReminderId, setDeletingReminderId] = useState<number | null>(null);
 
   const loadReminders = async () => {
     try {
@@ -163,19 +165,28 @@ export default function RemindersScreen() {
   };
 
   const handleDelete = (id: number, title: string) => {
+    if (deletingReminderId !== null) return;
+
     Alert.alert('Delete Follow-up', `Are you sure you want to delete "${title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          setDeletingReminderId(id);
           try {
             await api.deleteReminder(id.toString());
-            await notificationService.cancelReminderNotification(id.toString());
-            loadReminders();
+            try {
+              await notificationService.cancelReminderNotification(id.toString());
+            } catch (notificationError) {
+              console.warn('Failed to cancel reminder notification:', notificationError);
+            }
+            await loadReminders();
           } catch (error) {
             console.error('Delete error:', error);
             Alert.alert('Error', 'Failed to delete follow-up');
+          } finally {
+            setDeletingReminderId(null);
           }
         },
       },
@@ -231,6 +242,8 @@ export default function RemindersScreen() {
     const { dateLabel, timeStr, isPast, isToday } = getDateInfo(item.reminder_date);
     const statusLower = (item.status || '').toLowerCase();
     const isOverdue = isPast && statusLower === 'pending';
+    const isDeleting = deletingReminderId === item.id;
+    const deleteDisabled = deletingReminderId !== null;
 
     return (
       <TouchableOpacity
@@ -315,10 +328,15 @@ export default function RemindersScreen() {
             )}
             
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.deleteButton, deleteDisabled && styles.disabledAction]}
               onPress={() => handleDelete(item.id, item.title)}
+              disabled={deleteDisabled}
             >
-              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+              {isDeleting ? (
+                <ActivityIndicator size="small" color={colors.danger} />
+              ) : (
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -586,6 +604,13 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     padding: 4,
+    minWidth: 28,
+    minHeight: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledAction: {
+    opacity: 0.55,
   },
   emptyContainer: {
     alignItems: 'center',

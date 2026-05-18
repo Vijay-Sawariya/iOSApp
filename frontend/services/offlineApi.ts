@@ -179,7 +179,8 @@ class OfflineApiService {
   // ============ REMINDERS ============
   async getReminders(): Promise<any[]> {
     try {
-      return await api.getReminders();
+      const reminders = await api.getReminders();
+      return Array.isArray(reminders) ? reminders : [];
     } catch (error) {
       console.log('Cached API fetch failed, reminders cache unavailable');
       return [];

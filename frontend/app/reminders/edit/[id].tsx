@@ -95,6 +95,7 @@ export default function EditReminderScreen() {
   const [status, setStatus] = useState('pending');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -113,7 +114,8 @@ export default function EditReminderScreen() {
 
   const loadData = async () => {
     try {
-      const reminders = await api.getReminders();
+      const remindersData = await api.getReminders();
+      const reminders = Array.isArray(remindersData) ? remindersData as any[] : [];
 
       const reminder = reminders.find((r: any) => r.id.toString() === reminderId);
       if (reminder) {
@@ -277,18 +279,26 @@ export default function EditReminderScreen() {
   };
 
   const handleDelete = () => {
+    if (deleting) return;
+
     Alert.alert('Delete Follow-up', 'Are you sure you want to delete this follow-up?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          setDeleting(true);
           try {
             await api.deleteReminder(reminderId);
-            await notificationService.cancelReminderNotification(reminderId);
+            try {
+              await notificationService.cancelReminderNotification(reminderId);
+            } catch (notificationError) {
+              console.warn('Failed to cancel reminder notification:', notificationError);
+            }
             router.replace('/(tabs)/reminders');
           } catch (error) {
             Alert.alert('Error', 'Failed to delete follow-up');
+            setDeleting(false);
           }
         },
       },
@@ -365,8 +375,16 @@ export default function EditReminderScreen() {
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Follow-up</Text>
-          <TouchableOpacity onPress={handleDelete} style={styles.deleteHeaderBtn}>
-            <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+          <TouchableOpacity
+            onPress={handleDelete}
+            style={[styles.deleteHeaderBtn, deleting && styles.disabledAction]}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -521,7 +539,7 @@ export default function EditReminderScreen() {
             </View>
             {status === 'pending' && (
               <Text style={styles.notificationHint}>
-                🔔 You'll be notified 10 minutes before (IST)
+                You will be notified 10 minutes before (IST)
               </Text>
             )}
           </View>
@@ -552,9 +570,19 @@ export default function EditReminderScreen() {
           </TouchableOpacity>
 
           {/* Delete Button */}
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
-            <Text style={styles.deleteButtonText}>Delete Follow-up</Text>
+          <TouchableOpacity
+            style={[styles.deleteButton, deleting && styles.disabledAction]}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            )}
+            <Text style={styles.deleteButtonText}>
+              {deleting ? 'Deleting...' : 'Delete Follow-up'}
+            </Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />
@@ -926,6 +954,9 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     fontSize: 16,
     fontWeight: '600',
+  },
+  disabledAction: {
+    opacity: 0.65,
   },
   modalOverlay: {
     flex: 1,
