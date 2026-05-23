@@ -91,6 +91,7 @@ export default function DashboardScreen() {
   const [smartMatches, setSmartMatches] = useState<SmartMatch[]>([]);
   const [pricingData, setPricingData] = useState<DashboardLocationPricing[]>([]);
   const [pricingSearch, setPricingSearch] = useState('');
+  const [expandedPricingLocationId, setExpandedPricingLocationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -164,6 +165,10 @@ export default function DashboardScreen() {
 
   const getFloorCount = (plots: DashboardPlotPricing[]) =>
     plots.reduce((sum, plot) => sum + (Array.isArray(plot.floors) ? plot.floors.length : 0), 0);
+
+  const togglePricingLocation = (locationId: number) => {
+    setExpandedPricingLocationId((current) => current === locationId ? null : locationId);
+  };
 
   const todayWorkItems = [
     {
@@ -338,25 +343,59 @@ export default function DashboardScreen() {
               <Text style={[styles.pricingTableHeadText, styles.pricingRangeCell]}>Range</Text>
             </View>
             {filteredPricingRows.length > 0 ? (
-              filteredPricingRows.map((item) => (
-                <TouchableOpacity
-                  key={item.location_id}
-                  style={styles.pricingTableRow}
-                  onPress={() => router.push('/pricing' as any)}
-                >
-                  <View style={styles.pricingLocationCell}>
-                    <Text style={styles.pricingLocationName} numberOfLines={1}>{item.location_name}</Text>
-                    <Text style={styles.pricingLocationMeta} numberOfLines={1}>{item.colony_category || 'N/A'} Category</Text>
+              filteredPricingRows.map((item) => {
+                const isExpanded = expandedPricingLocationId === item.location_id;
+
+                return (
+                  <View key={item.location_id} style={styles.pricingLocationGroup}>
+                    <TouchableOpacity
+                      style={[styles.pricingTableRow, isExpanded && styles.pricingTableRowExpanded]}
+                      onPress={() => togglePricingLocation(item.location_id)}
+                    >
+                      <View style={styles.pricingLocationCell}>
+                        <Text style={styles.pricingLocationName} numberOfLines={1}>{item.location_name}</Text>
+                        <Text style={styles.pricingLocationMeta} numberOfLines={1}>{item.colony_category || 'N/A'} Category</Text>
+                      </View>
+                      <View style={styles.pricingPlotsCell}>
+                        <Text style={styles.pricingPlotCount}>{item.plots.length}</Text>
+                        <Text style={styles.pricingFloorCount}>{getFloorCount(item.plots)} floors</Text>
+                      </View>
+                      <View style={[styles.pricingRangeCell, styles.pricingRangeBox]}>
+                        <Text style={styles.pricingRangeValue} numberOfLines={1}>{getPricingRange(item.plots)}</Text>
+                        <Ionicons
+                          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={15}
+                          color={colors.inkMuted}
+                          style={styles.pricingExpandIcon}
+                        />
+                      </View>
+                    </TouchableOpacity>
+
+                    {isExpanded && (
+                      <View style={styles.pricingFloorPanel}>
+                        {item.plots.map((plot) => (
+                          <View key={plot.id} style={styles.pricingPlotDetail}>
+                            <View style={styles.pricingPlotDetailHeader}>
+                              <Text style={styles.pricingPlotSize}>{plot.plot_size} sq yds</Text>
+                              <Text style={styles.pricingPlotRange}>₹{plot.min_price} - {plot.max_price} CR</Text>
+                            </View>
+                            {plot.floors && plot.floors.length > 0 ? (
+                              plot.floors.map((floor, index) => (
+                                <View key={`${plot.id}-${floor.floor_label}-${index}`} style={styles.pricingFloorDetailRow}>
+                                  <Text style={styles.pricingFloorLabel} numberOfLines={1}>{floor.floor_label}</Text>
+                                  <Text style={styles.pricingFloorPrice}>₹{floor.tentative_floor_price} CR</Text>
+                                </View>
+                              ))
+                            ) : (
+                              <Text style={styles.pricingNoFloorText}>No floor pricing added.</Text>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
-                  <View style={styles.pricingPlotsCell}>
-                    <Text style={styles.pricingPlotCount}>{item.plots.length}</Text>
-                    <Text style={styles.pricingFloorCount}>{getFloorCount(item.plots)} floors</Text>
-                  </View>
-                  <Text style={[styles.pricingRangeValue, styles.pricingRangeCell]} numberOfLines={1}>
-                    {getPricingRange(item.plots)}
-                  </Text>
-                </TouchableOpacity>
-              ))
+                );
+              })
             ) : (
               <View style={styles.pricingEmptyRow}>
                 <Text style={styles.pricingEmptyText}>No pricing records found</Text>
@@ -801,6 +840,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  pricingTableRowExpanded: {
+    backgroundColor: '#FFFBEB',
+  },
+  pricingLocationGroup: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   pricingLocationCell: {
     flex: 1.4,
     minWidth: 0,
@@ -815,6 +861,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     textAlign: 'right',
+  },
+  pricingRangeBox: {
+    alignItems: 'flex-end',
   },
   pricingLocationName: {
     color: colors.ink,
@@ -840,6 +889,66 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 12,
     fontWeight: '800',
+    textAlign: 'right',
+  },
+  pricingExpandIcon: {
+    marginTop: 2,
+  },
+  pricingFloorPanel: {
+    backgroundColor: '#FFFDF7',
+    padding: 10,
+  },
+  pricingPlotDetail: {
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    padding: 10,
+    marginBottom: 8,
+  },
+  pricingPlotDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pricingPlotSize: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pricingPlotRange: {
+    color: '#A16207',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pricingFloorDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginTop: 6,
+  },
+  pricingFloorLabel: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  pricingFloorPrice: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pricingNoFloorText: {
+    color: colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    paddingVertical: 4,
   },
   pricingEmptyRow: {
     alignItems: 'center',
