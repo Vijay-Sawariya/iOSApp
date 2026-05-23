@@ -172,21 +172,21 @@ export default function DashboardScreen() {
 
   const todayWorkItems = [
     {
-      key: 'missed',
-      title: 'Missed follow-ups',
-      count: stats?.missed_followups || 0,
-      icon: 'alert-circle',
-      color: '#DC2626',
-      bg: '#FEF2F2',
-      route: '/reminders',
-    },
-    {
       key: 'today',
       title: 'Due today',
       count: stats?.today_reminders || urgentFollowups.filter((item) => !item.is_missed).length || 0,
       icon: 'today',
       color: '#D97706',
       bg: '#FFFBEB',
+      route: '/reminders',
+    },
+    {
+      key: 'missed',
+      title: 'Missed follow-ups',
+      count: stats?.missed_followups || 0,
+      icon: 'alert-circle',
+      color: '#DC2626',
+      bg: '#FEF2F2',
       route: '/reminders',
     },
     {
