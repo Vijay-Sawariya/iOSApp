@@ -26,9 +26,15 @@ interface Reminder {
   status: string;
   notes: string | null;
   lead_id: number | null;
+  user_id?: number | null;
+  assigned_to?: number | null;
   lead_name?: string;
   lead_phone?: string;
   lead_created_by?: number | null;
+  assigned_to_name?: string | null;
+  assigned_to_username?: string | null;
+  created_by_name?: string | null;
+  created_by_username?: string | null;
 }
 
 // India timezone offset (UTC+5:30)
@@ -220,6 +226,10 @@ export default function RemindersScreen() {
     return statusLower === 'completed' ? '#10B981' : '#F59E0B';
   };
 
+  const getPersonName = (name?: string | null, username?: string | null) => {
+    return name || username || '';
+  };
+
   const filteredReminders = reminders.filter(r => {
     const statusLower = (r.status || '').toLowerCase();
     if (filter === 'pending') return statusLower === 'pending' || statusLower === 'up coming';
@@ -244,6 +254,8 @@ export default function RemindersScreen() {
     const isOverdue = isPast && statusLower === 'pending';
     const isDeleting = deletingReminderId === item.id;
     const deleteDisabled = deletingReminderId !== null;
+    const assignedToName = getPersonName(item.assigned_to_name, item.assigned_to_username);
+    const createdByName = getPersonName(item.created_by_name, item.created_by_username);
 
     return (
       <TouchableOpacity
@@ -275,6 +287,20 @@ export default function RemindersScreen() {
                       : maskPhone(item.lead_phone)}
                   </Text>
                 )}
+              </View>
+            )}
+
+            {assignedToName && (
+              <View style={styles.metaRow}>
+                <Ionicons name="person-circle-outline" size={12} color="#6B7280" />
+                <Text style={styles.metaText}>Assigned To: {assignedToName}</Text>
+              </View>
+            )}
+
+            {createdByName && (
+              <View style={styles.metaRow}>
+                <Ionicons name="create-outline" size={12} color="#6B7280" />
+                <Text style={styles.metaText}>Created By: {createdByName}</Text>
               </View>
             )}
             
@@ -540,6 +566,17 @@ const styles = StyleSheet.create({
   clientPhone: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   dateContainer: {
     flexDirection: 'row',

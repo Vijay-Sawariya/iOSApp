@@ -26,6 +26,14 @@ interface Lead {
   lead_type: string | null;
 }
 
+interface AssignableUser {
+  id: number;
+  username: string;
+  full_name: string | null;
+  role: string | null;
+  is_current_user?: boolean;
+}
+
 const REMINDER_TYPES = [
   { value: 'Call', icon: 'call', color: '#3B82F6' },
   { value: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366' },
@@ -95,10 +103,13 @@ export default function AddReminderScreen() {
   const [reminderType, setReminderType] = useState('Call');
   const [notes, setNotes] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
+  const [selectedAssignedUser, setSelectedAssignedUser] = useState<AssignableUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showLeadPicker, setShowLeadPicker] = useState(false);
+  const [showAssignedToPicker, setShowAssignedToPicker] = useState(false);
   
   // Client search state
   const [leadSearch, setLeadSearch] = useState('');
@@ -140,6 +151,25 @@ export default function AddReminderScreen() {
       setTitle(`Follow up with ${preselectedLeadName}`);
     }
   }, [preselectedLeadId, preselectedLeadName]);
+
+  useEffect(() => {
+    const loadAssignableUsers = async () => {
+      try {
+        const users = await api.getAssignableUsers();
+        const normalizedUsers = Array.isArray(users) ? users : [];
+        setAssignableUsers(normalizedUsers);
+        setSelectedAssignedUser(
+          normalizedUsers.find((user: AssignableUser) => user.is_current_user) ||
+          normalizedUsers[0] ||
+          null
+        );
+      } catch (error) {
+        console.error('Failed to load assignable users:', error);
+      }
+    };
+
+    loadAssignableUsers();
+  }, []);
 
   // Debounced search for clients
   const searchClients = useCallback(async (query: string) => {
@@ -210,6 +240,7 @@ export default function AddReminderScreen() {
         reminder_type: reminderType,
         notes: notes || null,
         lead_id: selectedLead?.id || null,
+        assigned_to: selectedAssignedUser?.id || null,
         status: 'pending',
       };
 
@@ -281,6 +312,11 @@ export default function AddReminderScreen() {
       case 'builder': return 'Builder';
       default: return type || 'Client';
     }
+  };
+
+  const getUserDisplayName = (user: AssignableUser | null) => {
+    if (!user) return '';
+    return user.full_name || user.username || `User #${user.id}`;
   };
 
   // Format display date (IST)
@@ -403,6 +439,30 @@ export default function AddReminderScreen() {
                 <Text style={styles.clearButtonText}>Clear selection</Text>
               </TouchableOpacity>
             )}
+          </View>
+
+          {/* Assigned To */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Assigned To</Text>
+            <TouchableOpacity
+              style={styles.selectorButton}
+              onPress={() => setShowAssignedToPicker(true)}
+            >
+              {selectedAssignedUser ? (
+                <View style={styles.selectedLeadInfo}>
+                  <Ionicons name="person-circle" size={20} color="#3B82F6" />
+                  <View style={styles.selectedLeadText}>
+                    <Text style={styles.selectedLeadName}>{getUserDisplayName(selectedAssignedUser)}</Text>
+                    {selectedAssignedUser.role && (
+                      <Text style={styles.selectedLeadPhone}>{selectedAssignedUser.role}</Text>
+                    )}
+                  </View>
+                </View>
+              ) : (
+                <Text style={styles.placeholderText}>Select user</Text>
+              )}
+              <Ionicons name="chevron-down" size={20} color="#6B7280" />
+            </TouchableOpacity>
           </View>
 
           {/* Date & Time - IST */}
@@ -607,6 +667,61 @@ export default function AddReminderScreen() {
               )}
             />
           )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* Assigned To Picker Modal */}
+      <Modal visible={showAssignedToPicker} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.leadModalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Assign Follow-up</Text>
+            <TouchableOpacity onPress={() => setShowAssignedToPicker(false)}>
+              <Ionicons name="close" size={24} color="#1F2937" />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={assignableUsers}
+            keyExtractor={(item) => item.id.toString()}
+            ListEmptyComponent={
+              <View style={styles.searchHint}>
+                <Ionicons name="people-outline" size={48} color="#D1D5DB" />
+                <Text style={styles.searchHintText}>No users found</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const isSelected = selectedAssignedUser?.id === item.id;
+              return (
+                <TouchableOpacity
+                  style={styles.leadItem}
+                  onPress={() => {
+                    setSelectedAssignedUser(item);
+                    setShowAssignedToPicker(false);
+                  }}
+                >
+                  <View style={styles.leadItemIcon}>
+                    <Ionicons name="person-circle" size={22} color="#3B82F6" />
+                  </View>
+                  <View style={styles.leadItemContent}>
+                    <Text style={styles.leadItemName}>{getUserDisplayName(item)}</Text>
+                    <View style={styles.leadItemMeta}>
+                      {item.role && (
+                        <View style={styles.leadTypeBadge}>
+                          <Text style={styles.leadTypeText}>{item.role}</Text>
+                        </View>
+                      )}
+                      {item.is_current_user && <Text style={styles.leadItemPhone}>You</Text>}
+                    </View>
+                  </View>
+                  {isSelected ? (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  ) : (
+                    <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
         </SafeAreaView>
       </Modal>
     </View>

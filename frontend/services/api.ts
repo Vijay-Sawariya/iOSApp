@@ -499,6 +499,16 @@ export const api = {
     return response.json();
   },
 
+  getAssignableUsers: async () => {
+    const response = await fetch(`${API_URL}/api/users/assignable`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch users'));
+    }
+    return response.json();
+  },
+
   // WhatsApp
   sendWhatsApp: async (data: { phone: string; message: string; lead_id?: string }) => {
     const isOnline = await cacheService.isOnline();
