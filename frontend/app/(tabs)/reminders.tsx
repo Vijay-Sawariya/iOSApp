@@ -37,6 +37,12 @@ interface Reminder {
   created_by_username?: string | null;
 }
 
+interface ReminderUser {
+  id: number;
+  username?: string | null;
+  full_name?: string | null;
+}
+
 // India timezone offset (UTC+5:30)
 const formatDateIST = (dateString: string) => {
   const date = new Date(dateString);
@@ -140,6 +146,7 @@ const getDateInfo = (dateString: string) => {
 export default function RemindersScreen() {
   const { user } = useAuth();
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [usersById, setUsersById] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [deletingReminderId, setDeletingReminderId] = useState<number | null>(null);
@@ -148,6 +155,19 @@ export default function RemindersScreen() {
     try {
       const data = await api.getReminders();
       setReminders(Array.isArray(data) ? data : []);
+
+      try {
+        const users = await api.getAssignableUsers();
+        const userMap = (Array.isArray(users) ? users : []).reduce<Record<number, string>>((acc, item: ReminderUser) => {
+          if (item.id) {
+            acc[item.id] = item.full_name || item.username || `User #${item.id}`;
+          }
+          return acc;
+        }, {});
+        setUsersById(userMap);
+      } catch (userError) {
+        console.error('Failed to load reminder users:', userError);
+      }
     } catch (error) {
       console.error('Failed to load reminders:', error);
     }
@@ -230,6 +250,14 @@ export default function RemindersScreen() {
     return name || username || '';
   };
 
+  const getReminderUserName = (
+    id?: number | null,
+    name?: string | null,
+    username?: string | null
+  ) => {
+    return getPersonName(name, username) || (id ? usersById[id] || `User #${id}` : '');
+  };
+
   const filteredReminders = reminders.filter(r => {
     const statusLower = (r.status || '').toLowerCase();
     if (filter === 'pending') return statusLower === 'pending' || statusLower === 'up coming';
@@ -254,8 +282,8 @@ export default function RemindersScreen() {
     const isOverdue = isPast && statusLower === 'pending';
     const isDeleting = deletingReminderId === item.id;
     const deleteDisabled = deletingReminderId !== null;
-    const assignedToName = getPersonName(item.assigned_to_name, item.assigned_to_username);
-    const createdByName = getPersonName(item.created_by_name, item.created_by_username);
+    const assignedToName = getReminderUserName(item.assigned_to, item.assigned_to_name, item.assigned_to_username);
+    const createdByName = getReminderUserName(item.user_id, item.created_by_name, item.created_by_username);
 
     return (
       <TouchableOpacity
