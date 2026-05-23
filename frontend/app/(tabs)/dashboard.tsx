@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Linking,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -67,24 +68,44 @@ interface SmartMatch {
   match_reasons: string[];
 }
 
+interface DashboardPlotPricing {
+  id: number;
+  plot_size: number;
+  min_price: number;
+  max_price: number;
+  floors?: { floor_label: string; tentative_floor_price: string }[];
+}
+
+interface DashboardLocationPricing {
+  location_id: number;
+  location_name: string;
+  colony_category: string;
+  circle_rate: number | string;
+  plots: DashboardPlotPricing[];
+}
+
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [urgentFollowups, setUrgentFollowups] = useState<UrgentFollowup[]>([]);
   const [smartMatches, setSmartMatches] = useState<SmartMatch[]>([]);
+  const [pricingData, setPricingData] = useState<DashboardLocationPricing[]>([]);
+  const [pricingSearch, setPricingSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [statsData, followupsData, matchesData] = await Promise.all([
+      const [statsData, followupsData, matchesData, pricingRows] = await Promise.all([
         api.getDashboardStats(),
         api.getUrgentFollowups(5).catch(() => []),
         api.getSmartMatches(3).catch(() => []),
+        api.getAllPricing().catch(() => []),
       ]);
       setStats(statsData);
       setUrgentFollowups(followupsData);
       setSmartMatches(matchesData);
+      setPricingData(Array.isArray(pricingRows) ? pricingRows : []);
     } catch (error) {
       console.error('Dashboard fetch error:', error);
     } finally {
@@ -129,6 +150,21 @@ export default function DashboardScreen() {
   }
 
   const funnelTotal = (stats?.new_leads || 0) + (stats?.contacted_leads || 0) + (stats?.qualified_leads || 0) + (stats?.negotiating_leads || 0) + (stats?.won_leads || 0);
+  const filteredPricingRows = pricingData
+    .filter((item) => item.location_name.toLowerCase().includes(pricingSearch.trim().toLowerCase()))
+    .slice(0, 5);
+
+  const getPricingRange = (plots: DashboardPlotPricing[]) => {
+    if (!plots.length) return 'No plots';
+    const min = Math.min(...plots.map((plot) => Number(plot.min_price) || 0).filter((value) => value > 0));
+    const max = Math.max(...plots.map((plot) => Number(plot.max_price) || 0).filter((value) => value > 0));
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return 'Price n/a';
+    return `₹${min} - ${max} CR`;
+  };
+
+  const getFloorCount = (plots: DashboardPlotPricing[]) =>
+    plots.reduce((sum, plot) => sum + (Array.isArray(plot.floors) ? plot.floors.length : 0), 0);
+
   const todayWorkItems = [
     {
       key: 'missed',
@@ -265,6 +301,67 @@ export default function DashboardScreen() {
               <Text style={styles.healthLabel}>Weekly conversions</Text>
               <Text style={styles.healthValue}>{stats?.leads_converted_this_week || 0}</Text>
             </View>
+          </View>
+        </View>
+
+        <View style={styles.pricingWidget}>
+          <View style={styles.pricingWidgetHeader}>
+            <View>
+              <Text style={styles.pricingWidgetTitle}>Plot & Floor Pricing</Text>
+              <Text style={styles.pricingWidgetSubtitle}>Latest location-wise price ranges</Text>
+            </View>
+            <TouchableOpacity style={styles.pricingWidgetAction} onPress={() => router.push('/pricing' as any)}>
+              <Ionicons name="open-outline" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.pricingSearchBox}>
+            <Ionicons name="search" size={17} color={colors.inkMuted} />
+            <TextInput
+              style={styles.pricingSearchInput}
+              value={pricingSearch}
+              onChangeText={setPricingSearch}
+              placeholder="Search location"
+              placeholderTextColor={colors.inkMuted}
+            />
+            {pricingSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setPricingSearch('')}>
+                <Ionicons name="close-circle" size={18} color={colors.inkMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.pricingTable}>
+            <View style={styles.pricingTableHeader}>
+              <Text style={[styles.pricingTableHeadText, styles.pricingLocationCell]}>Location</Text>
+              <Text style={[styles.pricingTableHeadText, styles.pricingPlotsCell]}>Plots</Text>
+              <Text style={[styles.pricingTableHeadText, styles.pricingRangeCell]}>Range</Text>
+            </View>
+            {filteredPricingRows.length > 0 ? (
+              filteredPricingRows.map((item) => (
+                <TouchableOpacity
+                  key={item.location_id}
+                  style={styles.pricingTableRow}
+                  onPress={() => router.push('/pricing' as any)}
+                >
+                  <View style={styles.pricingLocationCell}>
+                    <Text style={styles.pricingLocationName} numberOfLines={1}>{item.location_name}</Text>
+                    <Text style={styles.pricingLocationMeta} numberOfLines={1}>{item.colony_category || 'N/A'} Category</Text>
+                  </View>
+                  <View style={styles.pricingPlotsCell}>
+                    <Text style={styles.pricingPlotCount}>{item.plots.length}</Text>
+                    <Text style={styles.pricingFloorCount}>{getFloorCount(item.plots)} floors</Text>
+                  </View>
+                  <Text style={[styles.pricingRangeValue, styles.pricingRangeCell]} numberOfLines={1}>
+                    {getPricingRange(item.plots)}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={styles.pricingEmptyRow}>
+                <Text style={styles.pricingEmptyText}>No pricing records found</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -623,6 +720,139 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: colors.ink,
+  },
+  pricingWidget: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  pricingWidgetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  pricingWidgetSubtitle: {
+    color: colors.inkMuted,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  pricingWidgetTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  pricingWidgetAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pricingSearchBox: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceMuted,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  pricingSearchInput: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+    paddingVertical: 9,
+  },
+  pricingTable: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    overflow: 'hidden',
+  },
+  pricingTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  pricingTableHeadText: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  pricingTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 58,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  pricingLocationCell: {
+    flex: 1.4,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  pricingPlotsCell: {
+    flex: 0.65,
+    minWidth: 62,
+    paddingRight: 8,
+  },
+  pricingRangeCell: {
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
+  },
+  pricingLocationName: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  pricingLocationMeta: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  pricingPlotCount: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  pricingFloorCount: {
+    color: colors.inkMuted,
+    fontSize: 10,
+    marginTop: 1,
+  },
+  pricingRangeValue: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  pricingEmptyRow: {
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    minHeight: 58,
+    justifyContent: 'center',
+    padding: 12,
+  },
+  pricingEmptyText: {
+    color: colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
   },
   // Urgent Followups Widget
   urgentWidget: {
