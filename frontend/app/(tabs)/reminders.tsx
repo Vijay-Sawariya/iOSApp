@@ -151,7 +151,7 @@ export default function RemindersScreen() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [deletingReminderId, setDeletingReminderId] = useState<number | null>(null);
 
-  const loadReminders = async () => {
+  const loadReminders = useCallback(async () => {
     try {
       const data = await api.getReminders();
       setReminders(Array.isArray(data) ? data : []);
@@ -164,24 +164,34 @@ export default function RemindersScreen() {
           }
           return acc;
         }, {});
+        if (user?.id) {
+          const currentUserId = Number(user.id);
+          userMap[currentUserId] = user.full_name || user.username || `User #${currentUserId}`;
+        }
         setUsersById(userMap);
       } catch (userError) {
         console.error('Failed to load reminder users:', userError);
+        if (user?.id) {
+          const currentUserId = Number(user.id);
+          setUsersById({
+            [currentUserId]: user.full_name || user.username || `User #${currentUserId}`,
+          });
+        }
       }
     } catch (error) {
       console.error('Failed to load reminders:', error);
     }
-  };
+  }, [user?.full_name, user?.id, user?.username]);
 
   useEffect(() => {
     notificationService.requestPermissions();
     loadReminders();
-  }, []);
+  }, [loadReminders]);
 
   useFocusEffect(
     useCallback(() => {
       loadReminders();
-    }, [])
+    }, [loadReminders])
   );
 
   const onRefresh = async () => {

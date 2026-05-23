@@ -500,13 +500,35 @@ export const api = {
   },
 
   getAssignableUsers: async () => {
-    const response = await fetch(`${API_URL}/api/users/assignable`, {
-      headers: getHeaders(),
-    });
-    if (!response.ok) {
-      throw new Error(await getApiErrorMessage(response, 'Failed to fetch users'));
+    const headers = getHeaders();
+    const listEndpoints = [
+      `${API_URL}/api/users/assignable`,
+      `${API_URL}/api/team/members-with-permissions`,
+      `${API_URL}/api/team/members`,
+    ];
+
+    let lastError = 'Failed to fetch users';
+    for (const endpoint of listEndpoints) {
+      try {
+        const response = await fetch(endpoint, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) return data;
+        } else {
+          lastError = await getApiErrorMessage(response, 'Failed to fetch users');
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Failed to fetch users';
+      }
     }
-    return response.json();
+
+    const meResponse = await fetch(`${API_URL}/api/auth/me`, { headers });
+    if (meResponse.ok) {
+      const currentUser = await meResponse.json();
+      return currentUser ? [{ ...currentUser, is_current_user: true }] : [];
+    }
+
+    throw new Error(await getApiErrorMessage(meResponse, lastError));
   },
 
   // WhatsApp
