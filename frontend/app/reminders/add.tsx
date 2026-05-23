@@ -216,27 +216,44 @@ export default function AddReminderScreen() {
       console.log('Saving reminder with IST time:', reminderDateIST);
       const created = await api.createReminder(reminderData);
 
-      // Schedule notification - create the notification time directly
-      // The selectedHour and selectedMinute are already in IST
-      // We need to schedule the notification 10 minutes before
-      await notificationService.scheduleReminderNotificationIST(
-        created.id.toString(),
-        title,
-        `${reminderType} reminder${selectedLead ? ` for ${selectedLead.name}` : ''}`,
-        selectedYear,
-        selectedMonth,
-        selectedDay,
-        selectedHour,
-        selectedMinute,
-        selectedLead?.name
-      );
+      let notificationScheduled = false;
+      try {
+        // Schedule notification - create the notification time directly
+        // The selectedHour and selectedMinute are already in IST
+        // We need to schedule the notification 10 minutes before
+        const notificationId = await notificationService.scheduleReminderNotificationIST(
+          created.id.toString(),
+          title,
+          `${reminderType} reminder${selectedLead ? ` for ${selectedLead.name}` : ''}`,
+          selectedYear,
+          selectedMonth,
+          selectedDay,
+          selectedHour,
+          selectedMinute,
+          selectedLead?.name
+        );
+        notificationScheduled = Boolean(notificationId);
+      } catch (notificationError) {
+        console.warn('Follow-up created, but notification scheduling failed:', notificationError);
+      }
 
-      Alert.alert('Success', 'Follow-up created! You will be notified 10 minutes before.', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
-      ]);
+      Alert.alert(
+        'Success',
+        notificationScheduled
+          ? 'Follow-up created! You will be notified 10 minutes before.'
+          : 'Follow-up created. Enable notifications to receive reminder alerts.',
+        [
+          { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
+        ]
+      );
     } catch (error) {
       console.error('Create error:', error);
-      Alert.alert('Error', 'Failed to create follow-up');
+      Alert.alert(
+        'Error',
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to create follow-up'
+      );
     } finally {
       setLoading(false);
     }
@@ -408,7 +425,7 @@ export default function AddReminderScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.notificationHint}>
-              🔔 You'll be notified 10 minutes before (IST)
+              🔔 You&apos;ll be notified 10 minutes before (IST)
             </Text>
           </View>
 

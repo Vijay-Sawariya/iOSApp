@@ -202,6 +202,15 @@ export default function DashboardScreen() {
       bg: colors.primarySoft,
       route: smartMatches[0] ? `/leads/${smartMatches[0].inventory_id}` : '/inventory',
     },
+    {
+      key: 'pricing',
+      title: 'Plot pricing',
+      count: '₹',
+      icon: 'calculator',
+      color: '#A16207',
+      bg: '#FFFBEB',
+      route: '/pricing',
+    },
   ];
 
   return (
@@ -495,6 +504,10 @@ export default function DashboardScreen() {
             <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/inventory' as any)}>
               <Ionicons name="home" size={24} color="#F59E0B" />
               <Text style={styles.actionText}>View Inventory</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/pricing' as any)}>
+              <Ionicons name="calculator" size={24} color="#A16207" />
+              <Text style={styles.actionText}>Plot Pricing</Text>
             </TouchableOpacity>
           </View>
         </View>

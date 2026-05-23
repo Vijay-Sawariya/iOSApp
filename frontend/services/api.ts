@@ -61,6 +61,23 @@ const getHeaders = () => {
   };
 };
 
+const getApiErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === 'string') return data.detail;
+    if (Array.isArray(data?.detail)) {
+      return data.detail
+        .map((item: any) => item?.msg || item?.message || JSON.stringify(item))
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof data?.message === 'string') return data.message;
+    if (typeof data?.error === 'string') return data.error;
+  } catch {}
+
+  return `${fallback} (status ${response.status})`;
+};
+
 // Helper function to fetch with stale-while-revalidate cache behavior
 const fetchWithCache = async <T>(
   url: string,
@@ -439,7 +456,9 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to create reminder');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to create reminder'));
+    }
     await invalidateReminderCaches();
     return response.json();
   },
@@ -455,7 +474,9 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update reminder');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to update reminder'));
+    }
     await invalidateReminderCaches();
     return response.json();
   },
@@ -470,7 +491,9 @@ export const api = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (!response.ok && response.status !== 404) throw new Error('Failed to delete reminder');
+    if (!response.ok && response.status !== 404) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to delete reminder'));
+    }
     await invalidateReminderCaches();
     if (response.status === 404) return { message: 'Reminder already deleted' };
     return response.json();
@@ -539,7 +562,9 @@ export const api = {
     const response = await fetch(`${API_URL}/api/pricing`, {
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to fetch pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch pricing'));
+    }
     return response.json();
   },
 
@@ -547,7 +572,9 @@ export const api = {
     const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to fetch pricing details');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch pricing details'));
+    }
     return response.json();
   },
 
@@ -566,7 +593,9 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to create pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to create pricing'));
+    }
     return response.json();
   },
 
@@ -576,7 +605,9 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to update pricing'));
+    }
     return response.json();
   },
 
@@ -585,7 +616,9 @@ export const api = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to delete pricing'));
+    }
     return response.json();
   },
 

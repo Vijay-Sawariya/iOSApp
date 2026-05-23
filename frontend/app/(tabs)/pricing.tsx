@@ -17,7 +17,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../services/api';
-import { LOCATIONS, LOCATION_COUNT } from '../../constants/leadOptions';
 
 interface FloorPrice {
   id?: number;
@@ -54,10 +53,9 @@ const FLOOR_OPTIONS = [
   'BMT + GF',
   'FF',
   'SF',
-  'TF',
-  'TF + Terr',
+  'TF+Terr',
   '4F',
-  '4F + Terr',
+  '4F+Terr',
   'Terrace',
 ];
 
@@ -68,12 +66,12 @@ export default function PricingScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedLocations, setExpandedLocations] = useState<Set<string>>(new Set());
+  const [expandedPlots, setExpandedPlots] = useState<Set<number>>(new Set());
   
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingPlot, setEditingPlot] = useState<PlotPricing | null>(null);
-  const [editingLocationId, setEditingLocationId] = useState<number>(0);
   
   // Form states
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
@@ -93,9 +91,16 @@ export default function PricingScreen() {
       ]);
       setPricingData(pricing);
       setLocations(locs);
+      setExpandedLocations(prev => {
+        if (prev.size > 0) return prev;
+        return new Set(pricing.map((item: LocationPricing) => item.location_name));
+      });
     } catch (error) {
       console.error('Failed to load pricing data:', error);
-      Alert.alert('Error', 'Failed to load pricing data');
+      Alert.alert(
+        'Error',
+        error instanceof Error && error.message ? error.message : 'Failed to load pricing data'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -123,8 +128,43 @@ export default function PricingScreen() {
     });
   };
 
-  const filteredData = pricingData.filter(loc =>
-    loc.location_name.toLowerCase().includes(searchQuery.toLowerCase())
+  const togglePlotFloors = (plotId: number) => {
+    setExpandedPlots(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(plotId)) {
+        newSet.delete(plotId);
+      } else {
+        newSet.add(plotId);
+      }
+      return newSet;
+    });
+  };
+
+  const filteredData = pricingData.filter(loc => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+
+    return (
+      loc.location_name.toLowerCase().includes(query) ||
+      (loc.colony_category || '').toLowerCase().includes(query) ||
+      String(loc.circle_rate || '').toLowerCase().includes(query) ||
+      loc.plots.some(plot =>
+        String(plot.plot_size).includes(query) ||
+        String(plot.price_per_sq_yard || '').toLowerCase().includes(query) ||
+        String(plot.min_price || '').includes(query) ||
+        String(plot.max_price || '').includes(query) ||
+        plot.floors.some(floor =>
+          floor.floor_label.toLowerCase().includes(query) ||
+          String(floor.tentative_floor_price || '').toLowerCase().includes(query)
+        )
+      )
+    );
+  });
+
+  const plotCount = filteredData.reduce((sum, loc) => sum + loc.plots.length, 0);
+  const floorCount = filteredData.reduce(
+    (sum, loc) => sum + loc.plots.reduce((plotSum, plot) => plotSum + plot.floors.length, 0),
+    0
   );
 
   const resetForm = () => {
@@ -188,7 +228,10 @@ export default function PricingScreen() {
       loadData();
     } catch (error) {
       console.error('Save error:', error);
-      Alert.alert('Error', 'Failed to save pricing');
+      Alert.alert(
+        'Error',
+        error instanceof Error && error.message ? error.message : 'Failed to save pricing'
+      );
     } finally {
       setSaving(false);
     }
@@ -198,7 +241,6 @@ export default function PricingScreen() {
     const location = locations.find(l => l.id === locationId);
     setSelectedLocation(location || null);
     setEditingPlot(plot);
-    setEditingLocationId(locationId);
     setPlotSize(plot.plot_size.toString());
     setPricePerSqYard(plot.price_per_sq_yard);
     setMinPrice(plot.min_price.toString());
@@ -221,7 +263,10 @@ export default function PricingScreen() {
               await api.deletePricing(plotId);
               loadData();
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete pricing');
+              Alert.alert(
+                'Error',
+                error instanceof Error && error.message ? error.message : 'Failed to delete pricing'
+              );
             }
           },
         },
@@ -229,24 +274,40 @@ export default function PricingScreen() {
     );
   };
 
-  const formatCircleRate = (rate: number | string) => {
-    const numRate = typeof rate === 'string' ? parseInt(rate) : rate;
-    if (numRate >= 100000) {
-      return `${(numRate / 100000).toFixed(2)} L`;
-    }
-    return numRate?.toLocaleString('en-IN') || 'N/A';
+  const formatIndianNumber = (value: number | string) => {
+    const numeric = typeof value === 'string' ? Number(value.replace(/[^\d.]/g, '')) : Number(value);
+    if (!Number.isFinite(numeric)) return String(value || 'N/A');
+    return numeric.toLocaleString('en-IN');
   };
 
-  const renderPlotCard = (plot: PlotPricing, locationId: number) => (
+  const formatCircleRate = (rate: number | string) => {
+    const numRate = typeof rate === 'string' ? Number(rate.replace(/[^\d.]/g, '')) : rate;
+    if (numRate >= 100000) {
+      const lakhValue = Number((numRate / 100000).toFixed(1));
+      return `₹${formatIndianNumber(numRate)}/sq mtr aprx ${lakhValue} L`;
+    }
+    return numRate ? `₹${formatIndianNumber(numRate)}/sq mtr` : 'N/A';
+  };
+
+  const renderPlotCard = (plot: PlotPricing, locationId: number) => {
+    const floorsExpanded = expandedPlots.has(plot.id);
+
+    return (
     <View key={plot.id} style={styles.plotCard}>
       <View style={styles.plotHeader}>
         <View style={styles.plotSizeContainer}>
-          <Ionicons name="resize-outline" size={16} color="#6B7280" />
+          <Ionicons name="scan-outline" size={16} color="#B7791F" />
           <Text style={styles.plotSize}>{plot.plot_size} sq yds</Text>
         </View>
         <View style={styles.plotActions}>
+          <TouchableOpacity
+            onPress={() => togglePlotFloors(plot.id)}
+            style={[styles.actionBtn, floorsExpanded && styles.actionBtnActive]}
+          >
+            <Ionicons name="list" size={18} color={floorsExpanded ? '#fff' : '#0F2A44'} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => handleEdit(plot, locationId)} style={styles.actionBtn}>
-            <Ionicons name="pencil" size={18} color="#3B82F6" />
+            <Ionicons name="create-outline" size={18} color="#0F2A44" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handleDelete(plot.id)} style={styles.actionBtn}>
             <Ionicons name="trash" size={18} color="#EF4444" />
@@ -255,31 +316,30 @@ export default function PricingScreen() {
       </View>
       
       <View style={styles.plotDetails}>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Price/Sq Yd:</Text>
-          <Text style={styles.detailValue}>{plot.price_per_sq_yard} Lac</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Price Range:</Text>
-          <Text style={styles.detailValue}>{plot.min_price} - {plot.max_price} Cr</Text>
-        </View>
+        <Text style={styles.priceRange}>₹{plot.min_price} - {plot.max_price} CR</Text>
+        <Text style={styles.plotRate}>Plot price: ₹{plot.price_per_sq_yard} lac per sq yard</Text>
       </View>
 
-      {plot.floors.length > 0 && (
+      {floorsExpanded && (
         <View style={styles.floorsContainer}>
-          <Text style={styles.floorsTitle}>Floor-wise Pricing (Cr)</Text>
-          <View style={styles.floorsGrid}>
-            {plot.floors.map((floor, idx) => (
+          {plot.floors.length > 0 ? (
+            plot.floors.map((floor, idx) => (
               <View key={idx} style={styles.floorItem}>
-                <Text style={styles.floorLabel}>{floor.floor_label}</Text>
-                <Text style={styles.floorPrice}>{floor.tentative_floor_price}</Text>
+                <View style={styles.floorLabelGroup}>
+                  <Ionicons name="home" size={16} color="#6B7280" />
+                  <Text style={styles.floorLabel}>{floor.floor_label}</Text>
+                </View>
+                <Text style={styles.floorPrice}>₹{floor.tentative_floor_price} CR</Text>
               </View>
-            ))}
-          </View>
+            ))
+          ) : (
+            <Text style={styles.emptyFloorText}>No specific floor pricing added.</Text>
+          )}
         </View>
       )}
     </View>
-  );
+    );
+  };
 
   const renderLocationCard = ({ item }: { item: LocationPricing }) => {
     const isExpanded = expandedLocations.has(item.location_name);
@@ -297,7 +357,7 @@ export default function PricingScreen() {
                 <Text style={styles.categoryText}>{item.colony_category || 'N/A'}</Text>
               </View>
               <Text style={styles.circleRate}>
-                Circle Rate: Rs. {formatCircleRate(item.circle_rate)} /sq mtr
+                Circle Rate: {formatCircleRate(item.circle_rate)}
               </Text>
             </View>
           </View>
@@ -339,7 +399,11 @@ export default function PricingScreen() {
             </Text>
             <TouchableOpacity
               onPress={() => {
-                isEdit ? setShowEditModal(false) : setShowAddModal(false);
+                if (isEdit) {
+                  setShowEditModal(false);
+                } else {
+                  setShowAddModal(false);
+                }
                 resetForm();
                 setEditingPlot(null);
               }}
@@ -531,7 +595,10 @@ export default function PricingScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Tentative Pricing</Text>
+        <View>
+          <Text style={styles.headerEyebrow}>Location Pricing</Text>
+          <Text style={styles.title}>Plot & Floor Pricing</Text>
+        </View>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => {
@@ -550,7 +617,7 @@ export default function PricingScreen() {
           style={styles.searchInput}
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search by location..."
+          placeholder="Search location, category, plot, or floor..."
           placeholderTextColor="#9CA3AF"
         />
         {searchQuery.length > 0 && (
@@ -569,9 +636,14 @@ export default function PricingScreen() {
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
           <Text style={styles.statValue}>
-            {filteredData.reduce((sum, loc) => sum + loc.plots.length, 0)}
+            {plotCount}
           </Text>
           <Text style={styles.statLabel}>Plot Entries</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{floorCount}</Text>
+          <Text style={styles.statLabel}>Floor Prices</Text>
         </View>
       </View>
 
@@ -637,9 +709,17 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#071B33',
+  },
+  headerEyebrow: {
+    color: '#A16207',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 2,
+    textTransform: 'uppercase',
   },
   addButton: {
     backgroundColor: '#3B82F6',
@@ -679,12 +759,12 @@ const styles = StyleSheet.create({
   },
   statItem: {
     alignItems: 'center',
-    paddingHorizontal: 24,
+    flex: 1,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#3B82F6',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#17324D',
   },
   statLabel: {
     fontSize: 12,
@@ -735,16 +815,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   categoryBadge: {
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#DDE7F2',
+    borderRadius: 999,
+    borderWidth: 1,
     marginRight: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   categoryText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2563EB',
+    color: '#17324D',
   },
   circleRate: {
     fontSize: 12,
@@ -755,7 +837,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   plotCountBadge: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#17324D',
     width: 24,
     height: 24,
     borderRadius: 12,
@@ -772,12 +854,12 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   plotCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 10,
     padding: 12,
-    marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#DDE7F2',
   },
   plotHeader: {
     flexDirection: 'row',
@@ -788,22 +870,44 @@ const styles = StyleSheet.create({
   plotSizeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#DDE7F2',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   plotSize: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontWeight: '800',
+    color: '#071B33',
     marginLeft: 6,
   },
   plotActions: {
     flexDirection: 'row',
   },
   actionBtn: {
-    padding: 6,
+    alignItems: 'center',
+    backgroundColor: '#EEF3F8',
+    borderColor: '#DDE7F2',
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
     marginLeft: 8,
+    width: 36,
+  },
+  actionBtnActive: {
+    backgroundColor: '#17324D',
+    borderColor: '#17324D',
   },
   plotDetails: {
-    marginBottom: 8,
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2EAF4',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+    padding: 12,
   },
   detailRow: {
     flexDirection: 'row',
@@ -819,40 +923,69 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#1F2937',
   },
-  floorsContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+  priceRange: {
+    color: '#071B33',
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 4,
   },
-  floorsTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  floorsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  floorItem: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginRight: 8,
-    marginBottom: 6,
-    alignItems: 'center',
-  },
-  floorLabel: {
-    fontSize: 11,
-    color: '#6366F1',
-    fontWeight: '500',
-  },
-  floorPrice: {
+  plotRate: {
+    color: '#526175',
     fontSize: 14,
     fontWeight: '700',
-    color: '#4338CA',
+  },
+  floorsContainer: {
+    backgroundColor: '#F6F9FC',
+    borderTopColor: '#DDE7F2',
+    borderTopWidth: 1,
+    marginHorizontal: -12,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  floorItem: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#E2EAF4',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  floorLabelGroup: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flex: 1,
+    minWidth: 0,
+  },
+  floorLabel: {
+    color: '#445572',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    marginLeft: 8,
+  },
+  floorPrice: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E5ECF5',
+    borderRadius: 999,
+    borderWidth: 1,
+    color: '#071B33',
+    fontSize: 14,
+    fontWeight: '900',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  emptyFloorText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '700',
+    paddingBottom: 10,
+    textAlign: 'center',
   },
   emptyContainer: {
     alignItems: 'center',
