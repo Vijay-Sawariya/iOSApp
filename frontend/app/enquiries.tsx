@@ -122,44 +122,54 @@ export default function EnquiriesScreen() {
           </View>
         ) : (
           filteredItems.map((item) => (
-            <View key={item.id} style={styles.card}>
-              <View style={styles.cardTop}>
-                <View style={styles.cardCopy}>
-                  <Text style={styles.cardTitle}>{item.name || 'Legacy inventory'}</Text>
-                  <Text style={styles.cardMeta}>{item.location || 'Location n/a'} · {item.property_type || item.bhk || 'Type n/a'}</Text>
-                </View>
-                <View style={[styles.badge, item.legacy_category === 'floor' && styles.floorBadge]}>
-                  <Text style={[styles.badgeText, item.legacy_category === 'floor' && styles.floorBadgeText]}>
-                    {item.legacy_category === 'floor' ? 'Floor' : 'Kothi'}
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.notes} numberOfLines={3}>{item.notes || 'No message captured yet'}</Text>
-              <View style={styles.metaGrid}>
-                <Text style={styles.metaPill}>{item.status || 'Pending'}</Text>
-                {item.budget_max || item.budget_min ? <Text style={styles.metaPill}>₹{item.budget_max || item.budget_min} {item.unit || 'Cr'}</Text> : null}
-                {item.floor ? <Text style={styles.metaPill}>{item.floor}</Text> : null}
-              </View>
-              <View style={styles.actions}>
-                <TouchableOpacity style={styles.iconAction} onPress={() => callPhone(item.phone)} disabled={!item.phone}>
-                  <Ionicons name="call" size={17} color={item.phone ? colors.accent : colors.inkSubtle} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.iconAction} onPress={() => openWhatsApp(item.phone, item.name)} disabled={!item.phone}>
-                  <Ionicons name="logo-whatsapp" size={17} color={item.phone ? '#25D366' : colors.inkSubtle} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.convertButton}
-                  onPress={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(item.phone || '')}` as any)}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color={colors.white} />
-                  <Text style={styles.convertButtonText}>Add Inventory</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <LegacyInventoryCard key={`${item.legacy_source || 'legacy'}-${item.id}`} item={item} />
           ))
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function LegacyInventoryCard({ item }: { item: any }) {
+  const canViewSensitive = item.can_view_sensitive !== false;
+  const hasCallablePhone = canViewSensitive && !!item.phone;
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <View style={styles.cardCopy}>
+          <Text style={styles.cardTitle}>{item.name || 'Legacy inventory'}</Text>
+          <Text style={styles.cardMeta}>{item.location || 'Location n/a'} · {item.property_type || item.bhk || 'Type n/a'}</Text>
+        </View>
+        <View style={[styles.badge, item.legacy_category === 'floor' && styles.floorBadge]}>
+          <Text style={[styles.badgeText, item.legacy_category === 'floor' && styles.floorBadgeText]}>
+            {item.legacy_category === 'floor' ? 'Floor' : 'Kothi'}
+          </Text>
+        </View>
+      </View>
+      {item.phone ? <Text style={styles.phoneText}>{item.phone}</Text> : null}
+      {item.address ? <Text style={styles.addressText} numberOfLines={1}>{item.address}</Text> : null}
+      <Text style={styles.notes} numberOfLines={3}>{item.notes || 'No message captured yet'}</Text>
+      <View style={styles.metaGrid}>
+        <Text style={styles.metaPill}>{item.status || 'Pending'}</Text>
+        {item.budget_max || item.budget_min ? <Text style={styles.metaPill}>₹{item.budget_max || item.budget_min} {item.unit || 'Cr'}</Text> : null}
+        {item.floor ? <Text style={styles.metaPill}>{item.floor}</Text> : null}
+      </View>
+      <View style={styles.actions}>
+        <TouchableOpacity style={[styles.iconAction, !hasCallablePhone && styles.disabledAction]} onPress={() => callPhone(item.phone)} disabled={!hasCallablePhone}>
+          <Ionicons name="call" size={17} color={hasCallablePhone ? colors.accent : colors.inkSubtle} />
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.iconAction, !hasCallablePhone && styles.disabledAction]} onPress={() => openWhatsApp(item.phone, item.name)} disabled={!hasCallablePhone}>
+          <Ionicons name="logo-whatsapp" size={17} color={hasCallablePhone ? '#25D366' : colors.inkSubtle} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.convertButton}
+          onPress={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(canViewSensitive ? item.phone || '' : '')}` as any)}
+        >
+          <Ionicons name="add-circle-outline" size={16} color={colors.white} />
+          <Text style={styles.convertButtonText}>Add Inventory</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -250,6 +260,8 @@ const styles = StyleSheet.create({
   badgeText: { color: colors.accent, fontSize: 11, fontWeight: '800' },
   floorBadge: { backgroundColor: colors.primarySoft },
   floorBadgeText: { color: colors.primary },
+  phoneText: { fontSize: 13, fontWeight: '800', color: colors.ink, marginTop: 10 },
+  addressText: { fontSize: 12, color: colors.inkMuted, marginTop: 4 },
   notes: { fontSize: 13, color: colors.inkMuted, marginTop: 10, lineHeight: 19 },
   metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
   metaPill: {
@@ -270,6 +282,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted,
   },
+  disabledAction: { opacity: 0.55 },
   convertButton: {
     minHeight: 34,
     paddingHorizontal: 12,

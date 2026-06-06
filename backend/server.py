@@ -3619,7 +3619,7 @@ def _legacy_kothi_select() -> str:
         FROM kothis_details k
     """
 
-def _normalize_legacy_inventory_rows(rows: List[dict]) -> List[dict]:
+def _normalize_legacy_inventory_rows(rows: List[dict], user_role: str, user_id: int) -> List[dict]:
     result = []
     for row in rows:
         item = dict(row)
@@ -3627,6 +3627,13 @@ def _normalize_legacy_inventory_rows(rows: List[dict]) -> List[dict]:
             item["created_at"] = item["created_at"].isoformat()
         if item.get("last_message_sent_on"):
             item["last_message_sent_on"] = item["last_message_sent_on"].isoformat()
+        can_view_sensitive = not should_mask_data(user_role, user_id, None)
+        item["can_view_sensitive"] = can_view_sensitive
+        if not can_view_sensitive:
+            if item.get("phone"):
+                item["phone"] = mask_phone(str(item["phone"]))
+            if item.get("address"):
+                item["address"] = mask_address(str(item["address"]))
         result.append(item)
     return result
 
@@ -3756,6 +3763,8 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
     """Legacy inventory records using the same sources as kothis.php and legacy_leads.php."""
     safe_limit = max(1, min(limit, 300))
     safe_category = category if category in ("kothi", "floor") else "all"
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
     with get_db() as conn:
         cursor = conn.cursor()
         if not _table_exists(cursor, "kothis_details") and not _table_exists(cursor, "enquiries"):
@@ -3791,7 +3800,7 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
             rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         return {
-            "items": _normalize_legacy_inventory_rows(rows),
+            "items": _normalize_legacy_inventory_rows(rows, user_role, user_id),
             "table": "kothis_details,enquiries",
             "category": safe_category,
             "total": kothi_count + floor_count,
