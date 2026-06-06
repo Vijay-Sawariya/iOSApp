@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
@@ -71,6 +72,7 @@ export default function InventoryLeadsScreen() {
   const { isOnline } = useOffline();
   const { user } = useAuth();  // Get current user for permission checks
   const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
+  const [inventoryFileCounts, setInventoryFileCounts] = useState<Record<number, { images: number; pdfs: number }>>({});
   
   // Filter states
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -520,6 +522,14 @@ export default function InventoryLeadsScreen() {
     } as any);
   };
 
+  const updateInventoryFileCounts = useCallback((leadId: number, count: { images: number; pdfs: number }) => {
+    setInventoryFileCounts((prev) => {
+      const existing = prev[leadId];
+      if (existing?.images === count.images && existing?.pdfs === count.pdfs) return prev;
+      return { ...prev, [leadId]: count };
+    });
+  }, []);
+
   const sanitizeFileName = (name: string) =>
     name.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').trim() || `image_${Date.now()}.jpg`;
 
@@ -572,20 +582,34 @@ export default function InventoryLeadsScreen() {
     return downloadedUris;
   };
 
+  const saveImagesToDevicePhotos = async (uris: string[]) => {
+    if (Platform.OS === 'web') return;
+
+    const permission = await MediaLibrary.requestPermissionsAsync(true);
+    if (!permission.granted) {
+      throw new Error('Photo library permission is required to save images.');
+    }
+
+    for (const uri of uris) {
+      await MediaLibrary.saveToLibraryAsync(uri);
+    }
+  };
+
   const handleDownloadImages = async (lead: Lead) => {
     setImageAction({ leadId: lead.id, type: 'download' });
     try {
       const uris = await downloadInventoryImages(lead);
       if (uris.length === 0) return;
+      await saveImagesToDevicePhotos(uris);
       Alert.alert(
-        'Images Downloaded',
+        'Images Saved',
         Platform.OS === 'web'
           ? `${uris.length} image${uris.length === 1 ? '' : 's'} downloaded.`
-          : `${uris.length} image${uris.length === 1 ? '' : 's'} saved inside the app files for this inventory.`
+          : `${uris.length} image${uris.length === 1 ? '' : 's'} saved to Photos.`
       );
     } catch (error: any) {
       console.error('Download images error:', error);
-      Alert.alert('Download Failed', error?.message || 'Could not download inventory images.');
+      Alert.alert('Save Failed', error?.message || 'Could not save inventory images.');
     } finally {
       setImageAction(null);
     }
@@ -701,6 +725,8 @@ export default function InventoryLeadsScreen() {
     const isDownloadingImages = imageAction?.leadId === item.id && imageAction.type === 'download';
     const isSharingImages = imageAction?.leadId === item.id && imageAction.type === 'share';
     const imageActionInProgress = imageAction?.leadId === item.id;
+    const imageCount = inventoryFileCounts[item.id]?.images || 0;
+    const hasImages = imageCount > 0;
 
     return (
       <View style={styles.leadCard}>
@@ -877,19 +903,23 @@ export default function InventoryLeadsScreen() {
             <Ionicons name="alarm-outline" size={15} color="#F59E0B" />
             <Text style={[styles.actionText, { color: '#F59E0B' }]}>Remind</Text>
           </TouchableOpacity>
-          <View style={styles.actionDivider} />
-          <TouchableOpacity
-            style={[styles.actionButton, isDownloadingImages && styles.actionButtonDisabled]}
-            onPress={() => handleDownloadImages(item)}
-            disabled={imageActionInProgress}
-          >
-            {isDownloadingImages ? (
-              <ActivityIndicator size="small" color="#2563EB" />
-            ) : (
-              <Ionicons name="images-outline" size={15} color="#2563EB" />
-            )}
-            <Text style={[styles.actionText, { color: '#2563EB' }]}>Images</Text>
-          </TouchableOpacity>
+          {hasImages && (
+            <>
+              <View style={styles.actionDivider} />
+              <TouchableOpacity
+                style={[styles.actionButton, isDownloadingImages && styles.actionButtonDisabled]}
+                onPress={() => handleDownloadImages(item)}
+                disabled={imageActionInProgress}
+              >
+                {isDownloadingImages ? (
+                  <ActivityIndicator size="small" color="#2563EB" />
+                ) : (
+                  <Ionicons name="images-outline" size={15} color="#2563EB" />
+                )}
+                <Text style={[styles.actionText, { color: '#2563EB' }]}>Images</Text>
+              </TouchableOpacity>
+            </>
+          )}
           <View style={styles.actionDivider} />
           <TouchableOpacity
             style={[styles.actionButton, isSharingImages && styles.actionButtonDisabled]}
@@ -927,7 +957,11 @@ export default function InventoryLeadsScreen() {
 
         {/* File Upload Row */}
         <View style={styles.fileUploadRow}>
-          <InventoryFileUpload leadId={item.id} compact />
+          <InventoryFileUpload
+            leadId={item.id}
+            compact
+            onFilesChange={(count) => updateInventoryFileCounts(item.id, count)}
+          />
         </View>
       </View>
     );
@@ -1737,17 +1771,19 @@ export default function InventoryLeadsScreen() {
               <Ionicons name="document-text-outline" size={20} color="#2563EB" />
               <Text style={styles.shareMenuItemText}>Property Info</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.shareMenuItem}
-              onPress={() => {
-                const leadToShare = shareMenuLead;
-                setShareMenuLead(null);
-                if (leadToShare) handleShareImages(leadToShare);
-              }}
-            >
-              <Ionicons name="images-outline" size={20} color="#15803D" />
-              <Text style={styles.shareMenuItemText}>Images</Text>
-            </TouchableOpacity>
+            {shareMenuLead && (inventoryFileCounts[shareMenuLead.id]?.images || 0) > 0 && (
+              <TouchableOpacity
+                style={styles.shareMenuItem}
+                onPress={() => {
+                  const leadToShare = shareMenuLead;
+                  setShareMenuLead(null);
+                  if (leadToShare) handleShareImages(leadToShare);
+                }}
+              >
+                <Ionicons name="images-outline" size={20} color="#15803D" />
+                <Text style={styles.shareMenuItemText}>Images</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>

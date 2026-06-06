@@ -53,6 +53,8 @@
 	<string>Get property location for Google Maps</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Upload property images</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save property images to Photos</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

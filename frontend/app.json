@@ -20,6 +20,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Take photos of properties",
         "NSPhotoLibraryUsageDescription": "Upload property images",
+        "NSPhotoLibraryAddUsageDescription": "Save property images to Photos",
         "NSLocationWhenInUseUsageDescription": "Get property location for Google Maps",
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -34,6 +35,7 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.ACCESS_FINE_LOCATION",
@@ -55,6 +57,13 @@
         {
           "photosPermission": "Upload property images",
           "cameraPermission": "Take photos of properties"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Upload property images",
+          "savePhotosPermission": "Save property images to Photos"
         }
       ],
       "expo-document-picker",
