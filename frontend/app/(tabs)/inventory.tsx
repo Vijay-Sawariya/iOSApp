@@ -13,8 +13,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
@@ -49,14 +52,25 @@ const TYPE_OPTIONS = [
   { label: 'Rent', value: 'landlord' },
 ];
 
+const GODADDY_BASE_URL = 'https://sagarhomelms.com';
+const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
+
+type InventoryImageFile = {
+  filename?: string;
+  url: string;
+  size?: number;
+};
+
 export default function InventoryLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [imageAction, setImageAction] = useState<{ leadId: number; type: 'download' | 'share' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const { isOnline } = useOffline();
   const { user } = useAuth();  // Get current user for permission checks
+  const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
   
   // Filter states
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -506,6 +520,147 @@ export default function InventoryLeadsScreen() {
     } as any);
   };
 
+  const sanitizeFileName = (name: string) =>
+    name.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').trim() || `image_${Date.now()}.jpg`;
+
+  const getInventoryImages = async (leadId: number): Promise<InventoryImageFile[]> => {
+    const response = await fetch(
+      `${GODADDY_BASE_URL}/mobile_get_files.php?lead_id=${leadId}&api_key=${GODADDY_API_KEY}`
+    );
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.message || 'Failed to load inventory images');
+    }
+    return Array.isArray(data?.data?.images) ? data.data.images.filter((img: any) => !!img?.url) : [];
+  };
+
+  const downloadInventoryImages = async (lead: Lead): Promise<string[]> => {
+    const images = await getInventoryImages(lead.id);
+    if (images.length === 0) {
+      Alert.alert('No Images', 'No images are uploaded for this inventory.');
+      return [];
+    }
+
+    if (Platform.OS === 'web') {
+      const webWindow = globalThis as any;
+      images.forEach((image, index) => {
+        const anchor = webWindow.document?.createElement('a');
+        if (!anchor) return;
+        anchor.href = image.url;
+        anchor.download = sanitizeFileName(image.filename || `${lead.name || 'inventory'}_${index + 1}.jpg`);
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        webWindow.document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      });
+      return images.map((image) => image.url);
+    }
+
+    const leadDir = `${FileSystem.documentDirectory}inventory_${lead.id}/`;
+    await FileSystem.makeDirectoryAsync(leadDir, { intermediates: true });
+
+    const downloadedUris: string[] = [];
+    for (let index = 0; index < images.length; index += 1) {
+      const image = images[index];
+      const fileName = sanitizeFileName(image.filename || `${lead.name || 'inventory'}_${index + 1}.jpg`);
+      const destination = `${leadDir}${fileName}`;
+      const downloaded = await FileSystem.downloadAsync(image.url, destination);
+      downloadedUris.push(downloaded.uri);
+    }
+
+    return downloadedUris;
+  };
+
+  const handleDownloadImages = async (lead: Lead) => {
+    setImageAction({ leadId: lead.id, type: 'download' });
+    try {
+      const uris = await downloadInventoryImages(lead);
+      if (uris.length === 0) return;
+      Alert.alert(
+        'Images Downloaded',
+        Platform.OS === 'web'
+          ? `${uris.length} image${uris.length === 1 ? '' : 's'} downloaded.`
+          : `${uris.length} image${uris.length === 1 ? '' : 's'} saved inside the app files for this inventory.`
+      );
+    } catch (error: any) {
+      console.error('Download images error:', error);
+      Alert.alert('Download Failed', error?.message || 'Could not download inventory images.');
+    } finally {
+      setImageAction(null);
+    }
+  };
+
+  const shareDownloadedImages = async (uris: string[]) => {
+    if (Platform.OS === 'web') {
+      await Linking.openURL('https://web.whatsapp.com/');
+      Alert.alert('Images Ready', 'The images have downloaded. Attach them in WhatsApp Web from your downloads.');
+      return;
+    }
+
+    if (!(await Sharing.isAvailableAsync())) {
+      Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
+      return;
+    }
+
+    for (let index = 0; index < uris.length; index += 1) {
+      await Sharing.shareAsync(uris[index], {
+        mimeType: 'image/jpeg',
+        UTI: 'public.image',
+        dialogTitle: `Share image ${index + 1} of ${uris.length}`,
+      });
+    }
+  };
+
+  const handleShareImages = async (lead: Lead) => {
+    setImageAction({ leadId: lead.id, type: 'share' });
+    try {
+      const uris = await downloadInventoryImages(lead);
+      if (uris.length === 0) return;
+      await shareDownloadedImages(uris);
+    } catch (error: any) {
+      console.error('Share images error:', error);
+      Alert.alert('Share Failed', error?.message || 'Could not share inventory images.');
+    } finally {
+      setImageAction(null);
+    }
+  };
+
+  const composePropertyInfoMessage = (lead: Lead) => {
+    const lines = [
+      `Property: ${lead.name || 'Inventory'}`,
+      lead.lead_type ? `Type: ${getLeadTypeDisplay(lead.lead_type)}` : null,
+      lead.location ? `Location: ${lead.location}` : null,
+      lead.address ? `Address: ${lead.address}` : null,
+      lead.floor ? `Floor: ${lead.floor}` : null,
+      lead.bhk ? `BHK: ${lead.bhk}` : null,
+      lead.area_size ? `Area: ${lead.area_size} sq.yds` : null,
+      lead.building_facing ? `Facing: ${lead.building_facing}` : null,
+      lead.lead_status ? `Status: ${lead.lead_status}` : null,
+      formatFloorPricing(lead.floor_pricing, lead.unit) ? `Pricing: ${formatFloorPricing(lead.floor_pricing, lead.unit)}` : null,
+      lead.Property_locationUrl ? `Map: ${lead.Property_locationUrl}` : null,
+    ].filter(Boolean);
+
+    return lines.join('\n');
+  };
+
+  const handleSharePropertyInfo = async (lead: Lead) => {
+    try {
+      const encodedMessage = encodeURIComponent(composePropertyInfoMessage(lead));
+      const whatsappUrl = Platform.OS === 'web'
+        ? `https://web.whatsapp.com/send?text=${encodedMessage}`
+        : `https://wa.me/?text=${encodedMessage}`;
+      await Linking.openURL(whatsappUrl);
+    } catch (error: any) {
+      console.error('Share property info error:', error);
+      Alert.alert('Share Failed', error?.message || 'Could not share property info.');
+    }
+  };
+
+  const handleShareMenu = (lead: Lead) => {
+    setShareMenuLead(lead);
+  };
+
   const getLeadTypeDisplay = (type: string | null) => {
     switch (type) {
       case 'seller': return 'Sell';
@@ -543,6 +698,9 @@ export default function InventoryLeadsScreen() {
 
     // Get aging info
     const agingStyles = getAgingStyles(item.aging_color);
+    const isDownloadingImages = imageAction?.leadId === item.id && imageAction.type === 'download';
+    const isSharingImages = imageAction?.leadId === item.id && imageAction.type === 'share';
+    const imageActionInProgress = imageAction?.leadId === item.id;
 
     return (
       <View style={styles.leadCard}>
@@ -708,7 +866,7 @@ export default function InventoryLeadsScreen() {
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
           >
-            <Ionicons name="people-outline" size={18} color="#2563EB" />
+            <Ionicons name="people-outline" size={15} color="#2563EB" />
             <Text style={[styles.actionText, { color: '#2563EB' }]}>Clients</Text>
           </TouchableOpacity>
           <View style={styles.actionDivider} />
@@ -716,8 +874,34 @@ export default function InventoryLeadsScreen() {
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
           >
-            <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
-            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
+            <Ionicons name="alarm-outline" size={15} color="#F59E0B" />
+            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Remind</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
+          <TouchableOpacity
+            style={[styles.actionButton, isDownloadingImages && styles.actionButtonDisabled]}
+            onPress={() => handleDownloadImages(item)}
+            disabled={imageActionInProgress}
+          >
+            {isDownloadingImages ? (
+              <ActivityIndicator size="small" color="#2563EB" />
+            ) : (
+              <Ionicons name="images-outline" size={15} color="#2563EB" />
+            )}
+            <Text style={[styles.actionText, { color: '#2563EB' }]}>Images</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
+          <TouchableOpacity
+            style={[styles.actionButton, isSharingImages && styles.actionButtonDisabled]}
+            onPress={() => handleShareMenu(item)}
+            disabled={imageActionInProgress}
+          >
+            {isSharingImages ? (
+              <ActivityIndicator size="small" color="#25D366" />
+            ) : (
+              <Ionicons name="share-social-outline" size={15} color="#25D366" />
+            )}
+            <Text style={[styles.actionText, { color: '#15803D' }]}>Share</Text>
           </TouchableOpacity>
           {canViewData && (
             <>
@@ -726,7 +910,7 @@ export default function InventoryLeadsScreen() {
                 style={styles.actionButton}
                 onPress={() => router.push(`/leads/edit/${item.id}` as any)}
               >
-                <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                <Ionicons name="create-outline" size={15} color="#3B82F6" />
                 <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
               </TouchableOpacity>
               <View style={styles.actionDivider} />
@@ -734,13 +918,13 @@ export default function InventoryLeadsScreen() {
                 style={styles.actionButton}
                 onPress={() => handleDelete(item.id, item.name)}
               >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Ionicons name="trash-outline" size={15} color="#EF4444" />
                 <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
               </TouchableOpacity>
             </>
           )}
         </View>
-        
+
         {/* File Upload Row */}
         <View style={styles.fileUploadRow}>
           <InventoryFileUpload leadId={item.id} compact />
@@ -1529,6 +1713,45 @@ export default function InventoryLeadsScreen() {
         setFacingSearch
       )}
 
+      <Modal visible={!!shareMenuLead} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.shareMenuOverlay}
+          activeOpacity={1}
+          onPress={() => setShareMenuLead(null)}
+        >
+          <View style={styles.shareMenuCard}>
+            <View style={styles.shareMenuHeader}>
+              <Text style={styles.shareMenuTitle}>Share</Text>
+              <TouchableOpacity onPress={() => setShareMenuLead(null)}>
+                <Ionicons name="close" size={22} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.shareMenuItem}
+              onPress={() => {
+                const leadToShare = shareMenuLead;
+                setShareMenuLead(null);
+                if (leadToShare) handleSharePropertyInfo(leadToShare);
+              }}
+            >
+              <Ionicons name="document-text-outline" size={20} color="#2563EB" />
+              <Text style={styles.shareMenuItemText}>Property Info</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shareMenuItem}
+              onPress={() => {
+                const leadToShare = shareMenuLead;
+                setShareMenuLead(null);
+                if (leadToShare) handleShareImages(leadToShare);
+              }}
+            >
+              <Ionicons name="images-outline" size={20} color="#15803D" />
+              <Text style={styles.shareMenuItemText}>Images</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* FAB - Add Button */}
       <TouchableOpacity
         style={styles.fab}
@@ -2049,19 +2272,25 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    minWidth: 0,
+    minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 2,
+  },
+  actionButtonDisabled: {
+    opacity: 0.65,
   },
   actionDivider: {
     width: 1,
     backgroundColor: '#F3F4F6',
   },
   actionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginLeft: 6,
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -2164,6 +2393,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  shareMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  shareMenuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+    ...shadows.card,
+  },
+  shareMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  shareMenuTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  shareMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  shareMenuItemText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink,
+    marginLeft: 12,
   },
   fab: {
     position: 'absolute',
