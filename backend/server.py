@@ -3560,6 +3560,76 @@ def _legacy_inventory_category_params(meta: dict, category: Optional[str]) -> Li
     type_columns = [col for col in type_columns if col]
     return [value for _ in type_columns for value in ("%floor%", "%bhk%")]
 
+def _legacy_floor_where() -> str:
+    return """(e.is_deleted != 1 OR e.is_deleted IS NULL)
+              AND (e.phone IS NULL OR e.phone NOT IN (
+                  SELECT b.phone FROM builders b WHERE b.phone IS NOT NULL AND b.phone != ''
+              ))"""
+
+def _legacy_kothi_where() -> str:
+    return "(k.is_deleted != 1 OR k.is_deleted IS NULL)"
+
+def _legacy_floor_select() -> str:
+    return """
+        SELECT
+            e.id,
+            e.name,
+            e.phone,
+            e.location,
+            e.address,
+            e.flat_type,
+            e.bhk,
+            e.floor,
+            e.budget_min,
+            e.budget_max,
+            e.unit,
+            e.area_size,
+            e.property_type,
+            e.status,
+            e.notes,
+            e.created_at,
+            e.last_message_sent_on,
+            'floor' as legacy_category,
+            'enquiries' as legacy_source
+        FROM enquiries e
+    """
+
+def _legacy_kothi_select() -> str:
+    return """
+        SELECT
+            k.id,
+            COALESCE(NULLIF(k.owner_name, ''), NULLIF(CONCAT_WS(' ', k.location, k.address, k.plot_size, k.floor, k.rental), ''), CONCAT('Kothi #', k.id)) as name,
+            COALESCE(NULLIF(k.contact, ''), NULLIF(CONCAT_WS(', ', k.contact_1, k.contact_2), '')) as phone,
+            k.location,
+            k.address,
+            NULL as flat_type,
+            k.accommodation as bhk,
+            k.floor,
+            NULL as budget_min,
+            NULL as budget_max,
+            'CR' as unit,
+            k.plot_size as area_size,
+            'Kothi' as property_type,
+            k.status,
+            TRIM(CONCAT_WS(' ', k.details, k.rental)) as notes,
+            k.created_at,
+            k.last_message_sent_on,
+            'kothi' as legacy_category,
+            'kothis_details' as legacy_source
+        FROM kothis_details k
+    """
+
+def _normalize_legacy_inventory_rows(rows: List[dict]) -> List[dict]:
+    result = []
+    for row in rows:
+        item = dict(row)
+        if item.get("created_at"):
+            item["created_at"] = item["created_at"].isoformat()
+        if item.get("last_message_sent_on"):
+            item["last_message_sent_on"] = item["last_message_sent_on"].isoformat()
+        result.append(item)
+    return result
+
 @api_router.get("/mobile/workbench")
 def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
     """Mobile-first daily workbench: priority tasks, fresh leads, hot leads, and smart matches."""
@@ -3683,55 +3753,51 @@ def get_mobile_assigned_leads(current_user: dict = Depends(get_current_user), li
 
 @api_router.get("/mobile/enquiries")
 def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100, category: Optional[str] = None):
-    """Legacy inventory records imported from the PHP enquiries table."""
+    """Legacy inventory records using the same sources as kothis.php and legacy_leads.php."""
     safe_limit = max(1, min(limit, 300))
+    safe_category = category if category in ("kothi", "floor") else "all"
     with get_db() as conn:
         cursor = conn.cursor()
-        meta = _find_enquiry_table(cursor)
-        if not meta:
-            return {"items": [], "table": None, "message": "No enquiry table found"}
+        if not _table_exists(cursor, "kothis_details") and not _table_exists(cursor, "enquiries"):
+            return {"items": [], "table": None, "message": "No legacy inventory tables found"}
 
-        table = meta["table"]
-        where = _enquiry_where_clause(meta)
-        category_clause = _legacy_inventory_category_clause(meta, category)
-        category_params = _legacy_inventory_category_params(meta, category)
-        created_expr = meta.get("created_at") or meta["id"]
-        select_parts = _enquiry_select_parts(meta)
+        kothi_where = _legacy_kothi_where()
+        floor_where = _legacy_floor_where()
 
-        cursor.execute(f"""
-            SELECT {', '.join(select_parts)}
-            FROM {table}
-            WHERE {where}{category_clause}
-            ORDER BY {created_expr} DESC
-            LIMIT %s
-        """, tuple(category_params + [safe_limit]))
-        rows = [dict(row) for row in cursor.fetchall()]
-        for row in rows:
-            row["legacy_category"] = _legacy_inventory_category(row)
+        cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
+        kothi_historical = cursor.fetchone()["count"]
+        cursor.execute("SELECT COUNT(*) as count FROM enquiries")
+        floor_historical = cursor.fetchone()["count"]
 
-        cursor.execute(f"SELECT COUNT(*) as count FROM {table}")
-        historical_total = cursor.fetchone()["count"]
+        cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}")
+        kothi_count = cursor.fetchone()["count"]
+        cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}")
+        floor_count = cursor.fetchone()["count"]
 
-        cursor.execute(f"SELECT COUNT(*) as count FROM {table} WHERE {where}")
-        total = cursor.fetchone()["count"]
-
-        floor_count = None
-        kothi_count = None
-        floor_clause = _legacy_inventory_category_clause(meta, "floor")
-        floor_params = _legacy_inventory_category_params(meta, "floor")
-        if floor_clause:
-            cursor.execute(f"SELECT COUNT(*) as count FROM {table} WHERE {where}{floor_clause}", tuple(floor_params))
-            floor_count = cursor.fetchone()["count"]
-            kothi_count = total - floor_count
+        rows = []
+        if safe_category == "kothi":
+            cursor.execute(f"{_legacy_kothi_select()} WHERE {kothi_where} ORDER BY k.id DESC LIMIT %s", (safe_limit,))
+            rows = cursor.fetchall()
+        elif safe_category == "floor":
+            cursor.execute(f"{_legacy_floor_select()} WHERE {floor_where} ORDER BY e.created_at DESC LIMIT %s", (safe_limit,))
+            rows = cursor.fetchall()
+        else:
+            kothi_limit = max(1, safe_limit // 2)
+            floor_limit = safe_limit - kothi_limit
+            cursor.execute(f"{_legacy_kothi_select()} WHERE {kothi_where} ORDER BY k.id DESC LIMIT %s", (kothi_limit,))
+            rows.extend(cursor.fetchall())
+            cursor.execute(f"{_legacy_floor_select()} WHERE {floor_where} ORDER BY e.created_at DESC LIMIT %s", (floor_limit,))
+            rows.extend(cursor.fetchall())
+            rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         return {
-            "items": rows,
-            "table": table,
-            "category": category or "all",
-            "total": total,
-            "historical_total": historical_total,
+            "items": _normalize_legacy_inventory_rows(rows),
+            "table": "kothis_details,enquiries",
+            "category": safe_category,
+            "total": kothi_count + floor_count,
+            "historical_total": kothi_historical + floor_historical,
             "counts": {
-                "all": total,
+                "all": kothi_count + floor_count,
                 "kothi": kothi_count,
                 "floor": floor_count,
             }
