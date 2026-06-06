@@ -6,7 +6,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, date
 from passlib.context import CryptContext
 import jwt
@@ -3424,6 +3424,295 @@ def get_activity_logs(current_user: dict = Depends(get_current_user), limit: int
     except Exception as e:
         logging.error(f"Activity logs error: {e}")
         return []
+
+# ============= Mobile Workbench Routes =============
+def _table_exists(cursor, table_name: str) -> bool:
+    cursor.execute(
+        """SELECT COUNT(*) as count
+           FROM information_schema.tables
+           WHERE table_schema = DATABASE() AND table_name = %s""",
+        (table_name,)
+    )
+    row = cursor.fetchone()
+    return bool(row and row.get('count'))
+
+def _table_columns(cursor, table_name: str) -> set:
+    cursor.execute(
+        """SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema = DATABASE() AND table_name = %s""",
+        (table_name,)
+    )
+    return {row['column_name'] for row in cursor.fetchall()}
+
+def _pick_column(columns: set, candidates: List[str]) -> Optional[str]:
+    for item in candidates:
+        if item in columns:
+            return item
+    return None
+
+def _lead_summary(row: dict, user_role: str, user_id: int) -> dict:
+    lead = apply_lead_masking(dict(row), user_role, user_id)
+    return {
+        "id": lead.get("id"),
+        "name": lead.get("name"),
+        "phone": lead.get("phone"),
+        "lead_type": lead.get("lead_type"),
+        "lead_temperature": lead.get("lead_temperature"),
+        "lead_status": lead.get("lead_status"),
+        "location": lead.get("location"),
+        "address": lead.get("address"),
+        "bhk": lead.get("bhk"),
+        "floor": lead.get("floor"),
+        "area_size": lead.get("area_size"),
+        "budget_min": lead.get("budget_min"),
+        "budget_max": lead.get("budget_max"),
+        "unit": lead.get("unit"),
+        "created_by": lead.get("created_by"),
+        "created_by_name": lead.get("created_by_name"),
+        "assigned_to": lead.get("assigned_to"),
+        "assigned_to_name": lead.get("assigned_to_name"),
+        "created_at": lead.get("created_at").isoformat() if lead.get("created_at") else None,
+    }
+
+def _find_enquiry_table(cursor) -> Optional[dict]:
+    for table in ["enquiries", "telecaller_enquiries", "advertised_enquiries", "advt_enquiries", "advertised_leads", "advt_leads", "ad_enquiries"]:
+        if not _table_exists(cursor, table):
+            continue
+        columns = _table_columns(cursor, table)
+        id_col = _pick_column(columns, ["id", "enquiry_id"])
+        name_col = _pick_column(columns, ["name", "client_name", "lead_name", "full_name"])
+        phone_col = _pick_column(columns, ["phone", "mobile", "phone_number", "contact", "contact_number"])
+        if id_col and name_col and phone_col:
+            return {
+                "table": table,
+                "columns": columns,
+                "id": id_col,
+                "name": name_col,
+                "phone": phone_col,
+                "location": _pick_column(columns, ["location", "preferred_location", "area"]),
+                "notes": _pick_column(columns, ["notes", "note", "message", "remarks"]),
+                "status": _pick_column(columns, ["status", "lead_status"]),
+                "source": _pick_column(columns, ["source", "lead_source", "platform"]),
+                "created_at": _pick_column(columns, ["created_at", "Updated_On", "created_on", "date", "enquiry_date"]),
+                "lead_type": _pick_column(columns, ["lead_type"]),
+                "bhk": _pick_column(columns, ["bhk", "flat_type"]),
+                "floor": _pick_column(columns, ["floor"]),
+                "budget_min": _pick_column(columns, ["budget_min", "budget"]),
+                "budget_max": _pick_column(columns, ["budget_max", "budget"]),
+                "unit": _pick_column(columns, ["unit"]),
+                "property_type": _pick_column(columns, ["property_type", "flat_type"]),
+                "is_deleted": _pick_column(columns, ["is_deleted"]),
+                "converted": _pick_column(columns, ["converted", "is_converted", "converted_to_lead"]),
+            }
+    return None
+
+def _enquiry_where_clause(meta: dict) -> str:
+    clauses = []
+    converted_col = meta.get("converted")
+    deleted_col = meta.get("is_deleted")
+    if converted_col:
+        clauses.append(f"COALESCE({converted_col}, 0) = 0")
+    if deleted_col:
+        clauses.append(f"COALESCE({deleted_col}, 0) = 0")
+    return " AND ".join(clauses) if clauses else "1=1"
+
+def _enquiry_select_parts(meta: dict, include_details: bool = True) -> List[str]:
+    select_parts = [
+        f"{meta['id']} as id",
+        f"{meta['name']} as name",
+        f"{meta['phone']} as phone",
+    ]
+    aliases = ["location", "notes", "status", "source", "created_at"]
+    if include_details:
+        aliases += ["lead_type", "bhk", "floor", "budget_min", "budget_max", "unit", "property_type"]
+    for alias in aliases:
+        col = meta.get(alias)
+        select_parts.append(f"{col} as {alias}" if col else f"NULL as {alias}")
+    return select_parts
+
+@api_router.get("/mobile/workbench")
+def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
+    """Mobile-first daily workbench: priority tasks, fresh leads, hot leads, and smart matches."""
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    today = datetime.utcnow().date()
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_action_assignment_column(cursor)
+        conn.commit()
+
+        cursor.execute("""
+            SELECT a.id, a.lead_id, a.title, a.description, a.action_type, a.due_date, a.due_time,
+                   a.status, a.priority, l.name as lead_name, l.phone as lead_phone, l.lead_type,
+                   l.created_by as lead_created_by, u.full_name as assigned_to_name
+            FROM actions a
+            LEFT JOIN leads l ON l.id = a.lead_id
+            LEFT JOIN users u ON u.id = a.assigned_to
+            WHERE a.status IN ('Pending', 'Up Coming', 'Missed')
+              AND (a.user_id = %s OR a.assigned_to = %s OR %s = 'admin')
+              AND (a.due_date <= %s OR a.due_date IS NULL)
+              AND (l.id IS NULL OR l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY
+              CASE WHEN a.due_date < %s THEN 0 WHEN a.due_date = %s THEN 1 ELSE 2 END,
+              a.due_date ASC, a.due_time ASC
+            LIMIT 20
+        """, (user_id, user_id, user_role, today, today, today))
+        actions = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            if should_mask_data(user_role, user_id, item.get('lead_created_by')):
+                item['lead_phone'] = mask_phone(item.get('lead_phone'))
+            item['due_date'] = str(item['due_date']) if item.get('due_date') else None
+            item['due_time'] = str(item['due_time']) if item.get('due_time') else None
+            actions.append(item)
+
+        cursor.execute("""
+            SELECT l.*, u.full_name as created_by_name, NULL as assigned_to_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.lead_type IN ('buyer', 'tenant')
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+              AND COALESCE(l.lead_temperature, '') = 'Hot'
+              AND NOT EXISTS (
+                SELECT 1 FROM actions a
+                WHERE a.lead_id = l.id AND a.status IN ('Pending', 'Up Coming')
+              )
+            ORDER BY l.created_at DESC
+            LIMIT 10
+        """)
+        hot_leads = [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT l.*, u.full_name as created_by_name, NULL as assigned_to_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.lead_type IN ('buyer', 'tenant')
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+              AND (l.notes IS NULL OR TRIM(l.notes) = '')
+            ORDER BY l.created_at DESC
+            LIMIT 10
+        """)
+        notes_missing = [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
+
+        fresh_enquiries = []
+        enquiry_meta = _find_enquiry_table(cursor)
+        if enquiry_meta:
+            table = enquiry_meta["table"]
+            where = _enquiry_where_clause(enquiry_meta)
+            created_expr = enquiry_meta.get("created_at") or enquiry_meta["id"]
+            select_parts = _enquiry_select_parts(enquiry_meta)
+            cursor.execute(f"""
+                SELECT {', '.join(select_parts)}
+                FROM {table}
+                WHERE {where}
+                ORDER BY {created_expr} DESC
+                LIMIT 10
+            """)
+            fresh_enquiries = [dict(row) for row in cursor.fetchall()]
+
+    return {
+        "date": today.isoformat(),
+        "priority_actions": actions,
+        "hot_leads_without_action": hot_leads,
+        "notes_missing": notes_missing,
+        "fresh_enquiries": fresh_enquiries,
+        "smart_matches": get_smart_matches(current_user=current_user, limit=5),
+        "summary": {
+            "priority_actions": len(actions),
+            "hot_leads_without_action": len(hot_leads),
+            "notes_missing": len(notes_missing),
+            "fresh_enquiries": len(fresh_enquiries),
+        }
+    }
+
+@api_router.get("/mobile/assigned-leads")
+def get_mobile_assigned_leads(current_user: dict = Depends(get_current_user), limit: int = 100):
+    """Leads assigned to the current user, with admin able to see all assigned leads."""
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
+    safe_limit = max(1, min(limit, 500))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if 'assigned_to' not in _table_columns(cursor, 'leads'):
+            return []
+        where = "l.assigned_to IS NOT NULL" if user_role == 'admin' else "l.assigned_to = %s"
+        params: List[Any] = [] if user_role == 'admin' else [user_id]
+        params.append(safe_limit)
+        cursor.execute(f"""
+            SELECT l.*, u.full_name as created_by_name, assignee.full_name as assigned_to_name
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            LEFT JOIN users assignee ON assignee.id = l.assigned_to
+            WHERE {where}
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY l.created_at DESC
+            LIMIT %s
+        """, params)
+        return [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
+
+@api_router.get("/mobile/enquiries")
+def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100):
+    """Fresh advertised enquiries for mobile qualification."""
+    safe_limit = max(1, min(limit, 300))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        meta = _find_enquiry_table(cursor)
+        if not meta:
+            return {"items": [], "table": None, "message": "No enquiry table found"}
+
+        table = meta["table"]
+        where = _enquiry_where_clause(meta)
+        created_expr = meta.get("created_at") or meta["id"]
+        select_parts = _enquiry_select_parts(meta)
+
+        cursor.execute(f"""
+            SELECT {', '.join(select_parts)}
+            FROM {table}
+            WHERE {where}
+            ORDER BY {created_expr} DESC
+            LIMIT %s
+        """, (safe_limit,))
+        return {"items": [dict(row) for row in cursor.fetchall()], "table": table}
+
+@api_router.post("/mobile/enquiries/{enquiry_id}/convert")
+def convert_mobile_enquiry(enquiry_id: int, current_user: dict = Depends(get_current_user)):
+    """Convert an advertised enquiry into a buyer lead when the enquiry table is available."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        meta = _find_enquiry_table(cursor)
+        if not meta:
+            raise HTTPException(status_code=404, detail="No enquiry table found")
+
+        table = meta["table"]
+        select_parts = _enquiry_select_parts(meta)
+
+        cursor.execute(f"SELECT {', '.join(select_parts)} FROM {table} WHERE {meta['id']} = %s LIMIT 1", (enquiry_id,))
+        enquiry = cursor.fetchone()
+        if not enquiry:
+            raise HTTPException(status_code=404, detail="Enquiry not found")
+
+        cursor.execute("""
+            INSERT INTO leads (name, phone, lead_type, location, lead_temperature, lead_status, lead_source, notes, created_by, created_at)
+            VALUES (%s, %s, 'buyer', %s, 'Hot', 'New', %s, %s, %s, NOW())
+        """, (
+            enquiry.get("name") or "Advertised enquiry",
+            enquiry.get("phone"),
+            enquiry.get("location"),
+            enquiry.get("source") or "Advertisement",
+            enquiry.get("notes"),
+            current_user['id'],
+        ))
+        lead_id = cursor.lastrowid
+        converted_col = meta.get("converted")
+        if converted_col:
+            try:
+                cursor.execute(f"UPDATE {table} SET {converted_col} = 1 WHERE {meta['id']} = %s", (enquiry_id,))
+            except Exception as exc:
+                logging.warning(f"Could not mark enquiry converted: {exc}")
+        conn.commit()
+        return {"message": "Enquiry converted", "lead_id": lead_id}
 
 @api_router.get("/team/members")
 def get_team_members(current_user: dict = Depends(get_current_user)):

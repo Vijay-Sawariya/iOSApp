@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
+import { notificationService } from '../../services/notificationService';
 import { canViewSensitiveData } from '../../constants/leadOptions';
 import { colors, radii, shadows } from '../../constants/theme';
 
@@ -120,6 +121,10 @@ export default function DashboardScreen() {
       fetchData();
     }, [])
   );
+
+  useEffect(() => {
+    notificationService.requestPermissions();
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -411,9 +416,15 @@ export default function DashboardScreen() {
               <Text style={styles.todayWorkTitle}>Work Today</Text>
               <Text style={styles.todayWorkSubtitle}>Start with the leads most likely to need action.</Text>
             </View>
-            <TouchableOpacity style={styles.todayWorkRefresh} onPress={onRefresh}>
-              <Ionicons name="refresh" size={18} color="#3B82F6" />
-            </TouchableOpacity>
+            <View style={styles.todayWorkHeaderActions}>
+              <TouchableOpacity style={styles.todayWorkOpen} onPress={() => router.push('/workbench' as any)}>
+                <Ionicons name="briefcase-outline" size={16} color={colors.white} />
+                <Text style={styles.todayWorkOpenText}>Open</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.todayWorkRefresh} onPress={onRefresh}>
+                <Ionicons name="refresh" size={18} color="#3B82F6" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.todayWorkGrid}>
@@ -1072,6 +1083,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 14,
+  },
+  todayWorkHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  todayWorkOpen: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  todayWorkOpenText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '800',
   },
   todayWorkTitle: {
     fontSize: 20,

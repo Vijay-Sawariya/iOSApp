@@ -81,6 +81,10 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
     onClose();
     router.push(`/more?tab=${tab}&fromPopup=true` as any);
   };
+  const handleRoutePress = (route: string) => {
+    onClose();
+    router.push(route as any);
+  };
 
   return (
     <Modal
@@ -96,6 +100,20 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
           
           {/* Row 1 */}
           <View style={styles.menuRow}>
+            <MenuItem
+              icon="briefcase"
+              label="Workbench"
+              color={colors.primary}
+              bgColor={colors.primarySoft}
+              onPress={() => handleRoutePress('/workbench')}
+            />
+            <MenuItem
+              icon="mail-unread"
+              label="Enquiries"
+              color={colors.accent}
+              bgColor={colors.accentSoft}
+              onPress={() => handleRoutePress('/enquiries')}
+            />
             <MenuItem 
               icon="location"
               label="Site Visits"
@@ -114,6 +132,13 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
           
           {/* Row 2 */}
           <View style={styles.menuRow}>
+            <MenuItem
+              icon="person-circle"
+              label="Assigned"
+              color={colors.amber}
+              bgColor={colors.amberSoft}
+              onPress={() => handleRoutePress('/assigned')}
+            />
             <MenuItem 
               icon="people"
               label="Team"

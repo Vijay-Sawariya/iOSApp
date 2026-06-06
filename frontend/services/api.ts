@@ -192,6 +192,52 @@ export const api = {
     );
   },
 
+  getMobileWorkbench: async (options?: CacheFetchOptions) => {
+    return fetchWithCache(
+      `${API_URL}/api/mobile/workbench`,
+      'mobile_workbench',
+      (data) => cacheService.set('cache_mobile_workbench', data),
+      () => cacheService.get('cache_mobile_workbench'),
+      options
+    );
+  },
+
+  getAssignedLeads: async (options?: CacheFetchOptions) => {
+    return fetchWithCache(
+      `${API_URL}/api/mobile/assigned-leads`,
+      'mobile_assigned_leads',
+      (data) => cacheService.set('cache_mobile_assigned_leads', data),
+      () => cacheService.get('cache_mobile_assigned_leads'),
+      options
+    );
+  },
+
+  getEnquiries: async (options?: CacheFetchOptions) => {
+    return fetchWithCache(
+      `${API_URL}/api/mobile/enquiries`,
+      'mobile_enquiries',
+      (data) => cacheService.set('cache_mobile_enquiries', data),
+      () => cacheService.get('cache_mobile_enquiries'),
+      options
+    );
+  },
+
+  convertEnquiry: async (enquiryId: number) => {
+    const response = await fetch(`${API_URL}/api/mobile/enquiries/${enquiryId}/convert`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to convert enquiry'));
+    }
+    await Promise.all([
+      cacheService.remove('cache_mobile_enquiries'),
+      cacheService.remove(CACHE_KEYS.LEADS_CLIENTS),
+      cacheService.remove(CACHE_KEYS.DASHBOARD_STATS),
+    ]);
+    return response.json();
+  },
+
   generateAIMessage: async (leadId: number, messageType: string, customContext?: string) => {
     const response = await fetch(`${API_URL}/api/ai/generate-message`, {
       method: 'POST',

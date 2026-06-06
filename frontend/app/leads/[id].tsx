@@ -313,9 +313,33 @@ export default function LeadDetailScreen() {
     });
   };
 
+  const openLogModal = (channel = 'Call', outcome = 'Connected', seedNote = '') => {
+    setLogChannel(channel);
+    setLogOutcome(outcome);
+    setLogNotes(seedNote);
+    setLogDate(formatDateForInput(new Date()));
+    setShowLogModal(true);
+  };
+
+  const showContactFollowThrough = (channel: 'Call' | 'WhatsApp') => {
+    Alert.alert(
+      `${channel} started`,
+      'Log this conversation or set the next follow-up?',
+      [
+        { text: 'Add Note', onPress: () => openLogModal(channel, 'Connected') },
+        {
+          text: 'Reminder',
+          onPress: () => router.push(`/reminders/add?lead_id=${id}&lead_name=${encodeURIComponent(safeStr(lead?.name))}` as any),
+        },
+        { text: 'Later', style: 'cancel' },
+      ]
+    );
+  };
+
   const handleCall = () => {
     if (lead?.phone) {
       Linking.openURL(`tel:${safeStr(lead.phone)}`);
+      showContactFollowThrough('Call');
     }
   };
 
@@ -324,6 +348,7 @@ export default function LeadDetailScreen() {
       const cleanPhone = safeStr(lead.phone).replace(/[^0-9]/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
       Linking.openURL(`https://wa.me/${phoneWithCountry}`);
+      showContactFollowThrough('WhatsApp');
     }
   };
 
