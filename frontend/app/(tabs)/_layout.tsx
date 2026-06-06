@@ -108,11 +108,11 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleRoutePress('/workbench')}
             />
             <MenuItem
-              icon="mail-unread"
-              label="Enquiries"
+              icon="archive"
+              label="Legacy"
               color={colors.accent}
               bgColor={colors.accentSoft}
-              onPress={() => handleRoutePress('/enquiries')}
+              onPress={() => handleRoutePress('/legacy-inventory')}
             />
             <MenuItem 
               icon="location"

@@ -3531,6 +3531,35 @@ def _enquiry_select_parts(meta: dict, include_details: bool = True) -> List[str]
         select_parts.append(f"{col} as {alias}" if col else f"NULL as {alias}")
     return select_parts
 
+def _legacy_inventory_category(row: dict) -> str:
+    type_text = " ".join([
+        str(row.get("property_type") or ""),
+        str(row.get("bhk") or ""),
+        str(row.get("lead_type") or ""),
+    ]).lower()
+    if "floor" in type_text or "bhk" in type_text:
+        return "floor"
+    return "kothi"
+
+def _legacy_inventory_category_clause(meta: dict, category: Optional[str]) -> str:
+    if category not in ("kothi", "floor"):
+        return ""
+    type_columns = [meta.get("property_type"), meta.get("bhk"), meta.get("lead_type")]
+    type_columns = [col for col in type_columns if col]
+    if not type_columns:
+        return ""
+    floor_checks = " OR ".join([f"LOWER(COALESCE({col}, '')) LIKE %s OR LOWER(COALESCE({col}, '')) LIKE %s" for col in type_columns])
+    if category == "floor":
+        return f" AND ({floor_checks})"
+    return f" AND NOT ({floor_checks})"
+
+def _legacy_inventory_category_params(meta: dict, category: Optional[str]) -> List[str]:
+    if category not in ("kothi", "floor"):
+        return []
+    type_columns = [meta.get("property_type"), meta.get("bhk"), meta.get("lead_type")]
+    type_columns = [col for col in type_columns if col]
+    return [value for _ in type_columns for value in ("%floor%", "%bhk%")]
+
 @api_router.get("/mobile/workbench")
 def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
     """Mobile-first daily workbench: priority tasks, fresh leads, hot leads, and smart matches."""
@@ -3653,8 +3682,8 @@ def get_mobile_assigned_leads(current_user: dict = Depends(get_current_user), li
         return [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
 
 @api_router.get("/mobile/enquiries")
-def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100):
-    """Fresh advertised enquiries for mobile qualification."""
+def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100, category: Optional[str] = None):
+    """Legacy inventory records imported from the PHP enquiries table."""
     safe_limit = max(1, min(limit, 300))
     with get_db() as conn:
         cursor = conn.cursor()
@@ -3664,17 +3693,49 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
 
         table = meta["table"]
         where = _enquiry_where_clause(meta)
+        category_clause = _legacy_inventory_category_clause(meta, category)
+        category_params = _legacy_inventory_category_params(meta, category)
         created_expr = meta.get("created_at") or meta["id"]
         select_parts = _enquiry_select_parts(meta)
 
         cursor.execute(f"""
             SELECT {', '.join(select_parts)}
             FROM {table}
-            WHERE {where}
+            WHERE {where}{category_clause}
             ORDER BY {created_expr} DESC
             LIMIT %s
-        """, (safe_limit,))
-        return {"items": [dict(row) for row in cursor.fetchall()], "table": table}
+        """, tuple(category_params + [safe_limit]))
+        rows = [dict(row) for row in cursor.fetchall()]
+        for row in rows:
+            row["legacy_category"] = _legacy_inventory_category(row)
+
+        cursor.execute(f"SELECT COUNT(*) as count FROM {table}")
+        historical_total = cursor.fetchone()["count"]
+
+        cursor.execute(f"SELECT COUNT(*) as count FROM {table} WHERE {where}")
+        total = cursor.fetchone()["count"]
+
+        floor_count = None
+        kothi_count = None
+        floor_clause = _legacy_inventory_category_clause(meta, "floor")
+        floor_params = _legacy_inventory_category_params(meta, "floor")
+        if floor_clause:
+            cursor.execute(f"SELECT COUNT(*) as count FROM {table} WHERE {where}{floor_clause}", tuple(floor_params))
+            floor_count = cursor.fetchone()["count"]
+            kothi_count = total - floor_count
+
+        return {
+            "items": rows,
+            "table": table,
+            "category": category or "all",
+            "total": total,
+            "historical_total": historical_total,
+            "counts": {
+                "all": total,
+                "kothi": kothi_count,
+                "floor": floor_count,
+            }
+        }
 
 @api_router.post("/mobile/enquiries/{enquiry_id}/convert")
 def convert_mobile_enquiry(enquiry_id: int, current_user: dict = Depends(get_current_user)):

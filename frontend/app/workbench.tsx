@@ -70,19 +70,6 @@ export default function WorkbenchScreen() {
     }
   };
 
-  const convertEnquiry = async (id: number) => {
-    try {
-      const result = await api.convertEnquiry(id);
-      Alert.alert('Converted', 'Enquiry converted to buyer lead', [
-        { text: 'Open Lead', onPress: () => router.push(`/leads/${result.lead_id}` as any) },
-        { text: 'OK' },
-      ]);
-      loadData(true);
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to convert enquiry');
-    }
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -95,7 +82,7 @@ export default function WorkbenchScreen() {
   const summary = data?.summary || {};
   const actions = data?.priority_actions || [];
   const hotLeads = data?.hot_leads_without_action || [];
-  const enquiries = data?.fresh_enquiries || [];
+  const legacyInventory = data?.fresh_enquiries || [];
   const notesMissing = data?.notes_missing || [];
   const matches = data?.smart_matches || [];
 
@@ -121,7 +108,7 @@ export default function WorkbenchScreen() {
         <View style={styles.summaryGrid}>
           <SummaryCard label="Actions" value={summary.priority_actions || 0} color={colors.primary} />
           <SummaryCard label="Hot open" value={summary.hot_leads_without_action || 0} color={colors.danger} />
-          <SummaryCard label="Enquiries" value={summary.fresh_enquiries || 0} color={colors.accent} />
+          <SummaryCard label="Legacy" value={summary.fresh_enquiries || 0} color={colors.accent} />
           <SummaryCard label="Notes due" value={summary.notes_missing || 0} color={colors.amber} />
         </View>
 
@@ -146,13 +133,13 @@ export default function WorkbenchScreen() {
           ))}
         </Section>
 
-        <Section title="Fresh Enquiries" empty="No fresh advertisement enquiries found.">
-          {enquiries.map((item: any) => (
+        <Section title="Legacy Inventory" empty="No legacy inventory records found.">
+          {legacyInventory.map((item: any) => (
             <View key={`enquiry-${item.id}`} style={styles.card}>
               <View style={styles.cardTop}>
                 <View style={styles.cardCopy}>
                   <Text style={styles.cardTitle}>{item.name || 'New enquiry'}</Text>
-                  <Text style={styles.cardMeta}>{item.source || 'Advertisement'} · {item.location || 'Location n/a'}</Text>
+                  <Text style={styles.cardMeta}>{item.location || 'Location n/a'} · {item.property_type || item.bhk || 'Type n/a'}</Text>
                 </View>
                 <Badge text={item.status || 'New'} tone="green" />
               </View>
@@ -160,9 +147,9 @@ export default function WorkbenchScreen() {
               <ActionRow
                 phone={item.phone}
                 name={item.name}
-                onOpen={() => router.push('/enquiries' as any)}
-                doneLabel="Convert"
-                onDone={() => convertEnquiry(item.id)}
+                onOpen={() => router.push('/legacy-inventory' as any)}
+                doneLabel="Inventory"
+                onDone={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(item.phone || '')}` as any)}
               />
             </View>
           ))}

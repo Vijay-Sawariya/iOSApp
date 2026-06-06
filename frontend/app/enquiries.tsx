@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -29,26 +30,31 @@ const openWhatsApp = (phone?: string, name?: string) => {
 
 export default function EnquiriesScreen() {
   const [items, setItems] = useState<any[]>([]);
+  const [counts, setCounts] = useState<any>({});
+  const [historicalTotal, setHistoricalTotal] = useState<number | null>(null);
+  const [category, setCategory] = useState<'all' | 'kothi' | 'floor'>('all');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [convertingId, setConvertingId] = useState<number | null>(null);
 
-  const loadData = async (force = false) => {
+  const loadData = useCallback(async (force = false) => {
     try {
-      const response = await api.getEnquiries(force ? { forceRefresh: true } : undefined);
+      const response = await api.getLegacyInventory(category, force ? { forceRefresh: true } : undefined);
       setItems(Array.isArray(response?.items) ? response.items : []);
+      setCounts(response?.counts || { all: response?.total || 0 });
+      setHistoricalTotal(typeof response?.historical_total === 'number' ? response.historical_total : null);
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to load enquiries');
+      Alert.alert('Error', error?.message || 'Failed to load legacy inventory');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [category]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [])
+    }, [loadData])
   );
 
   const onRefresh = () => {
@@ -56,30 +62,21 @@ export default function EnquiriesScreen() {
     loadData(true);
   };
 
-  const convert = async (item: any) => {
-    setConvertingId(item.id);
-    try {
-      const result = await api.convertEnquiry(item.id);
-      Alert.alert('Converted', `${item.name || 'Enquiry'} is now a buyer lead`, [
-        { text: 'Open Lead', onPress: () => router.push(`/leads/${result.lead_id}` as any) },
-        { text: 'OK' },
-      ]);
-      loadData(true);
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to convert enquiry');
-    } finally {
-      setConvertingId(null);
-    }
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.muted}>Loading enquiries...</Text>
+        <Text style={styles.muted}>Loading legacy inventory...</Text>
       </SafeAreaView>
     );
   }
+
+  const filteredItems = items.filter((item) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return [item.name, item.phone, item.location, item.notes, item.property_type, item.bhk]
+      .some((value) => String(value || '').toLowerCase().includes(query));
+  });
 
   return (
     <SafeAreaView style={styles.container}>
@@ -88,8 +85,8 @@ export default function EnquiriesScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.ink} />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
-          <Text style={styles.title}>Enquiries</Text>
-          <Text style={styles.subtitle}>{items.length} fresh advertisement enquiries</Text>
+          <Text style={styles.title}>Legacy Inventory</Text>
+          <Text style={styles.subtitle}>{historicalTotal || counts?.all || items.length} historical Kothi and Floor records</Text>
         </View>
         <TouchableOpacity style={styles.iconButton} onPress={onRefresh}>
           <Ionicons name="refresh" size={20} color={colors.primary} />
@@ -100,25 +97,49 @@ export default function EnquiriesScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {items.length === 0 ? (
+        <View style={styles.filterRow}>
+          <FilterChip label="All" count={counts?.all} active={category === 'all'} onPress={() => setCategory('all')} />
+          <FilterChip label="Kothi" count={counts?.kothi} active={category === 'kothi'} onPress={() => setCategory('kothi')} />
+          <FilterChip label="Floor" count={counts?.floor} active={category === 'floor'} onPress={() => setCategory('floor')} />
+        </View>
+
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={18} color={colors.inkMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search name, phone, location"
+            placeholderTextColor={colors.inkSubtle}
+            value={search}
+            onChangeText={setSearch}
+          />
+        </View>
+
+        {filteredItems.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="mail-open-outline" size={28} color={colors.inkSubtle} />
-            <Text style={styles.emptyTitle}>No fresh enquiries</Text>
-            <Text style={styles.emptyText}>New advertisement enquiries will appear here for call, WhatsApp, and conversion.</Text>
+            <Ionicons name="archive-outline" size={28} color={colors.inkSubtle} />
+            <Text style={styles.emptyTitle}>No legacy inventory</Text>
+            <Text style={styles.emptyText}>Kothi and floor legacy records from the old enquiry table will appear here.</Text>
           </View>
         ) : (
-          items.map((item) => (
+          filteredItems.map((item) => (
             <View key={item.id} style={styles.card}>
               <View style={styles.cardTop}>
                 <View style={styles.cardCopy}>
-                  <Text style={styles.cardTitle}>{item.name || 'New enquiry'}</Text>
-                  <Text style={styles.cardMeta}>{item.source || 'Advertisement'} · {item.location || 'Location n/a'}</Text>
+                  <Text style={styles.cardTitle}>{item.name || 'Legacy inventory'}</Text>
+                  <Text style={styles.cardMeta}>{item.location || 'Location n/a'} · {item.property_type || item.bhk || 'Type n/a'}</Text>
                 </View>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.status || 'New'}</Text>
+                <View style={[styles.badge, item.legacy_category === 'floor' && styles.floorBadge]}>
+                  <Text style={[styles.badgeText, item.legacy_category === 'floor' && styles.floorBadgeText]}>
+                    {item.legacy_category === 'floor' ? 'Floor' : 'Kothi'}
+                  </Text>
                 </View>
               </View>
               <Text style={styles.notes} numberOfLines={3}>{item.notes || 'No message captured yet'}</Text>
+              <View style={styles.metaGrid}>
+                <Text style={styles.metaPill}>{item.status || 'Pending'}</Text>
+                {item.budget_max || item.budget_min ? <Text style={styles.metaPill}>₹{item.budget_max || item.budget_min} {item.unit || 'Cr'}</Text> : null}
+                {item.floor ? <Text style={styles.metaPill}>{item.floor}</Text> : null}
+              </View>
               <View style={styles.actions}>
                 <TouchableOpacity style={styles.iconAction} onPress={() => callPhone(item.phone)} disabled={!item.phone}>
                   <Ionicons name="call" size={17} color={item.phone ? colors.accent : colors.inkSubtle} />
@@ -127,18 +148,11 @@ export default function EnquiriesScreen() {
                   <Ionicons name="logo-whatsapp" size={17} color={item.phone ? '#25D366' : colors.inkSubtle} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.convertButton, convertingId === item.id && styles.disabled]}
-                  onPress={() => convert(item)}
-                  disabled={convertingId === item.id}
+                  style={styles.convertButton}
+                  onPress={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(item.phone || '')}` as any)}
                 >
-                  {convertingId === item.id ? (
-                    <ActivityIndicator size="small" color={colors.white} />
-                  ) : (
-                    <>
-                      <Ionicons name="swap-horizontal" size={16} color={colors.white} />
-                      <Text style={styles.convertButtonText}>Convert</Text>
-                    </>
-                  )}
+                  <Ionicons name="add-circle-outline" size={16} color={colors.white} />
+                  <Text style={styles.convertButtonText}>Add Inventory</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -146,6 +160,15 @@ export default function EnquiriesScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function FilterChip({ label, count, active, onPress }: { label: string; count?: number | null; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={[styles.filterChip, active && styles.filterChipActive]} onPress={onPress}>
+      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+      {typeof count === 'number' ? <Text style={[styles.filterChipCount, active && styles.filterChipTextActive]}>{count}</Text> : null}
+    </TouchableOpacity>
   );
 }
 
@@ -183,6 +206,34 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { marginTop: 8, fontSize: 16, fontWeight: '800', color: colors.ink },
   emptyText: { marginTop: 5, fontSize: 13, color: colors.inkMuted, textAlign: 'center', lineHeight: 19 },
+  filterRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  filterChip: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  filterChipText: { fontSize: 12, fontWeight: '800', color: colors.ink },
+  filterChipTextActive: { color: colors.white },
+  filterChipCount: { fontSize: 11, color: colors.inkMuted, marginTop: 1 },
+  searchBox: {
+    minHeight: 44,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.ink, paddingVertical: 8 },
   card: {
     backgroundColor: colors.surfaceRaised,
     borderRadius: radii.md,
@@ -197,7 +248,19 @@ const styles = StyleSheet.create({
   cardMeta: { fontSize: 12, color: colors.inkMuted, marginTop: 3 },
   badge: { backgroundColor: colors.accentSoft, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radii.pill },
   badgeText: { color: colors.accent, fontSize: 11, fontWeight: '800' },
+  floorBadge: { backgroundColor: colors.primarySoft },
+  floorBadgeText: { color: colors.primary },
   notes: { fontSize: 13, color: colors.inkMuted, marginTop: 10, lineHeight: 19 },
+  metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  metaPill: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.inkMuted,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+  },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   iconAction: {
     width: 34,
@@ -218,5 +281,4 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   convertButtonText: { color: colors.white, fontWeight: '800', fontSize: 12 },
-  disabled: { opacity: 0.6 },
 });

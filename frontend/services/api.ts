@@ -222,6 +222,17 @@ export const api = {
     );
   },
 
+  getLegacyInventory: async (category: 'all' | 'kothi' | 'floor' = 'all', options?: CacheFetchOptions) => {
+    const query = category === 'all' ? '' : `?category=${category}`;
+    return fetchWithCache(
+      `${API_URL}/api/mobile/enquiries${query}`,
+      `legacy_inventory_${category}`,
+      (data) => cacheService.set(`cache_legacy_inventory_${category}`, data),
+      () => cacheService.get(`cache_legacy_inventory_${category}`),
+      options
+    );
+  },
+
   convertEnquiry: async (enquiryId: number) => {
     const response = await fetch(`${API_URL}/api/mobile/enquiries/${enquiryId}/convert`, {
       method: 'POST',
