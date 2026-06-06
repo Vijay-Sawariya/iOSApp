@@ -222,13 +222,17 @@ export const api = {
     );
   },
 
-  getLegacyInventory: async (category: 'all' | 'kothi' | 'floor' = 'all', options?: CacheFetchOptions) => {
-    const query = category === 'all' ? '' : `?category=${category}`;
+  getLegacyInventory: async (category: 'all' | 'kothi' | 'floor' = 'all', search: string = '', options?: CacheFetchOptions) => {
+    const params = new URLSearchParams();
+    if (category !== 'all') params.append('category', category);
+    if (search.trim()) params.append('search', search.trim());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const cacheKey = `cache_legacy_inventory_${category}_${search.trim().toLowerCase() || 'all'}`;
     return fetchWithCache(
       `${API_URL}/api/mobile/enquiries${query}`,
-      `legacy_inventory_${category}`,
-      (data) => cacheService.set(`cache_legacy_inventory_${category}`, data),
-      () => cacheService.get(`cache_legacy_inventory_${category}`),
+      `legacy_inventory_${category}_${search.trim().toLowerCase() || 'all'}`,
+      (data) => cacheService.set(cacheKey, data),
+      () => cacheService.get(cacheKey),
       options
     );
   },

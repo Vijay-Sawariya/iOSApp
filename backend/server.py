@@ -3569,6 +3569,46 @@ def _legacy_floor_where() -> str:
 def _legacy_kothi_where() -> str:
     return "(k.is_deleted != 1 OR k.is_deleted IS NULL)"
 
+def _legacy_search_clause(search: Optional[str], source: str) -> tuple[str, List[str]]:
+    query = (search or "").strip()
+    if not query:
+        return "", []
+
+    like = f"%{query}%"
+    digits = re.sub(r"[^0-9]", "", query)
+    phone_key = digits[-10:] if len(digits) >= 10 else digits
+
+    if source == "kothi":
+        clauses = [
+            "k.location LIKE %s",
+            "k.address LIKE %s",
+            "k.owner_name LIKE %s",
+            "k.details LIKE %s",
+            "k.plot_size LIKE %s",
+            "k.floor LIKE %s",
+            "k.accommodation LIKE %s",
+        ]
+        params = [like, like, like, like, like, like, like]
+        if phone_key:
+            clauses.append("REGEXP_REPLACE(COALESCE(NULLIF(k.contact, ''), CONCAT_WS('', k.contact_1, k.contact_2), ''), '[^0-9]', '') LIKE %s")
+            params.append(f"%{phone_key}%")
+        return f" AND ({' OR '.join(clauses)})", params
+
+    clauses = [
+        "e.name LIKE %s",
+        "e.location LIKE %s",
+        "e.address LIKE %s",
+        "e.notes LIKE %s",
+        "e.flat_type LIKE %s",
+        "e.bhk LIKE %s",
+        "e.floor LIKE %s",
+    ]
+    params = [like, like, like, like, like, like, like]
+    if phone_key:
+        clauses.append("REGEXP_REPLACE(e.phone, '[^0-9]', '') LIKE %s")
+        params.append(f"%{phone_key}%")
+    return f" AND ({' OR '.join(clauses)})", params
+
 def _legacy_floor_select() -> str:
     return """
         SELECT
@@ -3759,7 +3799,7 @@ def get_mobile_assigned_leads(current_user: dict = Depends(get_current_user), li
         return [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
 
 @api_router.get("/mobile/enquiries")
-def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100, category: Optional[str] = None):
+def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100, category: Optional[str] = None, search: Optional[str] = None):
     """Legacy inventory records using the same sources as kothis.php and legacy_leads.php."""
     safe_limit = max(1, min(limit, 300))
     safe_category = category if category in ("kothi", "floor") else "all"
@@ -3772,30 +3812,44 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
 
         kothi_where = _legacy_kothi_where()
         floor_where = _legacy_floor_where()
+        kothi_search_clause, kothi_search_params = _legacy_search_clause(search, "kothi")
+        floor_search_clause, floor_search_params = _legacy_search_clause(search, "floor")
 
         cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
         kothi_historical = cursor.fetchone()["count"]
         cursor.execute("SELECT COUNT(*) as count FROM enquiries")
         floor_historical = cursor.fetchone()["count"]
 
-        cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}")
+        cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}{kothi_search_clause}", tuple(kothi_search_params))
         kothi_count = cursor.fetchone()["count"]
-        cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}")
+        cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}{floor_search_clause}", tuple(floor_search_params))
         floor_count = cursor.fetchone()["count"]
 
         rows = []
         if safe_category == "kothi":
-            cursor.execute(f"{_legacy_kothi_select()} WHERE {kothi_where} ORDER BY k.id DESC LIMIT %s", (safe_limit,))
+            cursor.execute(
+                f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
+                tuple(kothi_search_params + [safe_limit])
+            )
             rows = cursor.fetchall()
         elif safe_category == "floor":
-            cursor.execute(f"{_legacy_floor_select()} WHERE {floor_where} ORDER BY e.created_at DESC LIMIT %s", (safe_limit,))
+            cursor.execute(
+                f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
+                tuple(floor_search_params + [safe_limit])
+            )
             rows = cursor.fetchall()
         else:
             kothi_limit = max(1, safe_limit // 2)
             floor_limit = safe_limit - kothi_limit
-            cursor.execute(f"{_legacy_kothi_select()} WHERE {kothi_where} ORDER BY k.id DESC LIMIT %s", (kothi_limit,))
+            cursor.execute(
+                f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
+                tuple(kothi_search_params + [kothi_limit])
+            )
             rows.extend(cursor.fetchall())
-            cursor.execute(f"{_legacy_floor_select()} WHERE {floor_where} ORDER BY e.created_at DESC LIMIT %s", (floor_limit,))
+            cursor.execute(
+                f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
+                tuple(floor_search_params + [floor_limit])
+            )
             rows.extend(cursor.fetchall())
             rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
@@ -3803,6 +3857,7 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
             "items": _normalize_legacy_inventory_rows(rows, user_role, user_id),
             "table": "kothis_details,enquiries",
             "category": safe_category,
+            "search": search or "",
             "total": kothi_count + floor_count,
             "historical_total": kothi_historical + floor_historical,
             "counts": {

@@ -34,12 +34,13 @@ export default function EnquiriesScreen() {
   const [historicalTotal, setHistoricalTotal] = useState<number | null>(null);
   const [category, setCategory] = useState<'all' | 'kothi' | 'floor'>('all');
   const [search, setSearch] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async (force = false) => {
     try {
-      const response = await api.getLegacyInventory(category, force ? { forceRefresh: true } : undefined);
+      const response = await api.getLegacyInventory(category, submittedSearch, force ? { forceRefresh: true } : undefined);
       setItems(Array.isArray(response?.items) ? response.items : []);
       setCounts(response?.counts || { all: response?.total || 0 });
       setHistoricalTotal(typeof response?.historical_total === 'number' ? response.historical_total : null);
@@ -49,7 +50,7 @@ export default function EnquiriesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category]);
+  }, [category, submittedSearch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,12 +72,9 @@ export default function EnquiriesScreen() {
     );
   }
 
-  const filteredItems = items.filter((item) => {
-    const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return [item.name, item.phone, item.location, item.notes, item.property_type, item.bhk]
-      .some((value) => String(value || '').toLowerCase().includes(query));
-  });
+  const applySearch = () => {
+    setSubmittedSearch(search.trim());
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -111,17 +109,31 @@ export default function EnquiriesScreen() {
             placeholderTextColor={colors.inkSubtle}
             value={search}
             onChangeText={setSearch}
+            returnKeyType="search"
+            onSubmitEditing={applySearch}
           />
+          <TouchableOpacity style={styles.searchButton} onPress={applySearch}>
+            <Text style={styles.searchButtonText}>Search</Text>
+          </TouchableOpacity>
         </View>
 
-        {filteredItems.length === 0 ? (
+        {submittedSearch ? (
+          <View style={styles.searchResultBar}>
+            <Text style={styles.searchResultText} numberOfLines={1}>Search: {submittedSearch}</Text>
+            <TouchableOpacity onPress={() => { setSearch(''); setSubmittedSearch(''); }}>
+              <Ionicons name="close-circle" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {items.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="archive-outline" size={28} color={colors.inkSubtle} />
             <Text style={styles.emptyTitle}>No legacy inventory</Text>
             <Text style={styles.emptyText}>Kothi and floor legacy records from the old enquiry table will appear here.</Text>
           </View>
         ) : (
-          filteredItems.map((item) => (
+          items.map((item) => (
             <LegacyInventoryCard key={`${item.legacy_source || 'legacy'}-${item.id}`} item={item} />
           ))
         )}
@@ -244,6 +256,27 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   searchInput: { flex: 1, fontSize: 14, color: colors.ink, paddingVertical: 8 },
+  searchButton: {
+    minHeight: 32,
+    paddingHorizontal: 11,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchButtonText: { color: colors.white, fontSize: 12, fontWeight: '800' },
+  searchResultBar: {
+    minHeight: 36,
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  searchResultText: { flex: 1, color: colors.primary, fontSize: 12, fontWeight: '800' },
   card: {
     backgroundColor: colors.surfaceRaised,
     borderRadius: radii.md,
