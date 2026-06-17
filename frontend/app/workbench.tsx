@@ -20,11 +20,18 @@ const callPhone = (phone?: string) => {
   if (phone) Linking.openURL(`tel:${phone}`);
 };
 
-const openWhatsApp = (phone?: string, name?: string) => {
+const openWhatsApp = async (phone?: string, name?: string) => {
   if (!phone) return;
   const cleanPhone = phone.replace(/\D/g, '');
   const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hi ${name || ''}, `)}`);
+  const message = `Hi ${name || ''}, `;
+  await api.sendWhatsApp({
+    phone,
+    message,
+    status: 'opened',
+    source: 'ios_workbench',
+  }).catch((error) => console.warn('WhatsApp log failed:', error));
+  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
 };
 
 const formatDate = (value?: string) => {
@@ -40,7 +47,7 @@ export default function WorkbenchScreen() {
 
   const loadData = async (force = false) => {
     try {
-      const result = await api.getMobileWorkbench(force ? { forceRefresh: true } : undefined);
+      const result = await api.getMobileWorkbench(force ? { forceNetwork: true } : undefined);
       setData(result || {});
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Failed to load workbench');

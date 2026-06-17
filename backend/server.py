@@ -165,6 +165,40 @@ def ensure_security_audit_table(cursor):
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """)
 
+INVENTORY_LEAD_TYPES_SQL = "'seller', 'landlord', 'builder', 'agent'"
+CLIENT_LEAD_TYPES_SQL = "'buyer', 'tenant'"
+
+def ensure_whatsapp_tracking_columns(cursor):
+    required = {
+        'last_message_sent_on': "ALTER TABLE leads ADD COLUMN last_message_sent_on DATETIME NULL",
+        'last_sent_message': "ALTER TABLE leads ADD COLUMN last_sent_message TEXT NULL",
+        'whatsapp_sent_flag': "ALTER TABLE leads ADD COLUMN whatsapp_sent_flag TINYINT(1) NOT NULL DEFAULT 0",
+    }
+    for column, alter_sql in required.items():
+        try:
+            cursor.execute("SHOW COLUMNS FROM leads LIKE %s", (column,))
+            if not cursor.fetchone():
+                cursor.execute(alter_sql)
+        except Exception as exc:
+            logging.warning(f"WhatsApp lead column guard skipped for {column}: {exc}")
+
+def ensure_whatsapp_logs_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS whatsapp_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT NULL,
+            phone VARCHAR(50) NULL,
+            message TEXT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'opened',
+            source VARCHAR(50) NULL,
+            created_by INT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_whatsapp_logs_lead_id (lead_id),
+            INDEX idx_whatsapp_logs_created_at (created_at),
+            INDEX idx_whatsapp_logs_phone (phone)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
 def log_security_event(cursor, user_id, event_type, entity_type=None, entity_id=None, details=None):
     try:
         ensure_security_audit_table(cursor)
@@ -533,6 +567,13 @@ class AIMessageResponse(BaseModel):
 
 class PreferredLeadsRequest(BaseModel):
     matching_lead_ids: List[int]
+
+class WhatsAppMessageCreate(BaseModel):
+    phone: str
+    message: str
+    lead_id: Optional[str] = None
+    status: Optional[str] = "opened"
+    source: Optional[str] = "ios_app"
 
 # ============= Auth Routes =============
 @api_router.post("/auth/register", response_model=UserResponse)
@@ -993,7 +1034,7 @@ def get_matching_inventory(
             FROM leads l
             LEFT JOIN users u ON u.id = l.created_by
             WHERE l.id != %s
-              AND LOWER(IFNULL(l.lead_type, '')) IN ('seller', 'builder', 'landlord', 'owner')
+              AND LOWER(IFNULL(l.lead_type, '')) IN ('seller', 'builder', 'landlord', 'owner', 'agent')
               AND (l.is_deleted IS NULL OR l.is_deleted = 0)
             ORDER BY l.created_at DESC
         """, (lead_id,))
@@ -1085,7 +1126,7 @@ def get_matching_clients(
 
         inventory_type = str(inventory.get('lead_type') or '').lower()
         target_types = ['buyer', 'tenant']
-        if inventory_type in ['seller', 'builder']:
+        if inventory_type in ['seller', 'builder', 'agent']:
             target_types = ['buyer']
         elif inventory_type in ['landlord', 'owner']:
             target_types = ['tenant']
@@ -1209,7 +1250,7 @@ def get_inventory_leads(
             """SELECT l.*, u.full_name as created_by_name 
                FROM leads l
                LEFT JOIN users u ON l.created_by = u.id
-               WHERE l.lead_type IN ('seller', 'landlord', 'builder') 
+               WHERE l.lead_type IN ('seller', 'landlord', 'builder', 'agent') 
                AND (l.is_deleted IS NULL OR l.is_deleted = 0)
                ORDER BY l.created_at DESC LIMIT %s OFFSET %s""",
             (limit, skip)
@@ -1385,7 +1426,7 @@ def export_leads(
         if selected_category == "clients":
             query += " AND LOWER(IFNULL(lead_type, '')) IN ('buyer', 'tenant')"
         elif selected_category == "inventory":
-            query += " AND LOWER(IFNULL(lead_type, '')) IN ('seller', 'landlord', 'builder', 'owner')"
+            query += " AND LOWER(IFNULL(lead_type, '')) IN ('seller', 'landlord', 'builder', 'owner', 'agent')"
         elif lead_type:
             query += " AND lead_type = %s"
             params.append(lead_type)
@@ -1448,7 +1489,7 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     calculations = {}
     
     # Only calculate for inventory leads with required data
-    if lead.get('lead_type') in ['seller', 'landlord', 'builder'] and lead.get('area_size') and lead.get('location'):
+    if lead.get('lead_type') in ['seller', 'landlord', 'builder', 'agent'] and lead.get('area_size') and lead.get('location'):
         try:
             # Get floors from the floor column directly
             floors_str = lead.get('floor', '')
@@ -1904,6 +1945,81 @@ def create_followup(lead_id: int, followup: FollowupCreate, current_user: dict =
     
     return created
 
+# ============= WhatsApp Tracking Routes =============
+@api_router.post("/whatsapp/send")
+def log_whatsapp_action(data: WhatsAppMessageCreate, current_user: dict = Depends(get_current_user)):
+    """Record that the mobile app opened WhatsApp for a lead/contact."""
+    clean_phone = re.sub(r'[^0-9]', '', data.phone or '')
+    phone_key = clean_phone[-10:] if clean_phone else ''
+    lead_id = int(data.lead_id) if data.lead_id and str(data.lead_id).isdigit() else None
+    status_value = (data.status or "opened")[:50]
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_whatsapp_tracking_columns(cursor)
+        ensure_whatsapp_logs_table(cursor)
+
+        cursor.execute("""
+            INSERT INTO whatsapp_logs (lead_id, phone, message, status, source, created_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+        """, (lead_id, data.phone, data.message, status_value, data.source or "ios_app", current_user['id']))
+
+        updated = 0
+        if lead_id:
+            cursor.execute("""
+                UPDATE leads
+                SET last_message_sent_on = NOW(),
+                    last_sent_message = %s,
+                    whatsapp_sent_flag = 1,
+                    updated_on = CASE
+                        WHEN LOWER(IFNULL(lead_type, '')) IN ('seller', 'owner', 'landlord', 'builder', 'agent') THEN updated_on
+                        ELSE NOW()
+                    END
+                WHERE id = %s
+            """, (data.message, lead_id))
+            updated += cursor.rowcount
+
+        if phone_key:
+            cursor.execute("""
+                UPDATE leads
+                SET last_message_sent_on = NOW(),
+                    last_sent_message = %s,
+                    whatsapp_sent_flag = 1,
+                    updated_on = CASE
+                        WHEN LOWER(IFNULL(lead_type, '')) IN ('seller', 'owner', 'landlord', 'builder', 'agent') THEN updated_on
+                        ELSE NOW()
+                    END
+                WHERE RIGHT(REGEXP_REPLACE(IFNULL(phone, ''), '[^0-9]', ''), 10) = %s
+            """, (data.message, phone_key))
+            updated += cursor.rowcount
+
+        conn.commit()
+
+    return {"success": True, "status": status_value, "updated": updated}
+
+@api_router.get("/whatsapp/logs")
+def get_whatsapp_logs(lead_id: Optional[int] = None, limit: int = 100, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_whatsapp_logs_table(cursor)
+        safe_limit = max(1, min(int(limit or 100), 200))
+        params: List[Any] = []
+        where = ""
+        if lead_id:
+            where = "WHERE wl.lead_id = %s"
+            params.append(lead_id)
+        cursor.execute(f"""
+            SELECT wl.*, u.full_name as created_by_name
+            FROM whatsapp_logs wl
+            LEFT JOIN users u ON wl.created_by = u.id
+            {where}
+            ORDER BY wl.created_at DESC
+            LIMIT %s
+        """, [*params, safe_limit])
+        logs = cursor.fetchall()
+
+    return [dict(log) for log in logs]
+
 # ============= Reminder Routes (using actions table) =============
 @api_router.get("/reminders")
 def get_reminders(
@@ -2141,7 +2257,7 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         client_leads = cursor.fetchone()['count']
         
         # Inventory leads (seller, landlord, builder) - exclude deleted
-        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder') AND (is_deleted IS NULL OR is_deleted = 0)")
+        cursor.execute("SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent') AND (is_deleted IS NULL OR is_deleted = 0)")
         inventory_leads = cursor.fetchone()['count']
         
         # Temperature counts - exclude deleted
@@ -2270,7 +2386,7 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         cursor.execute("""
             SELECT COUNT(*) as count
             FROM leads
-            WHERE lead_type IN ('seller', 'landlord', 'builder')
+            WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent')
             AND (is_deleted IS NULL OR is_deleted = 0)
             AND (lead_status IS NULL OR lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
         """)
@@ -2331,7 +2447,7 @@ def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int
         cursor.execute("""
             SELECT id, name, location, budget_min, budget_max, floor, bhk, building_facing, property_type, area_size
             FROM leads 
-            WHERE lead_type IN ('seller', 'landlord', 'builder') 
+            WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent') 
             AND lead_status NOT IN ('Sold', 'Closed/Lost', 'Lost')
             AND (is_deleted IS NULL OR is_deleted = 0)
             LIMIT 100
@@ -4133,3 +4249,4 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+

@@ -20,11 +20,19 @@ const callPhone = (phone?: string) => {
   if (phone) Linking.openURL(`tel:${phone}`);
 };
 
-const openWhatsApp = (phone?: string, name?: string) => {
+const openWhatsApp = async (phone?: string, name?: string, leadId?: number) => {
   if (!phone) return;
   const cleanPhone = phone.replace(/\D/g, '');
   const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hi ${name || ''}, `)}`);
+  const message = `Hi ${name || ''}, `;
+  await api.sendWhatsApp({
+    phone,
+    message,
+    lead_id: leadId ? String(leadId) : undefined,
+    status: 'opened',
+    source: 'ios_assigned',
+  }).catch((error) => console.warn('WhatsApp log failed:', error));
+  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
 };
 
 export default function AssignedLeadsScreen() {
@@ -34,7 +42,7 @@ export default function AssignedLeadsScreen() {
 
   const loadData = async (force = false) => {
     try {
-      const result = await api.getAssignedLeads(force ? { forceRefresh: true } : undefined);
+      const result = await api.getAssignedLeads(force ? { forceNetwork: true } : undefined);
       setLeads(Array.isArray(result) ? result : []);
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Failed to load assigned leads');
@@ -113,7 +121,7 @@ export default function AssignedLeadsScreen() {
                 <TouchableOpacity style={styles.iconAction} onPress={() => callPhone(lead.phone)} disabled={!lead.phone}>
                   <Ionicons name="call" size={17} color={lead.phone ? colors.accent : colors.inkSubtle} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconAction} onPress={() => openWhatsApp(lead.phone, lead.name)} disabled={!lead.phone}>
+                <TouchableOpacity style={styles.iconAction} onPress={() => openWhatsApp(lead.phone, lead.name, lead.id)} disabled={!lead.phone}>
                   <Ionicons name="logo-whatsapp" size={17} color={lead.phone ? '#25D366' : colors.inkSubtle} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.smallButton} onPress={() => router.push(`/leads/${lead.id}` as any)}>

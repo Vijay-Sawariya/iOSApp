@@ -51,6 +51,7 @@ const TYPE_OPTIONS = [
   { label: 'All', value: '' },
   { label: 'Sell', value: 'sell' },  // 'sell' will match both seller and builder
   { label: 'Rent', value: 'landlord' },
+  { label: 'Agent', value: 'agent' },
 ];
 
 const GODADDY_BASE_URL = 'https://sagarhomelms.com';
@@ -87,7 +88,7 @@ export default function InventoryLeadsScreen() {
   const [addressFilter, setAddressFilter] = useState('');
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Single budget field for +/- 10% search
-  const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
+  const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'sell', 'landlord', 'agent'
   const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
   
   // Client/Buyer matching states
@@ -148,6 +149,7 @@ export default function InventoryLeadsScreen() {
     total: leads.length,
     sell: leads.filter(l => l.lead_type === 'seller' || l.lead_type === 'builder').length,
     landlords: leads.filter(l => l.lead_type === 'landlord').length,
+    agents: leads.filter(l => l.lead_type === 'agent').length,
   }), [leads]);
 
   // Load clients (buyers/tenants) for the dropdown
@@ -670,15 +672,39 @@ export default function InventoryLeadsScreen() {
 
   const handleSharePropertyInfo = async (lead: Lead) => {
     try {
-      const encodedMessage = encodeURIComponent(composePropertyInfoMessage(lead));
+      const message = composePropertyInfoMessage(lead);
+      await api.sendWhatsApp({
+        phone: lead.phone || '',
+        message,
+        lead_id: String(lead.id),
+        status: 'opened',
+        source: 'ios_inventory_property_share',
+      }).catch((error) => console.warn('WhatsApp log failed:', error));
+      const encodedMessage = encodeURIComponent(message);
       const whatsappUrl = Platform.OS === 'web'
         ? `https://web.whatsapp.com/send?text=${encodedMessage}`
         : `https://wa.me/?text=${encodedMessage}`;
       await Linking.openURL(whatsappUrl);
+      loadLeadsRef.current();
     } catch (error: any) {
       console.error('Share property info error:', error);
       Alert.alert('Share Failed', error?.message || 'Could not share property info.');
     }
+  };
+
+  const openLoggedWhatsApp = async (lead: Lead) => {
+    const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
+    if (!cleanPhone) return;
+    const message = `Hi ${lead.name || ''}, `;
+    await api.sendWhatsApp({
+      phone: lead.phone || cleanPhone,
+      message,
+      lead_id: String(lead.id),
+      status: 'opened',
+      source: 'ios_inventory_card',
+    }).catch((error) => console.warn('WhatsApp log failed:', error));
+    await Linking.openURL(`https://wa.me/91${cleanPhone}`);
+    loadLeadsRef.current();
   };
 
   const handleShareMenu = (lead: Lead) => {
@@ -726,7 +752,11 @@ export default function InventoryLeadsScreen() {
     const isSharingImages = imageAction?.leadId === item.id && imageAction.type === 'share';
     const imageActionInProgress = imageAction?.leadId === item.id;
     const imageCount = inventoryFileCounts[item.id]?.images || 0;
+    const pdfCount = inventoryFileCounts[item.id]?.pdfs || 0;
     const hasImages = imageCount > 0;
+    const lastWhatsappLabel = item.last_message_sent_on
+      ? `WhatsApp ${new Date(item.last_message_sent_on).toLocaleDateString()}`
+      : 'WhatsApp not sent';
 
     return (
       <View style={styles.leadCard}>
@@ -791,10 +821,7 @@ export default function InventoryLeadsScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.whatsappButton}
-                    onPress={() => {
-                      const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
-                      Linking.openURL(`https://wa.me/91${cleanPhone}`);
-                    }}
+                    onPress={() => openLoggedWhatsApp(item)}
                   >
                     <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
                   </TouchableOpacity>
@@ -838,6 +865,16 @@ export default function InventoryLeadsScreen() {
 
           {/* Tags Row - Removed property_type, added floor and facing */}
           <View style={styles.tagsRow}>
+            <View style={[styles.tag, item.whatsapp_sent_flag ? styles.whatsappSentTag : styles.whatsappPendingTag]}>
+              <Ionicons name="logo-whatsapp" size={12} color={item.whatsapp_sent_flag ? '#047857' : '#92400E'} />
+              <Text style={[styles.tagText, item.whatsapp_sent_flag ? styles.whatsappSentText : styles.whatsappPendingText]}>
+                {lastWhatsappLabel}
+              </Text>
+            </View>
+            <View style={styles.tag}>
+              <Ionicons name="images-outline" size={12} color="#6B7280" />
+              <Text style={styles.tagText}>{imageCount} img / {pdfCount} pdf</Text>
+            </View>
             {item.floor && (
               <View style={[styles.tag, styles.floorTag]}>
                 <Ionicons name="layers-outline" size={12} color="#6366F1" />
@@ -1110,12 +1147,19 @@ export default function InventoryLeadsScreen() {
                   <Text style={[styles.statNumber, selectedStatTile === 'sell' && styles.statNumberActive]}>{stats.sell}</Text>
                   <Text style={[styles.statLabel, selectedStatTile === 'sell' && styles.statLabelActive]}>Sell</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.statItem, selectedStatTile === 'landlord' && styles.statItemActive]}
                   onPress={() => handleStatTileClick('landlord')}
                 >
                   <Text style={[styles.statNumber, selectedStatTile === 'landlord' && styles.statNumberActive]}>{stats.landlords}</Text>
                   <Text style={[styles.statLabel, selectedStatTile === 'landlord' && styles.statLabelActive]}>Rent</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statItem, selectedStatTile === 'agent' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('agent')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'agent' && styles.statNumberActive]}>{stats.agents}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'agent' && styles.statLabelActive]}>Agent</Text>
                 </TouchableOpacity>
               </View>
 
@@ -2257,6 +2301,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.ink,
     fontWeight: '500',
+  },
+  whatsappSentTag: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  whatsappPendingTag: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  whatsappSentText: {
+    color: '#047857',
+  },
+  whatsappPendingText: {
+    color: '#92400E',
   },
   statusTag: {
     backgroundColor: colors.accentSoft,

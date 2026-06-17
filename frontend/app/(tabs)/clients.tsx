@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
+import { api } from '../../services/api';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -107,8 +108,8 @@ export default function ClientLeadsScreen() {
   };
 
   // Share WhatsApp message (matching PHP ShareMessage function)
-  const handleWhatsAppShare = (phoneNumber: string) => {
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+  const handleWhatsAppShare = async (lead: Lead) => {
+    const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
     const greeting = getGreeting();
     const senderName = user?.full_name || 'Team';
     
@@ -124,7 +125,15 @@ www.sagarhome.com`;
 
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/91${cleanPhone}?text=${encodedMessage}`;
+    await api.sendWhatsApp({
+      phone: lead.phone || cleanPhone,
+      message,
+      lead_id: String(lead.id),
+      status: 'opened',
+      source: 'ios_client_card',
+    }).catch((error) => console.warn('WhatsApp log failed:', error));
     Linking.openURL(whatsappUrl);
+    loadLeadsRef.current();
   };
 
   // Memoized filtered lists for modals
@@ -145,8 +154,7 @@ www.sagarhome.com`;
     const total = leads.length;
     const buyers = leads.filter(l => l.lead_type === 'buyer').length;
     const tenants = leads.filter(l => l.lead_type === 'tenant').length;
-    const agents = leads.filter(l => l.lead_type === 'agent').length;
-    return { total, buyers, tenants, agents };
+    return { total, buyers, tenants };
   }, [leads]);
 
   const loadLeads = async (forceNetwork = false) => {
@@ -586,7 +594,7 @@ www.sagarhome.com`;
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.whatsappButton}
-                    onPress={() => handleWhatsAppShare(item.phone || '')}
+                    onPress={() => handleWhatsAppShare(item)}
                   >
                     <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
                   </TouchableOpacity>
@@ -723,13 +731,6 @@ www.sagarhome.com`;
           >
             <Text style={[styles.statNumber, selectedStatTile === 'tenant' && styles.statNumberActive]}>{stats.tenants}</Text>
             <Text style={[styles.statLabel, selectedStatTile === 'tenant' && styles.statLabelActive]}>Tenants</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statItem, selectedStatTile === 'agent' && styles.statItemActive]}
-            onPress={() => handleStatTileClick('agent')}
-          >
-            <Text style={[styles.statNumber, selectedStatTile === 'agent' && styles.statNumberActive]}>{stats.agents}</Text>
-            <Text style={[styles.statLabel, selectedStatTile === 'agent' && styles.statLabelActive]}>Agents</Text>
           </TouchableOpacity>
         </View>
 

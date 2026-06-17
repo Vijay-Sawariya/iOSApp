@@ -21,11 +21,18 @@ const callPhone = (phone?: string) => {
   if (phone) Linking.openURL(`tel:${phone}`);
 };
 
-const openWhatsApp = (phone?: string, name?: string) => {
+const openWhatsApp = async (phone?: string, name?: string) => {
   if (!phone) return;
   const cleanPhone = phone.replace(/\D/g, '');
   const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hi ${name || ''}, `)}`);
+  const message = `Hi ${name || ''}, `;
+  await api.sendWhatsApp({
+    phone,
+    message,
+    status: 'opened',
+    source: 'ios_legacy_inventory',
+  }).catch((error) => console.warn('WhatsApp log failed:', error));
+  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
 };
 
 export default function EnquiriesScreen() {
@@ -40,7 +47,7 @@ export default function EnquiriesScreen() {
 
   const loadData = useCallback(async (force = false) => {
     try {
-      const response = await api.getLegacyInventory(category, submittedSearch, force ? { forceRefresh: true } : undefined);
+      const response: any = await api.getLegacyInventory(category, submittedSearch, force ? { forceNetwork: true } : undefined);
       setItems(Array.isArray(response?.items) ? response.items : []);
       setCounts(response?.counts || { all: response?.total || 0 });
       setHistoricalTotal(typeof response?.historical_total === 'number' ? response.historical_total : null);

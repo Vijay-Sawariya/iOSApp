@@ -593,7 +593,7 @@ export const api = {
   },
 
   // WhatsApp
-  sendWhatsApp: async (data: { phone: string; message: string; lead_id?: string }) => {
+  sendWhatsApp: async (data: { phone: string; message: string; lead_id?: string; status?: string; source?: string }) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
       throw new Error('Cannot send WhatsApp while offline. Please connect to the internet.');
@@ -604,12 +604,20 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to send WhatsApp');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to log WhatsApp'));
+    }
+    await Promise.all([
+      cacheService.remove(CACHE_KEYS.LEADS_CLIENTS),
+      cacheService.remove(CACHE_KEYS.LEADS_INVENTORY),
+      data.lead_id ? cacheService.remove(`cache_lead_${data.lead_id}`) : Promise.resolve(),
+    ]);
     return response.json();
   },
 
-  getWhatsAppLogs: async () => {
-    const response = await fetch(`${API_URL}/api/whatsapp/logs`, {
+  getWhatsAppLogs: async (leadId?: string | number) => {
+    const query = leadId ? `?lead_id=${encodeURIComponent(String(leadId))}` : '';
+    const response = await fetch(`${API_URL}/api/whatsapp/logs${query}`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch WhatsApp logs');

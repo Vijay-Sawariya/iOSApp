@@ -22,6 +22,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { offlineApi } from '../../services/offlineApi';
+import { api } from '../../services/api';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
@@ -343,11 +344,19 @@ export default function LeadDetailScreen() {
     }
   };
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
     if (lead?.phone) {
       const cleanPhone = safeStr(lead.phone).replace(/[^0-9]/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-      Linking.openURL(`https://wa.me/${phoneWithCountry}`);
+      const message = `Hi ${safeStr(lead.name)}, `;
+      await api.sendWhatsApp({
+        phone: safeStr(lead.phone),
+        message,
+        lead_id: String(lead.id || id),
+        status: 'opened',
+        source: 'ios_lead_detail',
+      }).catch((error) => console.warn('WhatsApp log failed:', error));
+      Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
       showContactFollowThrough('WhatsApp');
     }
   };
@@ -544,7 +553,7 @@ export default function LeadDetailScreen() {
 
   const isInventoryLead = (): boolean => {
     const type = safeStr(lead.lead_type).toLowerCase();
-    return ['seller', 'landlord', 'builder'].includes(type);
+    return ['seller', 'landlord', 'builder', 'agent'].includes(type);
   };
 
   const isClientLead = (): boolean => {

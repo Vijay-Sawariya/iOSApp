@@ -39,6 +39,9 @@ export const initDatabase = async (): Promise<void> => {
         building_facing TEXT,
         notes TEXT,
         Property_locationUrl TEXT,
+        last_message_sent_on TEXT,
+        last_sent_message TEXT,
+        whatsapp_sent_flag INTEGER DEFAULT 0,
         created_at TEXT,
         updated_at TEXT,
         synced_at TEXT
@@ -94,6 +97,18 @@ export const initDatabase = async (): Promise<void> => {
         last_error TEXT
       );
     `);
+
+    const leadColumns = await db.getAllAsync('PRAGMA table_info(leads)') as any[];
+    const hasLeadColumn = (column: string) => leadColumns.some((item) => item.name === column);
+    if (!hasLeadColumn('last_message_sent_on')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN last_message_sent_on TEXT');
+    }
+    if (!hasLeadColumn('last_sent_message')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN last_sent_message TEXT');
+    }
+    if (!hasLeadColumn('whatsapp_sent_flag')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN whatsapp_sent_flag INTEGER DEFAULT 0');
+    }
     
     isInitialized = true;
     console.log('Database initialized successfully');
@@ -143,15 +158,17 @@ export const saveLeads = async (leads: any[]): Promise<void> => {
         id, name, phone, email, lead_type, lead_temperature, lead_status,
         location, address, property_type, bhk, floor, area_size,
         budget_min, budget_max, unit, car_parking_number, lift_available,
-        building_facing, notes, Property_locationUrl, created_at, updated_at, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        building_facing, notes, Property_locationUrl, last_message_sent_on,
+        last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         lead.id, lead.name, lead.phone, lead.email, lead.lead_type,
         lead.lead_temperature, lead.lead_status, lead.location, lead.address,
         lead.property_type, lead.bhk, lead.floor, lead.area_size,
         lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
         lead.lift_available, lead.building_facing, lead.notes,
-        lead.Property_locationUrl, lead.created_at, lead.updated_at, syncedAt
+        lead.Property_locationUrl, lead.last_message_sent_on, lead.last_sent_message,
+        lead.whatsapp_sent_flag ? 1 : 0, lead.created_at, lead.updated_at, syncedAt
       ]
     );
   }
@@ -238,7 +255,7 @@ export const getLocalInventoryLeads = async (): Promise<any[]> => {
   if (!database) return [];
   
   const leads = await database.getAllAsync(
-    `SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder') ORDER BY created_at DESC`
+    `SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent') ORDER BY created_at DESC`
   );
   
   // Get floor pricing for each lead
@@ -370,15 +387,17 @@ export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
       id, name, phone, email, lead_type, lead_temperature, lead_status,
       location, address, property_type, bhk, floor, area_size,
       budget_min, budget_max, unit, car_parking_number, lift_available,
-      building_facing, notes, Property_locationUrl, created_at, updated_at, synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      building_facing, notes, Property_locationUrl, last_message_sent_on,
+      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       localId, lead.name, lead.phone, lead.email || null, lead.lead_type,
       lead.lead_temperature, lead.lead_status, lead.location, lead.address,
       lead.property_type, lead.bhk, lead.floor, lead.area_size,
       lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
       lead.lift_available, lead.building_facing, lead.notes,
-      lead.Property_locationUrl, now, now, null
+      lead.Property_locationUrl, lead.last_message_sent_on || null,
+      lead.last_sent_message || null, lead.whatsapp_sent_flag ? 1 : 0, now, now, null
     ]
   );
 
@@ -460,7 +479,7 @@ export const getLeadCount = async (): Promise<{ clients: number; inventory: numb
     `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant')`
   ) as { count: number } | null;
   const inventoryResult = await database.getFirstAsync(
-    `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder')`
+    `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent')`
   ) as { count: number } | null;
   return {
     clients: clientResult?.count || 0,
