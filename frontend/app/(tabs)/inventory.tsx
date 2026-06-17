@@ -671,6 +671,25 @@ export default function InventoryLeadsScreen() {
     return lines.join('\n');
   };
 
+  const composePropertyCopyMessage = (lead: Lead) => {
+    const locationText = [lead.address, lead.location].filter(Boolean).join(', ');
+    const floorBhkText = [
+      lead.floor ? `Floor: ${lead.floor}` : null,
+      lead.bhk ? `BHK: ${lead.bhk}` : null,
+    ].filter(Boolean).join(' | ');
+    const pricingText = formatFloorPricing(lead.floor_pricing, lead.unit);
+    const lines = [
+      `Property 1 - (${lead.id}):`,
+      locationText ? `📍 Location: ${locationText}` : null,
+      lead.area_size ? `📐 Plot Area: ${lead.area_size} sq. yds` : null,
+      floorBhkText ? `🏠 ${floorBhkText}` : null,
+      lead.lead_status ? `📋 Status: ${lead.lead_status}` : null,
+      pricingText ? `💰 Pricing: ${pricingText}` : null,
+    ].filter(Boolean);
+
+    return lines.join('\n');
+  };
+
   const handleSharePropertyInfo = async (lead: Lead) => {
     try {
       const message = composePropertyInfoMessage(lead);
@@ -695,7 +714,7 @@ export default function InventoryLeadsScreen() {
 
   const handleCopyPropertyInfo = async (lead: Lead) => {
     try {
-      await Clipboard.setStringAsync(composePropertyInfoMessage(lead));
+      await Clipboard.setStringAsync(composePropertyCopyMessage(lead));
       Alert.alert('Copied', 'Inventory details copied.');
     } catch (error: any) {
       console.error('Copy property info error:', error);
