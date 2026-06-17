@@ -90,6 +90,8 @@ class SyncService {
   private async pushPendingOperations(onProgress?: ProgressCallback): Promise<void> {
     const pending = await db.getPendingOperations();
     if (pending.length === 0) return;
+    const localLeadIdMap = new Map<number, number>();
+    const localReminderIdMap = new Map<number, number>();
 
     onProgress?.({ stage: `Uploading ${pending.length} offline change${pending.length > 1 ? 's' : ''}...`, progress: 0, total: pending.length });
 
@@ -101,6 +103,9 @@ class SyncService {
           const created = await this.postToApi('/api/leads', payload);
           await db.deletePendingOperation(operation.id);
           if (operation.local_entity_id) {
+            if (created?.id) {
+              localLeadIdMap.set(operation.local_entity_id, created.id);
+            }
             await db.removeLocalLead(operation.local_entity_id);
           }
           await db.saveLeads([created]);
@@ -111,7 +116,13 @@ class SyncService {
             })));
           }
         } else if (operation.entity_type === 'lead' && operation.operation_type === 'update') {
-          const leadId = payload.id || operation.local_entity_id;
+          const queuedLeadId = payload.id || operation.local_entity_id;
+          const leadId = queuedLeadId < 0 ? localLeadIdMap.get(queuedLeadId) : queuedLeadId;
+          if (!leadId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline lead update...', progress: index + 1, total: pending.length });
+            continue;
+          }
           const updated = await this.putToApi(`/api/leads/${leadId}`, payload.data || payload);
           await db.deletePendingOperation(operation.id);
           await db.saveLeads([updated]);
@@ -122,21 +133,42 @@ class SyncService {
             })));
           }
         } else if (operation.entity_type === 'lead' && operation.operation_type === 'delete') {
-          const leadId = payload.id || operation.local_entity_id;
+          const queuedLeadId = payload.id || operation.local_entity_id;
+          const leadId = queuedLeadId < 0 ? localLeadIdMap.get(queuedLeadId) : queuedLeadId;
+          if (!leadId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline lead delete...', progress: index + 1, total: pending.length });
+            continue;
+          }
           await this.deleteFromApi(`/api/leads/${leadId}`);
           await db.deletePendingOperation(operation.id);
           if (leadId) {
             await db.removeLocalLead(leadId);
           }
         } else if (operation.entity_type === 'reminder' && operation.operation_type === 'create') {
-          await this.postToApi('/api/reminders', payload);
+          const created = await this.postToApi('/api/reminders', payload);
+          if (operation.local_entity_id && created?.id) {
+            localReminderIdMap.set(operation.local_entity_id, created.id);
+          }
           await db.deletePendingOperation(operation.id);
         } else if (operation.entity_type === 'reminder' && operation.operation_type === 'update') {
-          const reminderId = payload.id || operation.local_entity_id;
+          const queuedReminderId = payload.id || operation.local_entity_id;
+          const reminderId = queuedReminderId < 0 ? localReminderIdMap.get(queuedReminderId) : queuedReminderId;
+          if (!reminderId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline reminder update...', progress: index + 1, total: pending.length });
+            continue;
+          }
           await this.putToApi(`/api/reminders/${reminderId}`, payload.data || payload);
           await db.deletePendingOperation(operation.id);
         } else if (operation.entity_type === 'reminder' && operation.operation_type === 'delete') {
-          const reminderId = payload.id || operation.local_entity_id;
+          const queuedReminderId = payload.id || operation.local_entity_id;
+          const reminderId = queuedReminderId < 0 ? localReminderIdMap.get(queuedReminderId) : queuedReminderId;
+          if (!reminderId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline reminder delete...', progress: index + 1, total: pending.length });
+            continue;
+          }
           await this.deleteFromApi(`/api/reminders/${reminderId}`);
           await db.deletePendingOperation(operation.id);
         }

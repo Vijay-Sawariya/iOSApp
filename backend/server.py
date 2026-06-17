@@ -198,6 +198,20 @@ def ensure_whatsapp_logs_table(cursor):
             INDEX idx_whatsapp_logs_phone (phone)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """)
+    optional_columns = {
+        'phone': "ALTER TABLE whatsapp_logs ADD COLUMN phone VARCHAR(50) NULL",
+        'message': "ALTER TABLE whatsapp_logs ADD COLUMN message TEXT NULL",
+        'source': "ALTER TABLE whatsapp_logs ADD COLUMN source VARCHAR(50) NULL",
+        'created_by': "ALTER TABLE whatsapp_logs ADD COLUMN created_by INT NULL",
+        'created_at': "ALTER TABLE whatsapp_logs ADD COLUMN created_at DATETIME NULL",
+    }
+    for column, alter_sql in optional_columns.items():
+        try:
+            cursor.execute("SHOW COLUMNS FROM whatsapp_logs LIKE %s", (column,))
+            if not cursor.fetchone():
+                cursor.execute(alter_sql)
+        except Exception as exc:
+            logging.warning(f"WhatsApp log column guard skipped for {column}: {exc}")
 
 def log_security_event(cursor, user_id, event_type, entity_type=None, entity_id=None, details=None):
     try:
@@ -1882,6 +1896,14 @@ def delete_builder(builder_id: int, current_user: dict = Depends(get_current_use
     return {"message": "Builder deleted successfully"}
 
 # ============= Followup/Conversation Routes =============
+def ensure_followups_soft_delete_column(cursor):
+    try:
+        cursor.execute("SHOW COLUMNS FROM followups LIKE 'is_deleted'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE followups ADD COLUMN is_deleted TINYINT(1) NOT NULL DEFAULT 0")
+    except Exception as exc:
+        logging.warning(f"Followup soft-delete column guard skipped: {exc}")
+
 class FollowupCreate(BaseModel):
     lead_id: int
     channel: str  # Call, WhatsApp, SMS, Email, Visit
@@ -1910,6 +1932,8 @@ def get_lead_followups(lead_id: int, current_user: dict = Depends(get_current_us
     """Get all followups/conversations for a lead"""
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_followups_soft_delete_column(cursor)
+        conn.commit()
         cursor.execute("""
             SELECT f.*, u.full_name as owner_name 
             FROM followups f
@@ -1926,6 +1950,8 @@ def create_followup(lead_id: int, followup: FollowupCreate, current_user: dict =
     """Log a new conversation/followup for a lead"""
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_followups_soft_delete_column(cursor)
+        conn.commit()
         
         # Parse dates
         followup_date = None
@@ -2020,17 +2046,41 @@ def get_whatsapp_logs(lead_id: Optional[int] = None, limit: int = 100, current_u
         cursor = conn.cursor()
         ensure_whatsapp_logs_table(cursor)
         safe_limit = max(1, min(int(limit or 100), 200))
+        columns = _table_columns(cursor, 'whatsapp_logs')
+        message_expr = (
+            "COALESCE(wl.message, wl.message_body)"
+            if {'message', 'message_body'}.issubset(columns)
+            else "wl.message"
+            if 'message' in columns
+            else "wl.message_body"
+            if 'message_body' in columns
+            else "''"
+        )
+        date_expr = (
+            "COALESCE(wl.created_at, wl.sent_at)"
+            if {'created_at', 'sent_at'}.issubset(columns)
+            else "wl.created_at"
+            if 'created_at' in columns
+            else "wl.sent_at"
+            if 'sent_at' in columns
+            else "NULL"
+        )
+        phone_expr = "wl.phone" if 'phone' in columns else "NULL"
         params: List[Any] = []
         where = ""
         if lead_id:
             where = "WHERE wl.lead_id = %s"
             params.append(lead_id)
         cursor.execute(f"""
-            SELECT wl.*, u.full_name as created_by_name
+            SELECT wl.id, wl.lead_id, {phone_expr} as phone,
+                   {message_expr} as message,
+                   wl.status, wl.source, wl.created_by,
+                   {date_expr} as created_at,
+                   u.full_name as created_by_name
             FROM whatsapp_logs wl
             LEFT JOIN users u ON wl.created_by = u.id
             {where}
-            ORDER BY wl.created_at DESC
+            ORDER BY {date_expr} DESC
             LIMIT %s
         """, [*params, safe_limit])
         logs = cursor.fetchall()
@@ -3459,6 +3509,8 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
 
         # Get conversation logs from followups table.
         try:
+            ensure_followups_soft_delete_column(cursor)
+            conn.commit()
             cursor.execute("""
                 SELECT f.id, f.channel, f.outcome, f.notes, f.followup_date, f.next_followup,
                        f.created_at, u.full_name as owner_name
@@ -3490,14 +3542,40 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
         # Get WhatsApp opens/logs.
         try:
             ensure_whatsapp_logs_table(cursor)
+            conn.commit()
+            whatsapp_columns = _table_columns(cursor, 'whatsapp_logs')
+            whatsapp_message_expr = (
+                "COALESCE(wl.message, wl.message_body)"
+                if {'message', 'message_body'}.issubset(whatsapp_columns)
+                else "wl.message"
+                if 'message' in whatsapp_columns
+                else "wl.message_body"
+                if 'message_body' in whatsapp_columns
+                else "''"
+            )
+            whatsapp_date_expr = (
+                "COALESCE(wl.created_at, wl.sent_at)"
+                if {'created_at', 'sent_at'}.issubset(whatsapp_columns)
+                else "wl.created_at"
+                if 'created_at' in whatsapp_columns
+                else "wl.sent_at"
+                if 'sent_at' in whatsapp_columns
+                else "NULL"
+            )
+            whatsapp_phone_expr = "wl.phone" if 'phone' in whatsapp_columns else "NULL"
             cursor.execute("""
-                SELECT wl.id, wl.phone, wl.message, wl.status, wl.source, wl.created_at,
+                SELECT wl.id, {phone_expr} as phone, {message_expr} as message,
+                       wl.status, wl.source, {date_expr} as created_at,
                        u.full_name as created_by_name
                 FROM whatsapp_logs wl
                 LEFT JOIN users u ON u.id = wl.created_by
                 WHERE wl.lead_id = %s
-                ORDER BY wl.created_at DESC
-            """, (lead_id,))
+                ORDER BY {date_expr} DESC
+            """.format(
+                phone_expr=whatsapp_phone_expr,
+                message_expr=whatsapp_message_expr,
+                date_expr=whatsapp_date_expr,
+            ), (lead_id,))
             for w in cursor.fetchall():
                 activities.append({
                     'type': 'whatsapp',
@@ -3554,24 +3632,46 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
                 'icon': 'location'
             })
         
-        # Get deals
-        cursor.execute("""
-            SELECT 'deal' as type, id, CONCAT('Deal: ₹', COALESCE(deal_amount, 0), ' Cr') as description,
-                   expected_closing_date as activity_date, status, created_at
-            FROM deals WHERE lead_id = %s OR property_lead_id = %s
-            ORDER BY created_at DESC
-        """, (lead_id, lead_id))
-        deals = cursor.fetchall()
-        for d in deals:
-            activities.append({
-                'type': 'deal',
-                'id': d['id'],
-                'title': 'Conversion',
-                'description': d['description'],
-                'date': str(d['activity_date']) if d.get('activity_date') else (d['created_at'].isoformat() if d.get('created_at') else ''),
-                'status': d['status'],
-                'icon': 'cash'
-            })
+        # Get deals/conversions. Existing LMS databases may use deal_value,
+        # final_deal_value, deal_status, inventory_id, or property_id.
+        try:
+            if _table_exists(cursor, 'deals'):
+                deal_columns = _table_columns(cursor, 'deals')
+                amount_candidates = [col for col in ['deal_amount', 'deal_value', 'final_deal_value'] if col in deal_columns]
+                amount_expr = f"COALESCE({', '.join(amount_candidates)}, 0)" if amount_candidates else "0"
+                status_expr = (
+                    "COALESCE(status, deal_status)"
+                    if {'status', 'deal_status'}.issubset(deal_columns)
+                    else "status"
+                    if 'status' in deal_columns
+                    else "deal_status"
+                    if 'deal_status' in deal_columns
+                    else "'Logged'"
+                )
+                date_expr = "expected_closing_date" if 'expected_closing_date' in deal_columns else "created_at"
+                created_expr = "created_at" if 'created_at' in deal_columns else "NULL"
+                related_columns = [col for col in ['lead_id', 'property_lead_id', 'inventory_id', 'property_id'] if col in deal_columns]
+                if related_columns:
+                    where_clause = " OR ".join([f"{col} = %s" for col in related_columns])
+                    params = tuple([lead_id] * len(related_columns))
+                    cursor.execute(f"""
+                        SELECT 'deal' as type, id, CONCAT('Deal: ₹', {amount_expr}, ' Cr') as description,
+                               {date_expr} as activity_date, {status_expr} as status, {created_expr} as created_at
+                        FROM deals WHERE {where_clause}
+                        ORDER BY {created_expr} DESC
+                    """, params)
+                    for d in cursor.fetchall():
+                        activities.append({
+                            'type': 'deal',
+                            'id': d['id'],
+                            'title': 'Conversion',
+                            'description': d['description'],
+                            'date': str(d['activity_date']) if d.get('activity_date') else (d['created_at'].isoformat() if d.get('created_at') else ''),
+                            'status': d.get('status') or 'Logged',
+                            'icon': 'cash'
+                        })
+        except Exception as exc:
+            logging.warning(f"Deals timeline skipped for lead {lead_id}: {exc}")
     
     # Sort by date descending
     activities.sort(key=lambda x: x['date'] if x['date'] else '', reverse=True)
