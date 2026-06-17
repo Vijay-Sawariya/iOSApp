@@ -222,6 +222,13 @@ const getVisitDateOptions = () => {
   });
 };
 
+const todayDateValue = () => formatDateValue(new Date());
+
+const normalizeVisitTime = (value?: string | null) => {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+};
+
 const EXPORT_COLUMNS = [
   'id', 'name', 'phone', 'email', 'lead_type', 'lead_status', 'temperature',
   'budget_min', 'budget_max', 'unit', 'location', 'address', 'property_type',
@@ -478,6 +485,31 @@ export default function MoreScreen() {
     setMatchingInventory([]);
   };
 
+  const openVisitPlanner = () => {
+    const defaultDate = todayDateValue();
+    setVisitForm({
+      lead_id: '',
+      lead_name: '',
+      visit_date: defaultDate,
+      visit_time: '11:00',
+      location: '',
+      visit_type: 'Property Visit',
+      meeting_point: '',
+      location_url: '',
+      status: 'Scheduled',
+      notes: '',
+    });
+    setSelectedDate(new Date(`${defaultDate}T11:00:00`));
+    setSelectedLead(null);
+    setLeadSearchQuery('');
+    setLeadSearchResults([]);
+    setShowLeadDropdown(false);
+    setMatchingInventory([]);
+    setSelectedStopIds([]);
+    setVisitStops([]);
+    setShowAddVisitModal(true);
+  };
+
   const formatStopLocation = (stop: VisitStop) => {
     const parts = [stop.address, stop.location].filter(Boolean);
     return parts.length ? parts.join(', ') : stop.name;
@@ -519,6 +551,16 @@ export default function MoreScreen() {
     const directUrl = getLeadMapUrl(stop);
     if (directUrl) return directUrl;
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatStopLocation(stop))}`;
+  };
+
+  const getDraftVisitPlanNote = () => {
+    if (visitStops.length === 0) return visitForm.notes;
+    const routeLines = visitStops.map((stop, index) => `${index + 1}. ${stop.name || `Inventory #${stop.id}`} - ${formatStopLocation(stop)}`);
+    return [
+      visitForm.notes,
+      `Planned route for ${selectedLead?.name || visitForm.lead_name || 'client'} (${visitStops.length} stops):`,
+      ...routeLines,
+    ].filter(Boolean).join('\n');
   };
 
   const getVisitMapUrl = (visit: SiteVisit) => {
@@ -657,6 +699,16 @@ export default function MoreScreen() {
     return `https://www.google.com/maps/dir/?api=1&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
   };
 
+  const buildVisitsRouteUrl = (visits: SiteVisit[]) => {
+    const routePoints = visits
+      .map((visit) => extractGoogleRoutePoint(getVisitMapUrl(visit)) || visit.location || visit.property_location)
+      .filter(Boolean);
+    if (routePoints.length === 0) return '';
+    const destination = encodeURIComponent(routePoints[routePoints.length - 1]);
+    const waypoints = routePoints.slice(0, -1).map((point) => encodeURIComponent(point)).join('%7C');
+    return `https://www.google.com/maps/dir/?api=1&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+  };
+
   const openVisitRoute = () => {
     if (visitStops.length === 0) {
       Alert.alert('Add stops', 'Please add matched inventory before opening route.');
@@ -686,6 +738,51 @@ export default function MoreScreen() {
     const routeUrl = buildRouteUrl();
     if (routeUrl) {
       lines.push('*Trip Map*');
+      lines.push(routeUrl);
+    }
+    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`);
+  };
+
+  const getScheduledVisitsForDate = (dateValue: string) => siteVisits
+    .filter((visit) => visit.visit_date === dateValue && visit.status === 'Scheduled')
+    .sort((a, b) => {
+      const byTime = normalizeVisitTime(a.visit_time).localeCompare(normalizeVisitTime(b.visit_time));
+      if (byTime !== 0) return byTime;
+      return (a.visit_order || 999) - (b.visit_order || 999);
+    });
+
+  const openTodayRoute = () => {
+    const visits = getScheduledVisitsForDate(todayDateValue());
+    if (visits.length === 0) {
+      Alert.alert('No route', 'No scheduled site visits for today.');
+      return;
+    }
+    const routeUrl = buildVisitsRouteUrl(visits);
+    if (!routeUrl) {
+      Alert.alert('Missing locations', 'Today visits do not have routeable locations yet.');
+      return;
+    }
+    Linking.openURL(routeUrl);
+  };
+
+  const shareTodayVisits = () => {
+    const visits = getScheduledVisitsForDate(todayDateValue());
+    if (visits.length === 0) {
+      Alert.alert('No visits', 'No scheduled site visits for today.');
+      return;
+    }
+    const lines = ['*Today Site Visit Route*', ''];
+    visits.forEach((visit, index) => {
+      lines.push(`${index + 1}. ${normalizeVisitTime(visit.visit_time) || '--:--'} - ${visit.lead_name || `Lead #${visit.lead_id}`}`);
+      lines.push(`Location: ${visit.location || visit.property_location || '-'}`);
+      if (visit.meeting_point) lines.push(`Meet: ${visit.meeting_point}`);
+      const mapUrl = getVisitMapUrl(visit);
+      if (mapUrl) lines.push(`Map: ${mapUrl}`);
+      lines.push('');
+    });
+    const routeUrl = buildVisitsRouteUrl(visits);
+    if (routeUrl) {
+      lines.push('*Full Route*');
       lines.push(routeUrl);
     }
     Linking.openURL(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`);
@@ -771,7 +868,7 @@ export default function MoreScreen() {
         visit_type: visitForm.visit_type,
         meeting_point: visitForm.meeting_point,
         status: visitForm.status,
-        notes: visitForm.notes,
+        notes: getDraftVisitPlanNote(),
       };
       const payloads = visitStops.length > 0
         ? visitStops.map((stop, index) => ({
@@ -1103,6 +1200,70 @@ export default function MoreScreen() {
     );
   };
 
+  const renderVisitsPlannerHeader = () => {
+    const todayValue = todayDateValue();
+    const todayVisits = getScheduledVisitsForDate(todayValue);
+    const upcomingVisits = siteVisits.filter((visit) => visit.status === 'Scheduled' && visit.visit_date > todayValue);
+    const completedVisits = siteVisits.filter((visit) => visit.status === 'Completed');
+    const nextVisit = todayVisits[0] || upcomingVisits[0];
+
+    return (
+      <View style={styles.visitPlannerHeader}>
+        <View style={styles.plannerTitleRow}>
+          <View>
+            <Text style={styles.plannerTitle}>Site Visit Planner</Text>
+            <Text style={styles.plannerSubtitle}>Plan matched inventory routes and track visit outcomes</Text>
+          </View>
+          <TouchableOpacity style={styles.plannerPrimaryButton} onPress={openVisitPlanner}>
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Text style={styles.plannerPrimaryButtonText}>Plan</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.plannerStatsRow}>
+          <View style={styles.plannerStatCard}>
+            <Text style={styles.plannerStatValue}>{todayVisits.length}</Text>
+            <Text style={styles.plannerStatLabel}>Today</Text>
+          </View>
+          <View style={styles.plannerStatCard}>
+            <Text style={styles.plannerStatValue}>{upcomingVisits.length}</Text>
+            <Text style={styles.plannerStatLabel}>Upcoming</Text>
+          </View>
+          <View style={styles.plannerStatCard}>
+            <Text style={styles.plannerStatValue}>{completedVisits.length}</Text>
+            <Text style={styles.plannerStatLabel}>Done</Text>
+          </View>
+        </View>
+
+        <View style={styles.nextVisitCard}>
+          <View style={styles.nextVisitIcon}>
+            <Ionicons name="navigate" size={18} color="#2563EB" />
+          </View>
+          <View style={styles.nextVisitCopy}>
+            <Text style={styles.nextVisitLabel}>{nextVisit ? 'Next visit' : 'No scheduled visits'}</Text>
+            <Text style={styles.nextVisitTitle} numberOfLines={1}>
+              {nextVisit ? `${normalizeVisitTime(nextVisit.visit_time) || '--:--'} · ${nextVisit.lead_name || `Lead #${nextVisit.lead_id}`}` : 'Create a visit plan from matched inventory'}
+            </Text>
+            {nextVisit ? (
+              <Text style={styles.nextVisitMeta} numberOfLines={1}>{nextVisit.location || nextVisit.property_location || 'Location pending'}</Text>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.routeActionRow}>
+          <TouchableOpacity style={styles.routeButton} onPress={openTodayRoute}>
+            <Ionicons name="map" size={17} color="#FFFFFF" />
+            <Text style={styles.routeButtonText}>Today Route</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.routeButton, styles.whatsAppRouteButton]} onPress={shareTodayVisits}>
+            <Ionicons name="logo-whatsapp" size={17} color="#FFFFFF" />
+            <Text style={styles.routeButtonText}>Share Today</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderDeal = ({ item }: { item: Deal }) => (
     <TouchableOpacity style={styles.card} onPress={() => router.push(`/leads/${item.lead_id}` as any)}>
       <View style={styles.cardHeader}>
@@ -1421,6 +1582,20 @@ export default function MoreScreen() {
                     </View>
                     <Text style={styles.visitPlanCount}>{visitStops.length} stops</Text>
                   </View>
+                  <View style={styles.visitPlanSummary}>
+                    <View style={styles.visitPlanSummaryItem}>
+                      <Ionicons name="calendar" size={14} color="#2563EB" />
+                      <Text style={styles.visitPlanSummaryText}>{visitForm.visit_date || 'Date pending'}</Text>
+                    </View>
+                    <View style={styles.visitPlanSummaryItem}>
+                      <Ionicons name="time" size={14} color="#2563EB" />
+                      <Text style={styles.visitPlanSummaryText}>{visitForm.visit_time || 'Time pending'}</Text>
+                    </View>
+                    <View style={styles.visitPlanSummaryItem}>
+                      <Ionicons name="map" size={14} color="#2563EB" />
+                      <Text style={styles.visitPlanSummaryText}>{visitStops.length === 1 ? 'Single stop' : `${visitStops.length - 1} waypoint route`}</Text>
+                    </View>
+                  </View>
                   {visitStops.map((stop, index) => (
                     <VisitStopRow
                       key={stop.id}
@@ -1729,7 +1904,7 @@ export default function MoreScreen() {
           {(activeTab === 'visits' || activeTab === 'deals') && (
             <TouchableOpacity
               style={styles.headerAddButton}
-              onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+              onPress={() => activeTab === 'visits' ? openVisitPlanner() : setShowAddDealModal(true)}
             >
               <Ionicons name="add" size={24} color="#3B82F6" />
             </TouchableOpacity>
@@ -1745,6 +1920,7 @@ export default function MoreScreen() {
               keyExtractor={(item) => item.id.toString()}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
               contentContainerStyle={styles.listContainer}
+              ListHeaderComponent={renderVisitsPlannerHeader}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <View style={styles.emptyIconContainer}>
@@ -1752,7 +1928,7 @@ export default function MoreScreen() {
                   </View>
                   <Text style={styles.emptyTitle}>No Site Visits</Text>
                   <Text style={styles.emptyText}>Schedule your first property visit</Text>
-                  <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
+                  <TouchableOpacity style={styles.emptyButton} onPress={openVisitPlanner}>
                     <Ionicons name="add" size={18} color="#FFFFFF" />
                     <Text style={styles.emptyButtonText}>Schedule Visit</Text>
                   </TouchableOpacity>
@@ -2012,7 +2188,7 @@ export default function MoreScreen() {
         {(activeTab === 'visits' || activeTab === 'deals') && (
           <TouchableOpacity
             style={styles.addButtonSmall}
-            onPress={() => activeTab === 'visits' ? setShowAddVisitModal(true) : setShowAddDealModal(true)}
+            onPress={() => activeTab === 'visits' ? openVisitPlanner() : setShowAddDealModal(true)}
           >
             <Ionicons name="add" size={18} color="#FFFFFF" />
           </TouchableOpacity>
@@ -2023,24 +2199,25 @@ export default function MoreScreen() {
       <View style={styles.content}>
         {activeTab === 'visits' && (
           <FlatList
-            data={siteVisits}
-            renderItem={renderSiteVisit}
-            keyExtractor={(item) => item.id.toString()}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={styles.listContainer}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIconContainer}>
-                  <Ionicons name="location-outline" size={40} color="#9CA3AF" />
+              data={siteVisits}
+              renderItem={renderSiteVisit}
+              keyExtractor={(item) => item.id.toString()}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              contentContainerStyle={styles.listContainer}
+              ListHeaderComponent={renderVisitsPlannerHeader}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="location-outline" size={40} color="#9CA3AF" />
+                  </View>
+                  <Text style={styles.emptyTitle}>No Site Visits</Text>
+                  <Text style={styles.emptyText}>Schedule your first property visit</Text>
+                  <TouchableOpacity style={styles.emptyButton} onPress={openVisitPlanner}>
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.emptyButtonText}>Schedule Visit</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.emptyTitle}>No Site Visits</Text>
-                <Text style={styles.emptyText}>Schedule your first property visit</Text>
-                <TouchableOpacity style={styles.emptyButton} onPress={() => setShowAddVisitModal(true)}>
-                  <Ionicons name="add" size={18} color="#FFFFFF" />
-                  <Text style={styles.emptyButtonText}>Schedule Visit</Text>
-                </TouchableOpacity>
-              </View>
-            }
+              }
           />
         )}
 
@@ -2509,6 +2686,111 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  visitPlannerHeader: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  plannerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  plannerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  plannerSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  plannerPrimaryButton: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  plannerPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  plannerStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  plannerStatCard: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 9,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plannerStatValue: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#2563EB',
+  },
+  plannerStatLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  nextVisitCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    gap: 10,
+  },
+  nextVisitIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nextVisitCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  nextVisitLabel: {
+    fontSize: 11,
+    color: '#2563EB',
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  nextVisitTitle: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  nextVisitMeta: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 2,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -2675,6 +2957,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     fontWeight: '700',
+  },
+  visitPlanSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  visitPlanSummaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  visitPlanSummaryText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
   },
   visitStopCard: {
     flexDirection: 'row',

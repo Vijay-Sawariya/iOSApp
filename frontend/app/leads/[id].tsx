@@ -65,6 +65,7 @@ export default function LeadDetailScreen() {
   
   // Followup/Conversation state
   const [followups, setFollowups] = useState<any[]>([]);
+  const [activityItems, setActivityItems] = useState<any[]>([]);
   const [showLogModal, setShowLogModal] = useState(false);
   const [logChannel, setLogChannel] = useState('Call');
   const [logOutcome, setLogOutcome] = useState('Connected');
@@ -92,6 +93,7 @@ export default function LeadDetailScreen() {
     useCallback(() => {
       loadLead();
       loadFollowups();
+      loadActivity();
       loadFiles();
     }, [id])
   );
@@ -121,6 +123,16 @@ export default function LeadDetailScreen() {
       setFollowups(data || []);
     } catch (err) {
       console.error('Failed to load followups:', err);
+    }
+  };
+
+  const loadActivity = async () => {
+    try {
+      const data = await api.getLeadActivity(String(id));
+      setActivityItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load activity timeline:', err);
+      setActivityItems([]);
     }
   };
 
@@ -294,6 +306,7 @@ export default function LeadDetailScreen() {
       setLogDate(new Date().toISOString().split('T')[0]);
       setNextReminderDate('');
       loadFollowups();
+      loadActivity();
     } catch (err) {
       console.error('Failed to save log:', err);
       Alert.alert('Error', 'Failed to save conversation log');
@@ -358,6 +371,7 @@ export default function LeadDetailScreen() {
       }).catch((error) => console.warn('WhatsApp log failed:', error));
       Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
       showContactFollowThrough('WhatsApp');
+      loadActivity();
     }
   };
 
@@ -632,6 +646,36 @@ export default function LeadDetailScreen() {
       Alert.alert('Share Failed', error?.message || 'Could not share via WhatsApp.');
     } finally {
       setSharingMatched(false);
+    }
+  };
+
+  const getActivityIcon = (activity: any): keyof typeof Ionicons.glyphMap => {
+    switch (safeStr(activity.type).toLowerCase()) {
+      case 'whatsapp': return 'logo-whatsapp';
+      case 'visit': return 'location';
+      case 'deal': return 'cash';
+      case 'action': return 'calendar';
+      case 'conversation':
+        switch (safeStr(activity.meta?.channel || activity.title).toLowerCase()) {
+          case 'call': return 'call';
+          case 'whatsapp': return 'logo-whatsapp';
+          case 'sms': return 'chatbubble';
+          case 'email': return 'mail';
+          case 'visit': return 'walk';
+          default: return 'chatbubbles';
+        }
+      default: return 'ellipse';
+    }
+  };
+
+  const getActivityColor = (activity: any) => {
+    switch (safeStr(activity.type).toLowerCase()) {
+      case 'whatsapp': return '#25D366';
+      case 'visit': return '#10B981';
+      case 'deal': return '#B7791F';
+      case 'action': return '#3B82F6';
+      case 'conversation': return '#6D5BD0';
+      default: return '#6B7280';
     }
   };
 
@@ -1160,10 +1204,10 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
-      {/* Log Conversation Section */}
+      {/* Activity Timeline Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{'Conversation History'}</Text>
+          <Text style={styles.sectionTitle}>{'Activity Timeline'}</Text>
           <TouchableOpacity 
             style={styles.addLogButton}
             onPress={() => setShowLogModal(true)}
@@ -1173,53 +1217,38 @@ export default function LeadDetailScreen() {
           </TouchableOpacity>
         </View>
         
-        {followups.length > 0 ? (
-          followups.map((followup, index) => (
-            <View key={index} style={styles.followupCard}>
-              <View style={styles.followupHeader}>
-                <View style={styles.followupChannelBadge}>
-                  <Ionicons 
-                    name={
-                      followup.channel === 'Call' ? 'call' :
-                      followup.channel === 'WhatsApp' ? 'logo-whatsapp' :
-                      followup.channel === 'SMS' ? 'chatbubble' :
-                      followup.channel === 'Email' ? 'mail' :
-                      followup.channel === 'Visit' ? 'walk' : 'chatbubbles'
-                    } 
-                    size={14} 
-                    color="#FFFFFF" 
-                  />
-                  <Text style={styles.followupChannelText}>{safeStr(followup.channel)}</Text>
+        {activityItems.length > 0 ? (
+          activityItems.map((activity, index) => {
+            const activityColor = getActivityColor(activity);
+            return (
+              <View key={`${activity.type}-${activity.id}-${index}`} style={styles.timelineCard}>
+                <View style={[styles.timelineIcon, { backgroundColor: activityColor }]}>
+                  <Ionicons name={getActivityIcon(activity)} size={15} color="#FFFFFF" />
                 </View>
-                <View style={[
-                  styles.followupOutcomeBadge,
-                  { backgroundColor: followup.outcome === 'Connected' ? '#DCFCE7' : 
-                    followup.outcome === 'No Answer' ? '#FEE2E2' :
-                    followup.outcome === 'Deal Won' ? '#D1FAE5' :
-                    followup.outcome === 'Deal Lost' ? '#FEE2E2' : '#F3F4F6' }
-                ]}>
-                  <Text style={[
-                    styles.followupOutcomeText,
-                    { color: followup.outcome === 'Connected' ? '#166534' : 
-                      followup.outcome === 'No Answer' ? '#991B1B' :
-                      followup.outcome === 'Deal Won' ? '#065F46' :
-                      followup.outcome === 'Deal Lost' ? '#991B1B' : '#4B5563' }
-                  ]}>{safeStr(followup.outcome)}</Text>
+                <View style={styles.timelineContent}>
+                  <View style={styles.timelineHeader}>
+                    <Text style={styles.timelineTitle}>{safeStr(activity.title || activity.description || activity.type)}</Text>
+                    {activity.status ? (
+                      <View style={styles.timelineStatusBadge}>
+                        <Text style={styles.timelineStatusText}>{safeStr(activity.status)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {activity.description ? (
+                    <Text style={styles.timelineDescription}>{safeStr(activity.description)}</Text>
+                  ) : null}
+                  <View style={styles.timelineFooter}>
+                    <Text style={styles.timelineDate}>{formatDateTime(activity.date)}</Text>
+                    {activity.created_by ? (
+                      <Text style={styles.timelineOwner}>by {safeStr(activity.created_by)}</Text>
+                    ) : null}
+                  </View>
                 </View>
               </View>
-              {followup.notes ? (
-                <Text style={styles.followupNotes}>{safeStr(followup.notes)}</Text>
-              ) : null}
-              <View style={styles.followupFooter}>
-                <Text style={styles.followupDate}>{formatDateTime(followup.created_at)}</Text>
-                {followup.owner_name ? (
-                  <Text style={styles.followupOwner}>{'by '}{safeStr(followup.owner_name)}</Text>
-                ) : null}
-              </View>
-            </View>
-          ))
+            );
+          })
         ) : (
-          <Text style={styles.noFollowupsText}>{'No conversations logged yet'}</Text>
+          <Text style={styles.noFollowupsText}>{'No activity logged yet'}</Text>
         )}
       </View>
 
@@ -1991,6 +2020,75 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 20,
     fontStyle: 'italic',
+  },
+  timelineCard: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  timelineIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 2,
+  },
+  timelineContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  timelineTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    lineHeight: 20,
+  },
+  timelineStatusBadge: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  timelineStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4338CA',
+  },
+  timelineDescription: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 19,
+    marginTop: 5,
+  },
+  timelineFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 8,
+  },
+  timelineDate: {
+    flex: 1,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  timelineOwner: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,

@@ -658,6 +658,16 @@ export const api = {
     return response.json();
   },
 
+  getLeadActivity: async (leadId: string | number) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/activity`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch lead timeline'));
+    }
+    return response.json();
+  },
+
   // Tentative Pricing APIs
   getAllPricing: async () => {
     const response = await fetch(`${API_URL}/api/pricing`, {

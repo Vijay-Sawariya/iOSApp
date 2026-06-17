@@ -549,11 +549,28 @@ class DashboardStats(BaseModel):
 class AIMatchResult(BaseModel):
     buyer_id: int
     buyer_name: str
+    buyer_type: Optional[str] = None
+    buyer_phone: Optional[str] = None
+    buyer_status: Optional[str] = None
+    buyer_temperature: Optional[str] = None
+    buyer_budget_min: Optional[float] = None
+    buyer_budget_max: Optional[float] = None
     inventory_id: int
     inventory_name: str
+    inventory_type: Optional[str] = None
+    inventory_phone: Optional[str] = None
+    inventory_status: Optional[str] = None
+    inventory_price_min: Optional[float] = None
+    inventory_price_max: Optional[float] = None
+    inventory_floor: Optional[str] = None
+    inventory_bhk: Optional[str] = None
+    inventory_area_size: Optional[str] = None
     location: str
     match_score: int
     match_reasons: List[str]
+    is_saved: bool = False
+    is_hot: bool = False
+    updated_on: Optional[str] = None
 
 class AIMessageRequest(BaseModel):
     lead_id: int
@@ -2427,32 +2444,55 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int = 5):
     """Get AI-powered smart matches between buyers and inventory"""
     matches = []
+    user_role = current_user.get('role', '')
+    user_id = current_user.get('id')
     
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_whatsapp_tracking_columns(cursor)
+        conn.commit()
         
         # Get active buyers with preferences
         cursor.execute("""
-            SELECT id, name, location, budget_min, budget_max, floor, bhk, building_facing, property_type
+            SELECT id, name, phone, location, budget_min, budget_max, floor, bhk,
+                   building_facing, property_type, lead_type, lead_status,
+                   lead_temperature, created_by, updated_on
             FROM leads 
             WHERE lead_type IN ('buyer', 'tenant') 
             AND lead_status NOT IN ('Won', 'Closed/Lost', 'Lost')
             AND (is_deleted IS NULL OR is_deleted = 0)
-            ORDER BY RAND()
-            LIMIT 20
+            ORDER BY
+              CASE WHEN lead_temperature = 'Hot' THEN 0 WHEN lead_temperature = 'Warm' THEN 1 ELSE 2 END,
+              updated_on DESC
+            LIMIT 40
         """)
         buyers = cursor.fetchall()
         
         # Get available inventory
         cursor.execute("""
-            SELECT id, name, location, budget_min, budget_max, floor, bhk, building_facing, property_type, area_size
+            SELECT id, name, phone, location, budget_min, budget_max, floor, bhk,
+                   building_facing, property_type, area_size, lead_type,
+                   lead_status, created_by, updated_on
             FROM leads 
             WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent') 
             AND lead_status NOT IN ('Sold', 'Closed/Lost', 'Lost')
             AND (is_deleted IS NULL OR is_deleted = 0)
+            ORDER BY updated_on DESC
             LIMIT 100
         """)
         inventory = cursor.fetchall()
+
+        buyer_ids = [row['id'] for row in buyers]
+        saved_pairs = set()
+        if buyer_ids:
+            placeholders = ','.join(['%s'] * len(buyer_ids))
+            cursor.execute(f"""
+                SELECT lead_id, matching_lead_id
+                FROM preferred_leads
+                WHERE lead_id IN ({placeholders})
+                  AND matching_lead_id IS NOT NULL
+            """, buyer_ids)
+            saved_pairs = {(row['lead_id'], row['matching_lead_id']) for row in cursor.fetchall()}
         
         # Simple matching algorithm
         for buyer in buyers:
@@ -2496,18 +2536,44 @@ def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int
                     reasons.append(f"BHK match: {inv.get('bhk')}")
                 
                 if score >= 40 and reasons:
+                    buyer_item = dict(buyer)
+                    inventory_item = dict(inv)
+                    buyer_item = apply_lead_masking(buyer_item, user_role, user_id)
+                    inventory_item = apply_lead_masking(inventory_item, user_role, user_id)
+                    saved = (buyer['id'], inv['id']) in saved_pairs
+                    if saved:
+                        score += 8
+                        reasons.insert(0, "Already preferred")
+
                     matches.append({
                         'buyer_id': buyer['id'],
                         'buyer_name': buyer['name'],
+                        'buyer_type': buyer.get('lead_type'),
+                        'buyer_phone': buyer_item.get('phone'),
+                        'buyer_status': buyer.get('lead_status'),
+                        'buyer_temperature': buyer.get('lead_temperature'),
+                        'buyer_budget_min': buyer.get('budget_min'),
+                        'buyer_budget_max': buyer.get('budget_max'),
                         'inventory_id': inv['id'],
                         'inventory_name': inv['name'] or f"Inventory #{inv['id']}",
+                        'inventory_type': inv.get('lead_type'),
+                        'inventory_phone': inventory_item.get('phone'),
+                        'inventory_status': inv.get('lead_status'),
+                        'inventory_price_min': inv.get('budget_min'),
+                        'inventory_price_max': inv.get('budget_max'),
+                        'inventory_floor': inv.get('floor'),
+                        'inventory_bhk': inv.get('bhk'),
+                        'inventory_area_size': inv.get('area_size'),
                         'location': inv.get('location') or 'N/A',
                         'match_score': min(score, 100),
-                        'match_reasons': reasons
+                        'match_reasons': reasons,
+                        'is_saved': saved,
+                        'is_hot': buyer.get('lead_temperature') == 'Hot' or score >= 80,
+                        'updated_on': inv['updated_on'].isoformat() if inv.get('updated_on') else None
                     })
         
         # Sort by score and return top matches
-        matches.sort(key=lambda x: x['match_score'], reverse=True)
+        matches.sort(key=lambda x: (not x['is_saved'], -x['match_score'], x.get('updated_on') or ''), reverse=False)
         return matches[:limit]
 
 @api_router.get("/ai/urgent-followups")
@@ -3390,10 +3456,69 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
     
     with get_db() as conn:
         cursor = conn.cursor()
+
+        # Get conversation logs from followups table.
+        try:
+            cursor.execute("""
+                SELECT f.id, f.channel, f.outcome, f.notes, f.followup_date, f.next_followup,
+                       f.created_at, u.full_name as owner_name
+                FROM followups f
+                LEFT JOIN users u ON u.id = f.owner_id
+                WHERE f.lead_id = %s AND (f.is_deleted IS NULL OR f.is_deleted = 0)
+                ORDER BY f.created_at DESC
+            """, (lead_id,))
+            for f in cursor.fetchall():
+                channel = f.get('channel') or 'Conversation'
+                outcome = f.get('outcome') or 'Logged'
+                activities.append({
+                    'type': 'conversation',
+                    'id': f['id'],
+                    'title': f"{channel}: {outcome}",
+                    'description': f.get('notes') or '',
+                    'date': f['created_at'].isoformat() if f.get('created_at') else str(f.get('followup_date') or ''),
+                    'status': outcome,
+                    'created_by': f.get('owner_name'),
+                    'icon': 'chatbubbles',
+                    'meta': {
+                        'channel': channel,
+                        'next_followup': f['next_followup'].isoformat() if f.get('next_followup') else None,
+                    }
+                })
+        except Exception as exc:
+            logging.warning(f"Followup timeline skipped for lead {lead_id}: {exc}")
+
+        # Get WhatsApp opens/logs.
+        try:
+            ensure_whatsapp_logs_table(cursor)
+            cursor.execute("""
+                SELECT wl.id, wl.phone, wl.message, wl.status, wl.source, wl.created_at,
+                       u.full_name as created_by_name
+                FROM whatsapp_logs wl
+                LEFT JOIN users u ON u.id = wl.created_by
+                WHERE wl.lead_id = %s
+                ORDER BY wl.created_at DESC
+            """, (lead_id,))
+            for w in cursor.fetchall():
+                activities.append({
+                    'type': 'whatsapp',
+                    'id': w['id'],
+                    'title': 'WhatsApp opened',
+                    'description': w.get('message') or '',
+                    'date': w['created_at'].isoformat() if w.get('created_at') else '',
+                    'status': w.get('status') or 'opened',
+                    'created_by': w.get('created_by_name'),
+                    'icon': 'logo-whatsapp',
+                    'meta': {
+                        'phone': w.get('phone'),
+                        'source': w.get('source'),
+                    }
+                })
+        except Exception as exc:
+            logging.warning(f"WhatsApp timeline skipped for lead {lead_id}: {exc}")
         
         # Get follow-ups/actions
         cursor.execute("""
-            SELECT 'followup' as type, id, title as description, due_date as activity_date, 
+            SELECT 'action' as type, id, title, description, action_type, due_date as activity_date, 
                    status, created_at, NULL as created_by_name
             FROM actions WHERE lead_id = %s
             ORDER BY created_at DESC
@@ -3401,10 +3526,11 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
         followups = cursor.fetchall()
         for f in followups:
             activities.append({
-                'type': 'followup',
+                'type': 'action',
                 'id': f['id'],
-                'description': f['description'],
-                'date': str(f['activity_date']) if f['activity_date'] else str(f['created_at']),
+                'title': f.get('title') or f.get('action_type') or 'Follow-up',
+                'description': f.get('description') or '',
+                'date': str(f['activity_date']) if f.get('activity_date') else (f['created_at'].isoformat() if f.get('created_at') else ''),
                 'status': f['status'],
                 'icon': 'calendar'
             })
@@ -3413,16 +3539,17 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
         cursor.execute("""
             SELECT 'visit' as type, id, CONCAT('Site Visit: ', COALESCE(location, 'Property')) as description,
                    visit_date as activity_date, status, created_at
-            FROM site_visits WHERE lead_id = %s
+            FROM site_visits WHERE lead_id = %s OR property_lead_id = %s
             ORDER BY created_at DESC
-        """, (lead_id,))
+        """, (lead_id, lead_id))
         visits = cursor.fetchall()
         for v in visits:
             activities.append({
                 'type': 'visit',
                 'id': v['id'],
+                'title': 'Site Visit',
                 'description': v['description'],
-                'date': str(v['activity_date']) if v['activity_date'] else str(v['created_at']),
+                'date': str(v['activity_date']) if v.get('activity_date') else (v['created_at'].isoformat() if v.get('created_at') else ''),
                 'status': v['status'],
                 'icon': 'location'
             })
@@ -3431,16 +3558,17 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
         cursor.execute("""
             SELECT 'deal' as type, id, CONCAT('Deal: ₹', COALESCE(deal_amount, 0), ' Cr') as description,
                    expected_closing_date as activity_date, status, created_at
-            FROM deals WHERE lead_id = %s
+            FROM deals WHERE lead_id = %s OR property_lead_id = %s
             ORDER BY created_at DESC
-        """, (lead_id,))
+        """, (lead_id, lead_id))
         deals = cursor.fetchall()
         for d in deals:
             activities.append({
                 'type': 'deal',
                 'id': d['id'],
+                'title': 'Conversion',
                 'description': d['description'],
-                'date': str(d['activity_date']) if d['activity_date'] else str(d['created_at']),
+                'date': str(d['activity_date']) if d.get('activity_date') else (d['created_at'].isoformat() if d.get('created_at') else ''),
                 'status': d['status'],
                 'icon': 'cash'
             })
@@ -3589,6 +3717,66 @@ def _lead_summary(row: dict, user_role: str, user_id: int) -> dict:
         "assigned_to": lead.get("assigned_to"),
         "assigned_to_name": lead.get("assigned_to_name"),
         "created_at": lead.get("created_at").isoformat() if lead.get("created_at") else None,
+    }
+
+def _build_whatsapp_intelligence(row: dict) -> dict:
+    name = row.get("name") or "there"
+    lead_type = (row.get("lead_type") or "").lower()
+    location = row.get("location") or row.get("address") or "your preferred area"
+    status = row.get("lead_status") or "Open"
+    temperature = row.get("lead_temperature") or ""
+    days_since = row.get("days_since_whatsapp")
+    whatsapp_count = int(row.get("whatsapp_log_count") or 0)
+    pending_actions = int(row.get("pending_action_count") or 0)
+
+    if days_since is None:
+        reason = "Never messaged on WhatsApp"
+        priority = "High"
+        next_days = 1
+    elif days_since >= 10:
+        reason = f"No WhatsApp touch for {days_since} days"
+        priority = "High" if temperature == "Hot" else "Medium"
+        next_days = 2
+    elif days_since >= 3:
+        reason = f"Follow-up due after {days_since} days"
+        priority = "Medium"
+        next_days = 3
+    else:
+        reason = "Recent WhatsApp touch"
+        priority = "Low"
+        next_days = 3
+
+    if pending_actions == 0 and priority != "High":
+        priority = "Medium"
+
+    if lead_type in ("seller", "landlord", "builder", "agent"):
+        suggested = (
+            f"Hi {name}, checking if your property in {location} is still available. "
+            "Please confirm current price, availability, and any updated details."
+        )
+    elif whatsapp_count == 0:
+        suggested = (
+            f"Hi {name}, we have suitable property options for {location}. "
+            "Please share your preferred time for a quick call or site visit."
+        )
+    elif temperature == "Hot":
+        suggested = (
+            f"Hi {name}, following up on your property requirement in {location}. "
+            "Should I arrange the next site visit or share updated matching options today?"
+        )
+    else:
+        suggested = (
+            f"Hi {name}, just following up on your {status.lower()} property requirement in {location}. "
+            "Please let me know if you would like fresh options."
+        )
+
+    return {
+        "whatsapp_reason": reason,
+        "whatsapp_priority": priority,
+        "suggested_message": suggested,
+        "suggested_next_followup_days": next_days,
+        "pending_action_count": pending_actions,
+        "whatsapp_log_count": whatsapp_count,
     }
 
 def _find_enquiry_table(cursor) -> Optional[dict]:
@@ -3800,12 +3988,25 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
     user_id = current_user.get('id')
     today = datetime.utcnow().date()
 
+    def normalize_action_rows(rows):
+        normalized = []
+        for row in rows:
+            item = dict(row)
+            if should_mask_data(user_role, user_id, item.get('lead_created_by')):
+                item['lead_phone'] = mask_phone(item.get('lead_phone'))
+            item['due_date'] = str(item['due_date']) if item.get('due_date') else None
+            item['due_time'] = str(item['due_time']) if item.get('due_time') else None
+            normalized.append(item)
+        return normalized
+
     with get_db() as conn:
         cursor = conn.cursor()
         ensure_action_assignment_column(cursor)
+        ensure_whatsapp_tracking_columns(cursor)
+        ensure_whatsapp_logs_table(cursor)
         conn.commit()
 
-        cursor.execute("""
+        action_select = """
             SELECT a.id, a.lead_id, a.title, a.description, a.action_type, a.due_date, a.due_time,
                    a.status, a.priority, l.name as lead_name, l.phone as lead_phone, l.lead_type,
                    l.created_by as lead_created_by, u.full_name as assigned_to_name
@@ -3814,21 +4015,34 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
             LEFT JOIN users u ON u.id = a.assigned_to
             WHERE a.status IN ('Pending', 'Up Coming', 'Missed')
               AND (a.user_id = %s OR a.assigned_to = %s OR %s = 'admin')
-              AND (a.due_date <= %s OR a.due_date IS NULL)
               AND (l.id IS NULL OR l.is_deleted IS NULL OR l.is_deleted = 0)
+        """
+
+        cursor.execute(f"""
+            {action_select}
+              AND a.due_date < %s
+            ORDER BY a.due_date ASC, a.due_time ASC
+            LIMIT 20
+        """, (user_id, user_id, user_role, today))
+        missed_actions = normalize_action_rows(cursor.fetchall())
+
+        cursor.execute(f"""
+            {action_select}
+              AND (a.due_date = %s OR a.due_date IS NULL)
+            ORDER BY CASE WHEN a.due_date IS NULL THEN 1 ELSE 0 END, a.due_time ASC
+            LIMIT 20
+        """, (user_id, user_id, user_role, today))
+        today_actions = normalize_action_rows(cursor.fetchall())
+
+        cursor.execute(f"""
+            {action_select}
+              AND (a.due_date <= %s OR a.due_date IS NULL)
             ORDER BY
               CASE WHEN a.due_date < %s THEN 0 WHEN a.due_date = %s THEN 1 ELSE 2 END,
               a.due_date ASC, a.due_time ASC
             LIMIT 20
         """, (user_id, user_id, user_role, today, today, today))
-        actions = []
-        for row in cursor.fetchall():
-            item = dict(row)
-            if should_mask_data(user_role, user_id, item.get('lead_created_by')):
-                item['lead_phone'] = mask_phone(item.get('lead_phone'))
-            item['due_date'] = str(item['due_date']) if item.get('due_date') else None
-            item['due_time'] = str(item['due_time']) if item.get('due_time') else None
-            actions.append(item)
+        actions = normalize_action_rows(cursor.fetchall())
 
         cursor.execute("""
             SELECT l.*, u.full_name as created_by_name, NULL as assigned_to_name
@@ -3858,6 +4072,37 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
         """)
         notes_missing = [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
 
+        cursor.execute("""
+            SELECT l.*, u.full_name as created_by_name, NULL as assigned_to_name,
+                   DATEDIFF(CURDATE(), DATE(l.last_message_sent_on)) as days_since_whatsapp,
+                   (
+                     SELECT COUNT(*)
+                     FROM whatsapp_logs wl
+                     WHERE wl.lead_id = l.id
+                   ) as whatsapp_log_count,
+                   (
+                     SELECT COUNT(*)
+                     FROM actions a
+                     WHERE a.lead_id = l.id
+                       AND a.status IN ('Pending', 'Up Coming', 'Missed')
+                   ) as pending_action_count
+            FROM leads l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE LOWER(IFNULL(l.lead_type, '')) IN ('buyer', 'tenant', 'seller', 'landlord', 'builder', 'agent')
+              AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+              AND (l.lead_status IS NULL OR l.lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
+              AND (l.last_message_sent_on IS NULL OR DATE(l.last_message_sent_on) <= DATE_SUB(CURDATE(), INTERVAL 3 DAY))
+            ORDER BY l.last_message_sent_on IS NULL DESC, l.last_message_sent_on ASC, l.created_at DESC
+            LIMIT 15
+        """)
+        whatsapp_due = []
+        for row in cursor.fetchall():
+            item = _lead_summary(row, user_role, user_id)
+            item["last_message_sent_on"] = row.get("last_message_sent_on").isoformat() if row.get("last_message_sent_on") else None
+            item["days_since_whatsapp"] = row.get("days_since_whatsapp")
+            item.update(_build_whatsapp_intelligence(row))
+            whatsapp_due.append(item)
+
         fresh_enquiries = []
         enquiry_meta = _find_enquiry_table(cursor)
         if enquiry_meta:
@@ -3874,18 +4119,27 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
             """)
             fresh_enquiries = [dict(row) for row in cursor.fetchall()]
 
+    smart_match_inbox = get_smart_matches(current_user=current_user, limit=12)
+
     return {
         "date": today.isoformat(),
         "priority_actions": actions,
+        "missed_actions": missed_actions,
+        "today_actions": today_actions,
+        "whatsapp_due_leads": whatsapp_due,
         "hot_leads_without_action": hot_leads,
         "notes_missing": notes_missing,
         "fresh_enquiries": fresh_enquiries,
-        "smart_matches": get_smart_matches(current_user=current_user, limit=5),
+        "smart_matches": smart_match_inbox,
         "summary": {
             "priority_actions": len(actions),
+            "missed_actions": len(missed_actions),
+            "today_actions": len(today_actions),
+            "whatsapp_due_leads": len(whatsapp_due),
             "hot_leads_without_action": len(hot_leads),
             "notes_missing": len(notes_missing),
             "fresh_enquiries": len(fresh_enquiries),
+            "smart_matches": len(smart_match_inbox),
         }
     }
 
