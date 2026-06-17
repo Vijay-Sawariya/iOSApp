@@ -383,7 +383,12 @@ export const api = {
   updateLead: async (id: string, data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot update lead while offline. Please connect to the internet.');
+      const queued = await db.queuePendingLeadUpdate(parseInt(id, 10), data);
+      await cacheService.remove(`cache_lead_${id}`);
+      await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+      await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+      await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/leads/${id}`, {
@@ -404,7 +409,12 @@ export const api = {
   deleteLead: async (id: string) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot delete lead while offline. Please connect to the internet.');
+      const queued = await db.queuePendingLeadDelete(parseInt(id, 10));
+      await cacheService.remove(`cache_lead_${id}`);
+      await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+      await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+      await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/leads/${id}`, {
@@ -509,7 +519,9 @@ export const api = {
   createReminder: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot create reminder while offline. Please connect to the internet.');
+      const queued = await db.queuePendingReminderCreate(data);
+      await invalidateReminderCaches();
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/reminders`, {
@@ -527,7 +539,9 @@ export const api = {
   updateReminder: async (id: string, data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot update reminder while offline. Please connect to the internet.');
+      const queued = await db.queuePendingReminderUpdate(parseInt(id, 10), data);
+      await invalidateReminderCaches();
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/reminders/${id}`, {
@@ -545,7 +559,9 @@ export const api = {
   deleteReminder: async (id: string) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot delete reminder while offline. Please connect to the internet.');
+      const queued = await db.queuePendingReminderDelete(parseInt(id, 10));
+      await invalidateReminderCaches();
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/reminders/${id}`, {

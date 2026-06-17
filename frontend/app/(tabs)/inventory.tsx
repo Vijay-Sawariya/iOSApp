@@ -22,7 +22,6 @@ import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
-import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
@@ -71,7 +70,6 @@ export default function InventoryLeadsScreen() {
   const [imageAction, setImageAction] = useState<{ leadId: number; type: 'download' | 'share' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const { isOnline } = useOffline();
   const { user } = useAuth();  // Get current user for permission checks
   const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
   const [inventoryFileCounts, setInventoryFileCounts] = useState<Record<number, { images: number; pdfs: number }>>({});
@@ -495,10 +493,6 @@ export default function InventoryLeadsScreen() {
   };
 
   const handleDelete = (id: number, name: string) => {
-    if (!isOnline) {
-      Alert.alert('Offline', 'Cannot delete while offline.');
-      return;
-    }
     Alert.alert('Delete Lead', `Are you sure you want to delete "${name}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -506,9 +500,12 @@ export default function InventoryLeadsScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await offlineApi.deleteLead(String(id));
+            const result = await offlineApi.deleteLead(String(id));
             loadLeadsRef.current();
-            Alert.alert('Success', 'Lead deleted successfully');
+            Alert.alert(
+              result?.is_pending_sync ? 'Queued Offline' : 'Success',
+              result?.is_pending_sync ? 'Delete saved on this device and will sync when internet is available.' : 'Lead deleted successfully'
+            );
           } catch (error: any) {
             console.error('Delete error:', error);
             Alert.alert('Error', error.message || 'Failed to delete lead');

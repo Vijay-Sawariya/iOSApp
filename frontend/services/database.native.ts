@@ -420,6 +420,117 @@ export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
   return localLead;
 };
 
+const queuePendingOperation = async (
+  operationType: string,
+  entityType: string,
+  localEntityId: number | null,
+  payload: any,
+): Promise<void> => {
+  if (!isSQLiteAvailable()) return;
+  const database = getDatabase();
+  if (!database) return;
+
+  await database.runAsync(
+    `INSERT INTO pending_operations (
+      operation_type, entity_type, local_entity_id, payload, created_at
+    ) VALUES (?, ?, ?, ?, ?)`,
+    [operationType, entityType, localEntityId, JSON.stringify(payload), new Date().toISOString()]
+  );
+};
+
+export const queuePendingLeadUpdate = async (id: number, data: any): Promise<any> => {
+  if (!isSQLiteAvailable()) return { ...data, id, is_pending_sync: true };
+  const database = getDatabase();
+  if (!database) return { ...data, id, is_pending_sync: true };
+
+  const existing = await getLocalLead(id);
+  const now = new Date().toISOString();
+  const merged = {
+    ...(existing || {}),
+    ...data,
+    id,
+    updated_at: now,
+    synced_at: null,
+    is_pending_sync: true,
+  };
+
+  await database.runAsync(
+    `INSERT OR REPLACE INTO leads (
+      id, name, phone, email, lead_type, lead_temperature, lead_status,
+      location, address, property_type, bhk, floor, area_size,
+      budget_min, budget_max, unit, car_parking_number, lift_available,
+      building_facing, notes, Property_locationUrl, last_message_sent_on,
+      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, merged.name, merged.phone, merged.email || null, merged.lead_type,
+      merged.lead_temperature, merged.lead_status, merged.location, merged.address,
+      merged.property_type, merged.bhk, merged.floor, merged.area_size,
+      merged.budget_min, merged.budget_max, merged.unit, merged.car_parking_number,
+      merged.lift_available, merged.building_facing, merged.notes,
+      merged.Property_locationUrl, merged.last_message_sent_on || null,
+      merged.last_sent_message || null, merged.whatsapp_sent_flag ? 1 : 0,
+      merged.created_at || now, now, null
+    ]
+  );
+
+  if (Array.isArray(data.floor_pricing)) {
+    await database.runAsync('DELETE FROM floor_pricing WHERE lead_id = ?', [id]);
+    for (const fp of data.floor_pricing) {
+      await database.runAsync(
+        'INSERT INTO floor_pricing (lead_id, floor_label, floor_amount) VALUES (?, ?, ?)',
+        [id, fp.floor || fp.floor_label, parseFloat(fp.price || fp.floor_amount || 0)]
+      );
+    }
+  }
+
+  await queuePendingOperation('update', 'lead', id, { id, data });
+  return merged;
+};
+
+export const queuePendingLeadDelete = async (id: number): Promise<any> => {
+  if (!isSQLiteAvailable()) return { id, is_pending_sync: true, deleted: true };
+  const database = getDatabase();
+  if (!database) return { id, is_pending_sync: true, deleted: true };
+
+  if (id < 0) {
+    await database.runAsync('DELETE FROM pending_operations WHERE entity_type = ? AND local_entity_id = ?', ['lead', id]);
+  } else {
+    await queuePendingOperation('delete', 'lead', id, { id });
+  }
+  await removeLocalLead(id);
+  return { id, is_pending_sync: true, deleted: true };
+};
+
+export const queuePendingReminderCreate = async (data: any): Promise<any> => {
+  const localId = -Date.now();
+  const localReminder = {
+    ...data,
+    id: localId,
+    is_pending_sync: true,
+    created_at: new Date().toISOString(),
+  };
+  await queuePendingOperation('create', 'reminder', localId, data);
+  return localReminder;
+};
+
+export const queuePendingReminderUpdate = async (id: number, data: any): Promise<any> => {
+  await queuePendingOperation('update', 'reminder', id, { id, data });
+  return { ...data, id, is_pending_sync: true };
+};
+
+export const queuePendingReminderDelete = async (id: number): Promise<any> => {
+  if (isSQLiteAvailable()) {
+    const database = getDatabase();
+    if (database && id < 0) {
+      await database.runAsync('DELETE FROM pending_operations WHERE entity_type = ? AND local_entity_id = ?', ['reminder', id]);
+      return { id, is_pending_sync: true, deleted: true };
+    }
+  }
+  await queuePendingOperation('delete', 'reminder', id, { id });
+  return { id, is_pending_sync: true, deleted: true };
+};
+
 export const getPendingOperations = async (): Promise<any[]> => {
   if (!isSQLiteAvailable()) return [];
   const database = getDatabase();

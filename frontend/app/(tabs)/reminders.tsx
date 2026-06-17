@@ -211,13 +211,16 @@ export default function RemindersScreen() {
         onPress: async () => {
           setDeletingReminderId(id);
           try {
-            await api.deleteReminder(id.toString());
+            const result = await api.deleteReminder(id.toString());
             try {
               await notificationService.cancelReminderNotification(id.toString());
             } catch (notificationError) {
               console.warn('Failed to cancel reminder notification:', notificationError);
             }
             await loadReminders();
+            if (result?.is_pending_sync) {
+              Alert.alert('Queued Offline', 'Follow-up delete saved on this device and will sync when internet is available.');
+            }
           } catch (error) {
             console.error('Delete error:', error);
             Alert.alert('Error', 'Failed to delete follow-up');
@@ -231,9 +234,12 @@ export default function RemindersScreen() {
 
   const handleMarkComplete = async (id: number) => {
     try {
-      await api.updateReminder(id.toString(), { status: 'completed' });
+      const result = await api.updateReminder(id.toString(), { status: 'completed' });
       await notificationService.cancelReminderNotification(id.toString());
       loadReminders();
+      if (result?.is_pending_sync) {
+        Alert.alert('Queued Offline', 'Completion saved on this device and will sync when internet is available.');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to update follow-up');
     }

@@ -63,6 +63,30 @@ class SyncService {
     return response.json();
   }
 
+  private async putToApi(endpoint: string, payload: any): Promise<any> {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  private async deleteFromApi(endpoint: string): Promise<any> {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    if (response.status === 404) return { message: 'Already deleted' };
+    return response.json();
+  }
+
   private async pushPendingOperations(onProgress?: ProgressCallback): Promise<void> {
     const pending = await db.getPendingOperations();
     if (pending.length === 0) return;
@@ -86,6 +110,35 @@ class SyncService {
               floor_amount: parseFloat(fp.price || fp.floor_amount || 0),
             })));
           }
+        } else if (operation.entity_type === 'lead' && operation.operation_type === 'update') {
+          const leadId = payload.id || operation.local_entity_id;
+          const updated = await this.putToApi(`/api/leads/${leadId}`, payload.data || payload);
+          await db.deletePendingOperation(operation.id);
+          await db.saveLeads([updated]);
+          if (updated?.id && payload.data?.floor_pricing && Array.isArray(payload.data.floor_pricing)) {
+            await db.saveFloorPricing(updated.id, payload.data.floor_pricing.map((fp: any) => ({
+              floor_label: fp.floor || fp.floor_label,
+              floor_amount: parseFloat(fp.price || fp.floor_amount || 0),
+            })));
+          }
+        } else if (operation.entity_type === 'lead' && operation.operation_type === 'delete') {
+          const leadId = payload.id || operation.local_entity_id;
+          await this.deleteFromApi(`/api/leads/${leadId}`);
+          await db.deletePendingOperation(operation.id);
+          if (leadId) {
+            await db.removeLocalLead(leadId);
+          }
+        } else if (operation.entity_type === 'reminder' && operation.operation_type === 'create') {
+          await this.postToApi('/api/reminders', payload);
+          await db.deletePendingOperation(operation.id);
+        } else if (operation.entity_type === 'reminder' && operation.operation_type === 'update') {
+          const reminderId = payload.id || operation.local_entity_id;
+          await this.putToApi(`/api/reminders/${reminderId}`, payload.data || payload);
+          await db.deletePendingOperation(operation.id);
+        } else if (operation.entity_type === 'reminder' && operation.operation_type === 'delete') {
+          const reminderId = payload.id || operation.local_entity_id;
+          await this.deleteFromApi(`/api/reminders/${reminderId}`);
+          await db.deletePendingOperation(operation.id);
         }
       } catch (error: any) {
         await db.markPendingOperationError(operation.id, error.message || 'Sync failed');

@@ -269,8 +269,10 @@ export default function AddReminderScreen() {
       }
 
       Alert.alert(
-        'Success',
-        notificationScheduled
+        created?.is_pending_sync ? 'Queued Offline' : 'Success',
+        created?.is_pending_sync
+          ? 'Follow-up saved on this device and will sync when internet is available.'
+          : notificationScheduled
           ? 'Follow-up created! You will be notified 10 minutes before.'
           : 'Follow-up created. Enable notifications to receive reminder alerts.',
         [

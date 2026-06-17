@@ -363,10 +363,16 @@ export default function EditLeadScreen() {
         }
       }
 
-      await api.updateLead(id!, updateData);
-      Alert.alert('Success', 'Lead updated successfully', [
+      const updated = await api.updateLead(id!, updateData);
+      Alert.alert(
+        updated?.is_pending_sync ? 'Saved Offline' : 'Success',
+        updated?.is_pending_sync
+          ? 'Lead update saved on this device and will sync when internet is available.'
+          : 'Lead updated successfully',
+        [
         { text: 'OK', onPress: () => router.back() }
-      ]);
+        ]
+      );
     } catch (err) {
       console.error('Update lead error:', err);
       Alert.alert('Error', 'Failed to update lead');

@@ -276,7 +276,7 @@ export default function EditReminderScreen() {
       };
 
       console.log('Updating reminder with IST time:', reminderDateIST);
-      await api.updateReminder(reminderId, reminderData);
+      const updated = await api.updateReminder(reminderId, reminderData);
 
       // Schedule or cancel notification based on status
       if (status === 'pending') {
@@ -295,9 +295,15 @@ export default function EditReminderScreen() {
         await notificationService.cancelReminderNotification(reminderId);
       }
 
-      Alert.alert('Success', 'Follow-up updated successfully!', [
+      Alert.alert(
+        updated?.is_pending_sync ? 'Queued Offline' : 'Success',
+        updated?.is_pending_sync
+          ? 'Follow-up update saved on this device and will sync when internet is available.'
+          : 'Follow-up updated successfully!',
+        [
         { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
-      ]);
+        ]
+      );
     } catch (error) {
       console.error('Update error:', error);
       Alert.alert('Error', 'Failed to update follow-up');
@@ -317,13 +323,19 @@ export default function EditReminderScreen() {
         onPress: async () => {
           setDeleting(true);
           try {
-            await api.deleteReminder(reminderId);
+            const result = await api.deleteReminder(reminderId);
             try {
               await notificationService.cancelReminderNotification(reminderId);
             } catch (notificationError) {
               console.warn('Failed to cancel reminder notification:', notificationError);
             }
-            router.replace('/(tabs)/reminders');
+            Alert.alert(
+              result?.is_pending_sync ? 'Queued Offline' : 'Deleted',
+              result?.is_pending_sync
+                ? 'Follow-up delete saved on this device and will sync when internet is available.'
+                : 'Follow-up deleted successfully.',
+              [{ text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }]
+            );
           } catch (error) {
             Alert.alert('Error', 'Failed to delete follow-up');
             setDeleting(false);

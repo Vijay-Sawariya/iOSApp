@@ -392,8 +392,11 @@ export default function LeadDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await offlineApi.deleteLead(String(id));
-              Alert.alert('Success', 'Lead deleted successfully');
+              const result = await offlineApi.deleteLead(String(id));
+              Alert.alert(
+                result?.is_pending_sync ? 'Queued Offline' : 'Success',
+                result?.is_pending_sync ? 'Delete saved on this device and will sync when internet is available.' : 'Lead deleted successfully'
+              );
               router.back();
             } catch (err) {
               Alert.alert('Error', 'Failed to delete lead');

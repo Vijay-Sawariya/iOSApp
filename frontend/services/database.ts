@@ -41,6 +41,16 @@ export const updateLastSyncTime = async (): Promise<void> => {};
 
 export const queuePendingLeadCreate = async (lead: any): Promise<any> => ({ ...lead, is_pending_sync: true });
 
+export const queuePendingLeadUpdate = async (id: number, data: any): Promise<any> => ({ ...data, id, is_pending_sync: true });
+
+export const queuePendingLeadDelete = async (id: number): Promise<any> => ({ id, is_pending_sync: true, deleted: true });
+
+export const queuePendingReminderCreate = async (data: any): Promise<any> => ({ ...data, id: -Date.now(), is_pending_sync: true });
+
+export const queuePendingReminderUpdate = async (id: number, data: any): Promise<any> => ({ ...data, id, is_pending_sync: true });
+
+export const queuePendingReminderDelete = async (id: number): Promise<any> => ({ id, is_pending_sync: true, deleted: true });
+
 export const getPendingOperations = async (): Promise<any[]> => [];
 
 export const deletePendingOperation = async (id: number): Promise<void> => {};
