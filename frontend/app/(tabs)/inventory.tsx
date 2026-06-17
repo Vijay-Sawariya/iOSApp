@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
 import { useOffline } from '../../contexts/OfflineContext';
@@ -692,6 +693,16 @@ export default function InventoryLeadsScreen() {
     }
   };
 
+  const handleCopyPropertyInfo = async (lead: Lead) => {
+    try {
+      await Clipboard.setStringAsync(composePropertyInfoMessage(lead));
+      Alert.alert('Copied', 'Inventory details copied.');
+    } catch (error: any) {
+      console.error('Copy property info error:', error);
+      Alert.alert('Copy Failed', error?.message || 'Could not copy inventory details.');
+    }
+  };
+
   const openLoggedWhatsApp = async (lead: Lead) => {
     const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
     if (!cleanPhone) return;
@@ -753,6 +764,7 @@ export default function InventoryLeadsScreen() {
     const imageActionInProgress = imageAction?.leadId === item.id;
     const imageCount = inventoryFileCounts[item.id]?.images || 0;
     const pdfCount = inventoryFileCounts[item.id]?.pdfs || 0;
+    const hasFiles = imageCount > 0 || pdfCount > 0;
     const hasImages = imageCount > 0;
     const lastWhatsappLabel = item.last_message_sent_on
       ? `WhatsApp ${new Date(item.last_message_sent_on).toLocaleDateString()}`
@@ -871,10 +883,12 @@ export default function InventoryLeadsScreen() {
                 {lastWhatsappLabel}
               </Text>
             </View>
-            <View style={styles.tag}>
-              <Ionicons name="images-outline" size={12} color="#6B7280" />
-              <Text style={styles.tagText}>{imageCount} img / {pdfCount} pdf</Text>
-            </View>
+            {hasFiles && (
+              <View style={styles.tag}>
+                <Ionicons name="images-outline" size={12} color="#6B7280" />
+                <Text style={styles.tagText}>{imageCount} img / {pdfCount} pdf</Text>
+              </View>
+            )}
             {item.floor && (
               <View style={[styles.tag, styles.floorTag]}>
                 <Ionicons name="layers-outline" size={12} color="#6366F1" />
@@ -969,6 +983,14 @@ export default function InventoryLeadsScreen() {
               <Ionicons name="share-social-outline" size={15} color="#25D366" />
             )}
             <Text style={[styles.actionText, { color: '#15803D' }]}>Share</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleCopyPropertyInfo(item)}
+          >
+            <Ionicons name="copy-outline" size={15} color="#6D28D9" />
+            <Text style={[styles.actionText, { color: '#6D28D9' }]}>Copy</Text>
           </TouchableOpacity>
           {canViewData && (
             <>
