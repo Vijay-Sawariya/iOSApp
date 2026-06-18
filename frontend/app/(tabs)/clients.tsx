@@ -52,6 +52,8 @@ interface Lead {
   bhk: string | null;
   building_facing: string | null;
   created_at?: string | null;
+  updated_on?: string | null;
+  updated_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
   // Action/Followup fields
@@ -71,6 +73,18 @@ interface Lead {
 // Filter arrays
 const LOCATION_OPTIONS = [...LOCATIONS];
 const FLOOR_OPTIONS = [...FLOORS];
+
+const formatLeadDate = (value?: string | null) => {
+  if (!value) return 'Not available';
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 
 export default function ClientLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -573,6 +587,21 @@ www.sagarhome.com`;
                 </Text>
               </View>
               {isHot && <View style={styles.hotDot} />}
+            </View>
+          </View>
+
+          <View style={styles.dateMetaRow}>
+            <View style={styles.dateMetaItem}>
+              <Ionicons name="add-circle-outline" size={13} color={colors.inkSubtle} />
+              <Text style={styles.dateMetaText} numberOfLines={1}>
+                Created {formatLeadDate(item.created_at)}
+              </Text>
+            </View>
+            <View style={styles.dateMetaItem}>
+              <Ionicons name="refresh-outline" size={13} color={colors.inkSubtle} />
+              <Text style={styles.dateMetaText} numberOfLines={1}>
+                Updated {formatLeadDate(item.updated_on || item.updated_at)}
+              </Text>
             </View>
           </View>
 
@@ -1401,6 +1430,27 @@ const styles = StyleSheet.create({
   createdByText: {
     fontSize: 12,
     color: colors.inkSubtle,
+  },
+  dateMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 10,
+    marginBottom: 10,
+  },
+  dateMetaItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dateMetaText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.inkMuted,
   },
   typeBadgeContainer: {
     flexDirection: 'row',

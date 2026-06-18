@@ -245,6 +245,8 @@ export interface Lead {
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;
+  updated_on?: string | null;
+  updated_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
   Property_locationUrl?: string | null;

@@ -55,6 +55,18 @@ const parseInputDate = (dateValue: string) => {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
+const formatLeadDate = (value?: string | null) => {
+  if (!value) return 'Not available';
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams();
   const [lead, setLead] = useState<any>(null);
@@ -823,6 +835,29 @@ export default function LeadDetailScreen() {
             </Text>
           </View>
         ) : null}
+      </View>
+
+      {/* Lead Dates */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{'Lead Information'}</Text>
+        <View style={styles.leadDatesRow}>
+          <View style={styles.leadDateItem}>
+            <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+            <View>
+              <Text style={styles.leadDateLabel}>Created</Text>
+              <Text style={styles.leadDateValue}>{formatLeadDate(lead.created_at)}</Text>
+            </View>
+          </View>
+          <View style={styles.leadDateItem}>
+            <Ionicons name="refresh-outline" size={18} color="#6B7280" />
+            <View>
+              <Text style={styles.leadDateLabel}>Updated</Text>
+              <Text style={styles.leadDateValue}>
+                {formatLeadDate(lead.updated_on || lead.updated_at)}
+              </Text>
+            </View>
+          </View>
+        </View>
       </View>
 
       {/* Contact Info */}
@@ -1649,6 +1684,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1F2937',
     marginBottom: 16,
+  },
+  leadDatesRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  leadDateItem: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 10,
+  },
+  leadDateLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  leadDateValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 2,
   },
   detailRow: {
     flexDirection: 'row',
