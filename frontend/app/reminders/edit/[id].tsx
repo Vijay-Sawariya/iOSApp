@@ -26,6 +26,14 @@ interface Lead {
   lead_type: string | null;
 }
 
+interface AssignableUser {
+  id: number;
+  username: string;
+  full_name: string | null;
+  role: string | null;
+  is_current_user?: boolean;
+}
+
 const REMINDER_TYPES = [
   { value: 'Call', icon: 'call', color: '#3B82F6' },
   { value: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366' },
@@ -94,11 +102,15 @@ export default function EditReminderScreen() {
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState('pending');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
+  const [selectedAssignedUser, setSelectedAssignedUser] = useState<AssignableUser | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showLeadPicker, setShowLeadPicker] = useState(false);
+  const [showAssignedToPicker, setShowAssignedToPicker] = useState(false);
   
   // Client search state
   const [leadSearch, setLeadSearch] = useState('');
@@ -113,7 +125,18 @@ export default function EditReminderScreen() {
 
   const loadData = async () => {
     try {
-      const reminders = await api.getReminders();
+      const remindersData = await api.getReminders();
+      const reminders = Array.isArray(remindersData) ? remindersData as any[] : [];
+
+      let users: AssignableUser[] = [];
+      try {
+        const usersData = await api.getAssignableUsers();
+        users = Array.isArray(usersData) ? usersData as AssignableUser[] : [];
+      } catch (error) {
+        console.error('Failed to load assignable users:', error);
+      }
+
+      setAssignableUsers(users);
 
       const reminder = reminders.find((r: any) => r.id.toString() === reminderId);
       if (reminder) {
@@ -121,6 +144,12 @@ export default function EditReminderScreen() {
         setReminderType(reminder.reminder_type);
         setNotes(reminder.notes || '');
         setStatus(reminder.status);
+        setSelectedAssignedUser(
+          users.find((user) => user.id === reminder.assigned_to) ||
+          users.find((user) => user.is_current_user) ||
+          users[0] ||
+          null
+        );
 
         // Parse the reminder_date which is stored in IST format (YYYY-MM-DDTHH:MM:SS)
         const dateStr = reminder.reminder_date;
@@ -242,11 +271,12 @@ export default function EditReminderScreen() {
         reminder_type: reminderType,
         notes: notes || null,
         lead_id: selectedLead?.id || null,
+        assigned_to: selectedAssignedUser?.id || null,
         status,
       };
 
       console.log('Updating reminder with IST time:', reminderDateIST);
-      await api.updateReminder(reminderId, reminderData);
+      const updated = await api.updateReminder(reminderId, reminderData);
 
       // Schedule or cancel notification based on status
       if (status === 'pending') {
@@ -265,9 +295,15 @@ export default function EditReminderScreen() {
         await notificationService.cancelReminderNotification(reminderId);
       }
 
-      Alert.alert('Success', 'Follow-up updated successfully!', [
+      Alert.alert(
+        updated?.is_pending_sync ? 'Queued Offline' : 'Success',
+        updated?.is_pending_sync
+          ? 'Follow-up update saved on this device and will sync when internet is available.'
+          : 'Follow-up updated successfully!',
+        [
         { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
-      ]);
+        ]
+      );
     } catch (error) {
       console.error('Update error:', error);
       Alert.alert('Error', 'Failed to update follow-up');
@@ -277,18 +313,32 @@ export default function EditReminderScreen() {
   };
 
   const handleDelete = () => {
+    if (deleting) return;
+
     Alert.alert('Delete Follow-up', 'Are you sure you want to delete this follow-up?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          setDeleting(true);
           try {
-            await api.deleteReminder(reminderId);
-            await notificationService.cancelReminderNotification(reminderId);
-            router.replace('/(tabs)/reminders');
+            const result = await api.deleteReminder(reminderId);
+            try {
+              await notificationService.cancelReminderNotification(reminderId);
+            } catch (notificationError) {
+              console.warn('Failed to cancel reminder notification:', notificationError);
+            }
+            Alert.alert(
+              result?.is_pending_sync ? 'Queued Offline' : 'Deleted',
+              result?.is_pending_sync
+                ? 'Follow-up delete saved on this device and will sync when internet is available.'
+                : 'Follow-up deleted successfully.',
+              [{ text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }]
+            );
           } catch (error) {
             Alert.alert('Error', 'Failed to delete follow-up');
+            setDeleting(false);
           }
         },
       },
@@ -317,6 +367,11 @@ export default function EditReminderScreen() {
       case 'builder': return 'Builder';
       default: return type || 'Client';
     }
+  };
+
+  const getUserDisplayName = (user: AssignableUser | null) => {
+    if (!user) return '';
+    return user.full_name || user.username || `User #${user.id}`;
   };
 
   // Format display date (IST)
@@ -365,8 +420,16 @@ export default function EditReminderScreen() {
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Follow-up</Text>
-          <TouchableOpacity onPress={handleDelete} style={styles.deleteHeaderBtn}>
-            <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+          <TouchableOpacity
+            onPress={handleDelete}
+            style={[styles.deleteHeaderBtn, deleting && styles.disabledAction]}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -500,6 +563,30 @@ export default function EditReminderScreen() {
             )}
           </View>
 
+          {/* Assigned To */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Assigned To</Text>
+            <TouchableOpacity
+              style={styles.selectorButton}
+              onPress={() => setShowAssignedToPicker(true)}
+            >
+              {selectedAssignedUser ? (
+                <View style={styles.selectedLeadInfo}>
+                  <Ionicons name="person-circle" size={20} color="#3B82F6" />
+                  <View style={styles.selectedLeadText}>
+                    <Text style={styles.selectedLeadName}>{getUserDisplayName(selectedAssignedUser)}</Text>
+                    {selectedAssignedUser.role && (
+                      <Text style={styles.selectedLeadPhone}>{selectedAssignedUser.role}</Text>
+                    )}
+                  </View>
+                </View>
+              ) : (
+                <Text style={styles.placeholderText}>Select user</Text>
+              )}
+              <Ionicons name="chevron-down" size={20} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
           {/* Date & Time - IST */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Date & Time (IST)</Text>
@@ -521,7 +608,7 @@ export default function EditReminderScreen() {
             </View>
             {status === 'pending' && (
               <Text style={styles.notificationHint}>
-                🔔 You'll be notified 10 minutes before (IST)
+                You will be notified 10 minutes before (IST)
               </Text>
             )}
           </View>
@@ -552,9 +639,19 @@ export default function EditReminderScreen() {
           </TouchableOpacity>
 
           {/* Delete Button */}
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
-            <Text style={styles.deleteButtonText}>Delete Follow-up</Text>
+          <TouchableOpacity
+            style={[styles.deleteButton, deleting && styles.disabledAction]}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            )}
+            <Text style={styles.deleteButtonText}>
+              {deleting ? 'Deleting...' : 'Delete Follow-up'}
+            </Text>
           </TouchableOpacity>
 
           <View style={{ height: 40 }} />
@@ -709,6 +806,61 @@ export default function EditReminderScreen() {
               )}
             />
           )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* Assigned To Picker Modal */}
+      <Modal visible={showAssignedToPicker} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.leadModalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Assign Follow-up</Text>
+            <TouchableOpacity onPress={() => setShowAssignedToPicker(false)}>
+              <Ionicons name="close" size={24} color="#1F2937" />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={assignableUsers}
+            keyExtractor={(item) => item.id.toString()}
+            ListEmptyComponent={
+              <View style={styles.emptyList}>
+                <Ionicons name="people-outline" size={48} color="#D1D5DB" />
+                <Text style={styles.emptyText}>No users found</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const isSelected = selectedAssignedUser?.id === item.id;
+              return (
+                <TouchableOpacity
+                  style={styles.leadItem}
+                  onPress={() => {
+                    setSelectedAssignedUser(item);
+                    setShowAssignedToPicker(false);
+                  }}
+                >
+                  <View style={styles.leadItemIcon}>
+                    <Ionicons name="person-circle" size={22} color="#3B82F6" />
+                  </View>
+                  <View style={styles.leadItemContent}>
+                    <Text style={styles.leadItemName}>{getUserDisplayName(item)}</Text>
+                    <View style={styles.leadItemMeta}>
+                      {item.role && (
+                        <View style={styles.leadTypeBadge}>
+                          <Text style={styles.leadTypeText}>{item.role}</Text>
+                        </View>
+                      )}
+                      {item.is_current_user && <Text style={styles.leadItemPhone}>You</Text>}
+                    </View>
+                  </View>
+                  {isSelected ? (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  ) : (
+                    <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
         </SafeAreaView>
       </Modal>
     </View>
@@ -926,6 +1078,9 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     fontSize: 16,
     fontWeight: '600',
+  },
+  disabledAction: {
+    opacity: 0.65,
   },
   modalOverlay: {
     flex: 1,

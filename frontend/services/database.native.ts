@@ -39,6 +39,9 @@ export const initDatabase = async (): Promise<void> => {
         building_facing TEXT,
         notes TEXT,
         Property_locationUrl TEXT,
+        last_message_sent_on TEXT,
+        last_sent_message TEXT,
+        whatsapp_sent_flag INTEGER DEFAULT 0,
         created_at TEXT,
         updated_at TEXT,
         synced_at TEXT
@@ -94,6 +97,18 @@ export const initDatabase = async (): Promise<void> => {
         last_error TEXT
       );
     `);
+
+    const leadColumns = await db.getAllAsync('PRAGMA table_info(leads)') as any[];
+    const hasLeadColumn = (column: string) => leadColumns.some((item) => item.name === column);
+    if (!hasLeadColumn('last_message_sent_on')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN last_message_sent_on TEXT');
+    }
+    if (!hasLeadColumn('last_sent_message')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN last_sent_message TEXT');
+    }
+    if (!hasLeadColumn('whatsapp_sent_flag')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN whatsapp_sent_flag INTEGER DEFAULT 0');
+    }
     
     isInitialized = true;
     console.log('Database initialized successfully');
@@ -143,15 +158,17 @@ export const saveLeads = async (leads: any[]): Promise<void> => {
         id, name, phone, email, lead_type, lead_temperature, lead_status,
         location, address, property_type, bhk, floor, area_size,
         budget_min, budget_max, unit, car_parking_number, lift_available,
-        building_facing, notes, Property_locationUrl, created_at, updated_at, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        building_facing, notes, Property_locationUrl, last_message_sent_on,
+        last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         lead.id, lead.name, lead.phone, lead.email, lead.lead_type,
         lead.lead_temperature, lead.lead_status, lead.location, lead.address,
         lead.property_type, lead.bhk, lead.floor, lead.area_size,
         lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
         lead.lift_available, lead.building_facing, lead.notes,
-        lead.Property_locationUrl, lead.created_at, lead.updated_at, syncedAt
+        lead.Property_locationUrl, lead.last_message_sent_on, lead.last_sent_message,
+        lead.whatsapp_sent_flag ? 1 : 0, lead.created_at, lead.updated_at, syncedAt
       ]
     );
   }
@@ -238,7 +255,7 @@ export const getLocalInventoryLeads = async (): Promise<any[]> => {
   if (!database) return [];
   
   const leads = await database.getAllAsync(
-    `SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder') ORDER BY created_at DESC`
+    `SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent') ORDER BY created_at DESC`
   );
   
   // Get floor pricing for each lead
@@ -370,15 +387,17 @@ export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
       id, name, phone, email, lead_type, lead_temperature, lead_status,
       location, address, property_type, bhk, floor, area_size,
       budget_min, budget_max, unit, car_parking_number, lift_available,
-      building_facing, notes, Property_locationUrl, created_at, updated_at, synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      building_facing, notes, Property_locationUrl, last_message_sent_on,
+      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       localId, lead.name, lead.phone, lead.email || null, lead.lead_type,
       lead.lead_temperature, lead.lead_status, lead.location, lead.address,
       lead.property_type, lead.bhk, lead.floor, lead.area_size,
       lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
       lead.lift_available, lead.building_facing, lead.notes,
-      lead.Property_locationUrl, now, now, null
+      lead.Property_locationUrl, lead.last_message_sent_on || null,
+      lead.last_sent_message || null, lead.whatsapp_sent_flag ? 1 : 0, now, now, null
     ]
   );
 
@@ -399,6 +418,117 @@ export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
   );
 
   return localLead;
+};
+
+const queuePendingOperation = async (
+  operationType: string,
+  entityType: string,
+  localEntityId: number | null,
+  payload: any,
+): Promise<void> => {
+  if (!isSQLiteAvailable()) return;
+  const database = getDatabase();
+  if (!database) return;
+
+  await database.runAsync(
+    `INSERT INTO pending_operations (
+      operation_type, entity_type, local_entity_id, payload, created_at
+    ) VALUES (?, ?, ?, ?, ?)`,
+    [operationType, entityType, localEntityId, JSON.stringify(payload), new Date().toISOString()]
+  );
+};
+
+export const queuePendingLeadUpdate = async (id: number, data: any): Promise<any> => {
+  if (!isSQLiteAvailable()) return { ...data, id, is_pending_sync: true };
+  const database = getDatabase();
+  if (!database) return { ...data, id, is_pending_sync: true };
+
+  const existing = await getLocalLead(id);
+  const now = new Date().toISOString();
+  const merged = {
+    ...(existing || {}),
+    ...data,
+    id,
+    updated_at: now,
+    synced_at: null,
+    is_pending_sync: true,
+  };
+
+  await database.runAsync(
+    `INSERT OR REPLACE INTO leads (
+      id, name, phone, email, lead_type, lead_temperature, lead_status,
+      location, address, property_type, bhk, floor, area_size,
+      budget_min, budget_max, unit, car_parking_number, lift_available,
+      building_facing, notes, Property_locationUrl, last_message_sent_on,
+      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id, merged.name, merged.phone, merged.email || null, merged.lead_type,
+      merged.lead_temperature, merged.lead_status, merged.location, merged.address,
+      merged.property_type, merged.bhk, merged.floor, merged.area_size,
+      merged.budget_min, merged.budget_max, merged.unit, merged.car_parking_number,
+      merged.lift_available, merged.building_facing, merged.notes,
+      merged.Property_locationUrl, merged.last_message_sent_on || null,
+      merged.last_sent_message || null, merged.whatsapp_sent_flag ? 1 : 0,
+      merged.created_at || now, now, null
+    ]
+  );
+
+  if (Array.isArray(data.floor_pricing)) {
+    await database.runAsync('DELETE FROM floor_pricing WHERE lead_id = ?', [id]);
+    for (const fp of data.floor_pricing) {
+      await database.runAsync(
+        'INSERT INTO floor_pricing (lead_id, floor_label, floor_amount) VALUES (?, ?, ?)',
+        [id, fp.floor || fp.floor_label, parseFloat(fp.price || fp.floor_amount || 0)]
+      );
+    }
+  }
+
+  await queuePendingOperation('update', 'lead', id, { id, data });
+  return merged;
+};
+
+export const queuePendingLeadDelete = async (id: number): Promise<any> => {
+  if (!isSQLiteAvailable()) return { id, is_pending_sync: true, deleted: true };
+  const database = getDatabase();
+  if (!database) return { id, is_pending_sync: true, deleted: true };
+
+  if (id < 0) {
+    await database.runAsync('DELETE FROM pending_operations WHERE entity_type = ? AND local_entity_id = ?', ['lead', id]);
+  } else {
+    await queuePendingOperation('delete', 'lead', id, { id });
+  }
+  await removeLocalLead(id);
+  return { id, is_pending_sync: true, deleted: true };
+};
+
+export const queuePendingReminderCreate = async (data: any): Promise<any> => {
+  const localId = -Date.now();
+  const localReminder = {
+    ...data,
+    id: localId,
+    is_pending_sync: true,
+    created_at: new Date().toISOString(),
+  };
+  await queuePendingOperation('create', 'reminder', localId, data);
+  return localReminder;
+};
+
+export const queuePendingReminderUpdate = async (id: number, data: any): Promise<any> => {
+  await queuePendingOperation('update', 'reminder', id, { id, data });
+  return { ...data, id, is_pending_sync: true };
+};
+
+export const queuePendingReminderDelete = async (id: number): Promise<any> => {
+  if (isSQLiteAvailable()) {
+    const database = getDatabase();
+    if (database && id < 0) {
+      await database.runAsync('DELETE FROM pending_operations WHERE entity_type = ? AND local_entity_id = ?', ['reminder', id]);
+      return { id, is_pending_sync: true, deleted: true };
+    }
+  }
+  await queuePendingOperation('delete', 'reminder', id, { id });
+  return { id, is_pending_sync: true, deleted: true };
 };
 
 export const getPendingOperations = async (): Promise<any[]> => {
@@ -460,7 +590,7 @@ export const getLeadCount = async (): Promise<{ clients: number; inventory: numb
     `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant')`
   ) as { count: number } | null;
   const inventoryResult = await database.getFirstAsync(
-    `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder')`
+    `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent')`
   ) as { count: number } | null;
   return {
     clients: clientResult?.count || 0,

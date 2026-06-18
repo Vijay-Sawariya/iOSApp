@@ -44,12 +44,38 @@ const getUserScopedCacheKey = (baseKey: string): string => {
   return `${baseKey}_${tokenSuffix}`;
 };
 
+const invalidateReminderCaches = async () => {
+  await Promise.all([
+    cacheService.remove(CACHE_KEYS.REMINDERS),
+    cacheService.remove(getUserScopedCacheKey(CACHE_KEYS.REMINDERS)),
+    cacheService.remove(`${CACHE_KEYS.URGENT_FOLLOWUPS}_5`),
+    cacheService.remove(`${CACHE_KEYS.URGENT_FOLLOWUPS}_10`),
+  ]);
+};
+
 const getHeaders = () => {
   console.log('getHeaders - authToken present:', !!authToken);
   return {
     'Content-Type': 'application/json',
     ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
   };
+};
+
+const getApiErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === 'string') return data.detail;
+    if (Array.isArray(data?.detail)) {
+      return data.detail
+        .map((item: any) => item?.msg || item?.message || JSON.stringify(item))
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof data?.message === 'string') return data.message;
+    if (typeof data?.error === 'string') return data.error;
+  } catch {}
+
+  return `${fallback} (status ${response.status})`;
 };
 
 // Helper function to fetch with stale-while-revalidate cache behavior
@@ -164,6 +190,67 @@ export const api = {
       (data) => cacheService.cacheSmartMatches(limit, data),
       () => cacheService.getSmartMatches(limit)
     );
+  },
+
+  getMobileWorkbench: async (options?: CacheFetchOptions) => {
+    return fetchWithCache(
+      `${API_URL}/api/mobile/workbench`,
+      'mobile_workbench',
+      (data) => cacheService.set('cache_mobile_workbench', data),
+      () => cacheService.get('cache_mobile_workbench'),
+      options
+    );
+  },
+
+  getAssignedLeads: async (options?: CacheFetchOptions) => {
+    return fetchWithCache(
+      `${API_URL}/api/mobile/assigned-leads`,
+      'mobile_assigned_leads',
+      (data) => cacheService.set('cache_mobile_assigned_leads', data),
+      () => cacheService.get('cache_mobile_assigned_leads'),
+      options
+    );
+  },
+
+  getEnquiries: async (options?: CacheFetchOptions) => {
+    return fetchWithCache(
+      `${API_URL}/api/mobile/enquiries`,
+      'mobile_enquiries',
+      (data) => cacheService.set('cache_mobile_enquiries', data),
+      () => cacheService.get('cache_mobile_enquiries'),
+      options
+    );
+  },
+
+  getLegacyInventory: async (category: 'all' | 'kothi' | 'floor' = 'all', search: string = '', options?: CacheFetchOptions) => {
+    const params = new URLSearchParams();
+    if (category !== 'all') params.append('category', category);
+    if (search.trim()) params.append('search', search.trim());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const cacheKey = `cache_legacy_inventory_${category}_${search.trim().toLowerCase() || 'all'}`;
+    return fetchWithCache(
+      `${API_URL}/api/mobile/enquiries${query}`,
+      `legacy_inventory_${category}_${search.trim().toLowerCase() || 'all'}`,
+      (data) => cacheService.set(cacheKey, data),
+      () => cacheService.get(cacheKey),
+      options
+    );
+  },
+
+  convertEnquiry: async (enquiryId: number) => {
+    const response = await fetch(`${API_URL}/api/mobile/enquiries/${enquiryId}/convert`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to convert enquiry'));
+    }
+    await Promise.all([
+      cacheService.remove('cache_mobile_enquiries'),
+      cacheService.remove(CACHE_KEYS.LEADS_CLIENTS),
+      cacheService.remove(CACHE_KEYS.DASHBOARD_STATS),
+    ]);
+    return response.json();
   },
 
   generateAIMessage: async (leadId: number, messageType: string, customContext?: string) => {
@@ -296,7 +383,12 @@ export const api = {
   updateLead: async (id: string, data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot update lead while offline. Please connect to the internet.');
+      const queued = await db.queuePendingLeadUpdate(parseInt(id, 10), data);
+      await cacheService.remove(`cache_lead_${id}`);
+      await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+      await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+      await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/leads/${id}`, {
@@ -317,7 +409,12 @@ export const api = {
   deleteLead: async (id: string) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot delete lead while offline. Please connect to the internet.');
+      const queued = await db.queuePendingLeadDelete(parseInt(id, 10));
+      await cacheService.remove(`cache_lead_${id}`);
+      await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
+      await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);
+      await cacheService.remove(CACHE_KEYS.DASHBOARD_STATS);
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/leads/${id}`, {
@@ -422,7 +519,9 @@ export const api = {
   createReminder: async (data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot create reminder while offline. Please connect to the internet.');
+      const queued = await db.queuePendingReminderCreate(data);
+      await invalidateReminderCaches();
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/reminders`, {
@@ -430,15 +529,19 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to create reminder');
-    await cacheService.remove(CACHE_KEYS.REMINDERS);
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to create reminder'));
+    }
+    await invalidateReminderCaches();
     return response.json();
   },
 
   updateReminder: async (id: string, data: any) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot update reminder while offline. Please connect to the internet.');
+      const queued = await db.queuePendingReminderUpdate(parseInt(id, 10), data);
+      await invalidateReminderCaches();
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/reminders/${id}`, {
@@ -446,28 +549,67 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update reminder');
-    await cacheService.remove(CACHE_KEYS.REMINDERS);
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to update reminder'));
+    }
+    await invalidateReminderCaches();
     return response.json();
   },
 
   deleteReminder: async (id: string) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
-      throw new Error('Cannot delete reminder while offline. Please connect to the internet.');
+      const queued = await db.queuePendingReminderDelete(parseInt(id, 10));
+      await invalidateReminderCaches();
+      return queued;
     }
     
     const response = await fetch(`${API_URL}/api/reminders/${id}`, {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete reminder');
-    await cacheService.remove(CACHE_KEYS.REMINDERS);
+    if (!response.ok && response.status !== 404) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to delete reminder'));
+    }
+    await invalidateReminderCaches();
+    if (response.status === 404) return { message: 'Reminder already deleted' };
     return response.json();
   },
 
+  getAssignableUsers: async () => {
+    const headers = getHeaders();
+    const listEndpoints = [
+      `${API_URL}/api/users/assignable`,
+      `${API_URL}/api/team/members-with-permissions`,
+      `${API_URL}/api/team/members`,
+    ];
+
+    let lastError = 'Failed to fetch users';
+    for (const endpoint of listEndpoints) {
+      try {
+        const response = await fetch(endpoint, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) return data;
+        } else {
+          lastError = await getApiErrorMessage(response, 'Failed to fetch users');
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Failed to fetch users';
+      }
+    }
+
+    const meResponse = await fetch(`${API_URL}/api/auth/me`, { headers });
+    if (meResponse.ok) {
+      const currentUser = await meResponse.json();
+      return currentUser ? [{ ...currentUser, is_current_user: true }] : [];
+    }
+
+    throw new Error(await getApiErrorMessage(meResponse, lastError));
+  },
+
   // WhatsApp
-  sendWhatsApp: async (data: { phone: string; message: string; lead_id?: string }) => {
+  sendWhatsApp: async (data: { phone: string; message: string; lead_id?: string; status?: string; source?: string }) => {
     const isOnline = await cacheService.isOnline();
     if (!isOnline) {
       throw new Error('Cannot send WhatsApp while offline. Please connect to the internet.');
@@ -478,12 +620,20 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to send WhatsApp');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to log WhatsApp'));
+    }
+    await Promise.all([
+      cacheService.remove(CACHE_KEYS.LEADS_CLIENTS),
+      cacheService.remove(CACHE_KEYS.LEADS_INVENTORY),
+      data.lead_id ? cacheService.remove(`cache_lead_${data.lead_id}`) : Promise.resolve(),
+    ]);
     return response.json();
   },
 
-  getWhatsAppLogs: async () => {
-    const response = await fetch(`${API_URL}/api/whatsapp/logs`, {
+  getWhatsAppLogs: async (leadId?: string | number) => {
+    const query = leadId ? `?lead_id=${encodeURIComponent(String(leadId))}` : '';
+    const response = await fetch(`${API_URL}/api/whatsapp/logs${query}`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch WhatsApp logs');
@@ -524,12 +674,24 @@ export const api = {
     return response.json();
   },
 
+  getLeadActivity: async (leadId: string | number) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/activity`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch lead timeline'));
+    }
+    return response.json();
+  },
+
   // Tentative Pricing APIs
   getAllPricing: async () => {
     const response = await fetch(`${API_URL}/api/pricing`, {
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to fetch pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch pricing'));
+    }
     return response.json();
   },
 
@@ -537,7 +699,9 @@ export const api = {
     const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to fetch pricing details');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to fetch pricing details'));
+    }
     return response.json();
   },
 
@@ -556,7 +720,9 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to create pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to create pricing'));
+    }
     return response.json();
   },
 
@@ -566,7 +732,9 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to update pricing'));
+    }
     return response.json();
   },
 
@@ -575,7 +743,9 @@ export const api = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to delete pricing');
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to delete pricing'));
+    }
     return response.json();
   },
 

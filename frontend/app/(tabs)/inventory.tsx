@@ -13,11 +13,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect } from 'expo-router';
-import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
@@ -47,16 +51,40 @@ const TYPE_OPTIONS = [
   { label: 'All', value: '' },
   { label: 'Sell', value: 'sell' },  // 'sell' will match both seller and builder
   { label: 'Rent', value: 'landlord' },
+  { label: 'Agent', value: 'agent' },
 ];
+
+const GODADDY_BASE_URL = 'https://sagarhomelms.com';
+const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
+
+type InventoryImageFile = {
+  filename?: string;
+  url: string;
+  size?: number;
+};
+
+const formatLeadDate = (value?: string | null) => {
+  if (!value) return 'Not available';
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
 
 export default function InventoryLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [imageAction, setImageAction] = useState<{ leadId: number; type: 'download' | 'share' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const { isOnline } = useOffline();
   const { user } = useAuth();  // Get current user for permission checks
+  const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
+  const [inventoryFileCounts, setInventoryFileCounts] = useState<Record<number, { images: number; pdfs: number }>>({});
   
   // Filter states
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
@@ -71,7 +99,7 @@ export default function InventoryLeadsScreen() {
   const [addressFilter, setAddressFilter] = useState('');
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Single budget field for +/- 10% search
-  const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'seller', 'landlord', 'builder'
+  const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'sell', 'landlord', 'agent'
   const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
   
   // Client/Buyer matching states
@@ -132,6 +160,7 @@ export default function InventoryLeadsScreen() {
     total: leads.length,
     sell: leads.filter(l => l.lead_type === 'seller' || l.lead_type === 'builder').length,
     landlords: leads.filter(l => l.lead_type === 'landlord').length,
+    agents: leads.filter(l => l.lead_type === 'agent').length,
   }), [leads]);
 
   // Load clients (buyers/tenants) for the dropdown
@@ -476,10 +505,6 @@ export default function InventoryLeadsScreen() {
   };
 
   const handleDelete = (id: number, name: string) => {
-    if (!isOnline) {
-      Alert.alert('Offline', 'Cannot delete while offline.');
-      return;
-    }
     Alert.alert('Delete Lead', `Are you sure you want to delete "${name}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -487,9 +512,12 @@ export default function InventoryLeadsScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await offlineApi.deleteLead(String(id));
+            const result = await offlineApi.deleteLead(String(id));
             loadLeadsRef.current();
-            Alert.alert('Success', 'Lead deleted successfully');
+            Alert.alert(
+              result?.is_pending_sync ? 'Queued Offline' : 'Success',
+              result?.is_pending_sync ? 'Delete saved on this device and will sync when internet is available.' : 'Lead deleted successfully'
+            );
           } catch (error: any) {
             console.error('Delete error:', error);
             Alert.alert('Error', error.message || 'Failed to delete lead');
@@ -504,6 +532,222 @@ export default function InventoryLeadsScreen() {
       pathname: '/reminders/add',
       params: { lead_id: item.id, lead_name: item.name }
     } as any);
+  };
+
+  const updateInventoryFileCounts = useCallback((leadId: number, count: { images: number; pdfs: number }) => {
+    setInventoryFileCounts((prev) => {
+      const existing = prev[leadId];
+      if (existing?.images === count.images && existing?.pdfs === count.pdfs) return prev;
+      return { ...prev, [leadId]: count };
+    });
+  }, []);
+
+  const sanitizeFileName = (name: string) =>
+    name.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_').trim() || `image_${Date.now()}.jpg`;
+
+  const getInventoryImages = async (leadId: number): Promise<InventoryImageFile[]> => {
+    const response = await fetch(
+      `${GODADDY_BASE_URL}/mobile_get_files.php?lead_id=${leadId}&api_key=${GODADDY_API_KEY}`
+    );
+    const data = await response.json();
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.message || 'Failed to load inventory images');
+    }
+    return Array.isArray(data?.data?.images) ? data.data.images.filter((img: any) => !!img?.url) : [];
+  };
+
+  const downloadInventoryImages = async (lead: Lead): Promise<string[]> => {
+    const images = await getInventoryImages(lead.id);
+    if (images.length === 0) {
+      Alert.alert('No Images', 'No images are uploaded for this inventory.');
+      return [];
+    }
+
+    if (Platform.OS === 'web') {
+      const webWindow = globalThis as any;
+      images.forEach((image, index) => {
+        const anchor = webWindow.document?.createElement('a');
+        if (!anchor) return;
+        anchor.href = image.url;
+        anchor.download = sanitizeFileName(image.filename || `${lead.name || 'inventory'}_${index + 1}.jpg`);
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        webWindow.document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      });
+      return images.map((image) => image.url);
+    }
+
+    const leadDir = `${FileSystem.documentDirectory}inventory_${lead.id}/`;
+    await FileSystem.makeDirectoryAsync(leadDir, { intermediates: true });
+
+    const downloadedUris: string[] = [];
+    for (let index = 0; index < images.length; index += 1) {
+      const image = images[index];
+      const fileName = sanitizeFileName(image.filename || `${lead.name || 'inventory'}_${index + 1}.jpg`);
+      const destination = `${leadDir}${fileName}`;
+      const downloaded = await FileSystem.downloadAsync(image.url, destination);
+      downloadedUris.push(downloaded.uri);
+    }
+
+    return downloadedUris;
+  };
+
+  const saveImagesToDevicePhotos = async (uris: string[]) => {
+    if (Platform.OS === 'web') return;
+
+    const permission = await MediaLibrary.requestPermissionsAsync(true);
+    if (!permission.granted) {
+      throw new Error('Photo library permission is required to save images.');
+    }
+
+    for (const uri of uris) {
+      await MediaLibrary.saveToLibraryAsync(uri);
+    }
+  };
+
+  const handleDownloadImages = async (lead: Lead) => {
+    setImageAction({ leadId: lead.id, type: 'download' });
+    try {
+      const uris = await downloadInventoryImages(lead);
+      if (uris.length === 0) return;
+      await saveImagesToDevicePhotos(uris);
+      Alert.alert(
+        'Images Saved',
+        Platform.OS === 'web'
+          ? `${uris.length} image${uris.length === 1 ? '' : 's'} downloaded.`
+          : `${uris.length} image${uris.length === 1 ? '' : 's'} saved to Photos.`
+      );
+    } catch (error: any) {
+      console.error('Download images error:', error);
+      Alert.alert('Save Failed', error?.message || 'Could not save inventory images.');
+    } finally {
+      setImageAction(null);
+    }
+  };
+
+  const shareDownloadedImages = async (uris: string[]) => {
+    if (Platform.OS === 'web') {
+      await Linking.openURL('https://web.whatsapp.com/');
+      Alert.alert('Images Ready', 'The images have downloaded. Attach them in WhatsApp Web from your downloads.');
+      return;
+    }
+
+    if (!(await Sharing.isAvailableAsync())) {
+      Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
+      return;
+    }
+
+    for (let index = 0; index < uris.length; index += 1) {
+      await Sharing.shareAsync(uris[index], {
+        mimeType: 'image/jpeg',
+        UTI: 'public.image',
+        dialogTitle: `Share image ${index + 1} of ${uris.length}`,
+      });
+    }
+  };
+
+  const handleShareImages = async (lead: Lead) => {
+    setImageAction({ leadId: lead.id, type: 'share' });
+    try {
+      const uris = await downloadInventoryImages(lead);
+      if (uris.length === 0) return;
+      await shareDownloadedImages(uris);
+    } catch (error: any) {
+      console.error('Share images error:', error);
+      Alert.alert('Share Failed', error?.message || 'Could not share inventory images.');
+    } finally {
+      setImageAction(null);
+    }
+  };
+
+  const composePropertyInfoMessage = (lead: Lead) => {
+    const lines = [
+      `Property: ${lead.name || 'Inventory'}`,
+      lead.lead_type ? `Type: ${getLeadTypeDisplay(lead.lead_type)}` : null,
+      lead.location ? `Location: ${lead.location}` : null,
+      lead.address ? `Address: ${lead.address}` : null,
+      lead.floor ? `Floor: ${lead.floor}` : null,
+      lead.bhk ? `BHK: ${lead.bhk}` : null,
+      lead.area_size ? `Area: ${lead.area_size} sq.yds` : null,
+      lead.building_facing ? `Facing: ${lead.building_facing}` : null,
+      lead.lead_status ? `Status: ${lead.lead_status}` : null,
+      formatFloorPricing(lead.floor_pricing, lead.unit) ? `Pricing: ${formatFloorPricing(lead.floor_pricing, lead.unit)}` : null,
+      lead.Property_locationUrl ? `Map: ${lead.Property_locationUrl}` : null,
+    ].filter(Boolean);
+
+    return lines.join('\n');
+  };
+
+  const composePropertyCopyMessage = (lead: Lead) => {
+    const locationText = [lead.address, lead.location].filter(Boolean).join(', ');
+    const floorBhkText = [
+      lead.floor ? `Floor: ${lead.floor}` : null,
+      lead.bhk ? `BHK: ${lead.bhk}` : null,
+    ].filter(Boolean).join(' | ');
+    const pricingText = formatFloorPricing(lead.floor_pricing, lead.unit);
+    const lines = [
+      `Property 1 - (${lead.id}):`,
+      locationText ? `📍 Location: ${locationText}` : null,
+      lead.area_size ? `📐 Plot Area: ${lead.area_size} sq. yds` : null,
+      floorBhkText ? `🏠 ${floorBhkText}` : null,
+      lead.lead_status ? `📋 Status: ${lead.lead_status}` : null,
+      pricingText ? `💰 Pricing: ${pricingText}` : null,
+    ].filter(Boolean);
+
+    return lines.join('\n');
+  };
+
+  const handleSharePropertyInfo = async (lead: Lead) => {
+    try {
+      const message = composePropertyInfoMessage(lead);
+      await api.sendWhatsApp({
+        phone: lead.phone || '',
+        message,
+        lead_id: String(lead.id),
+        status: 'opened',
+        source: 'ios_inventory_property_share',
+      }).catch((error) => console.warn('WhatsApp log failed:', error));
+      const encodedMessage = encodeURIComponent(message);
+      const whatsappUrl = Platform.OS === 'web'
+        ? `https://web.whatsapp.com/send?text=${encodedMessage}`
+        : `https://wa.me/?text=${encodedMessage}`;
+      await Linking.openURL(whatsappUrl);
+      loadLeadsRef.current();
+    } catch (error: any) {
+      console.error('Share property info error:', error);
+      Alert.alert('Share Failed', error?.message || 'Could not share property info.');
+    }
+  };
+
+  const handleCopyPropertyInfo = async (lead: Lead) => {
+    try {
+      await Clipboard.setStringAsync(composePropertyCopyMessage(lead));
+      Alert.alert('Copied', 'Inventory details copied.');
+    } catch (error: any) {
+      console.error('Copy property info error:', error);
+      Alert.alert('Copy Failed', error?.message || 'Could not copy inventory details.');
+    }
+  };
+
+  const openLoggedWhatsApp = async (lead: Lead) => {
+    const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
+    if (!cleanPhone) return;
+    const message = `Hi ${lead.name || ''}, `;
+    await api.sendWhatsApp({
+      phone: lead.phone || cleanPhone,
+      message,
+      lead_id: String(lead.id),
+      status: 'opened',
+      source: 'ios_inventory_card',
+    }).catch((error) => console.warn('WhatsApp log failed:', error));
+    await Linking.openURL(`https://wa.me/91${cleanPhone}`);
+    loadLeadsRef.current();
+  };
+
+  const handleShareMenu = (lead: Lead) => {
+    setShareMenuLead(lead);
   };
 
   const getLeadTypeDisplay = (type: string | null) => {
@@ -543,6 +787,16 @@ export default function InventoryLeadsScreen() {
 
     // Get aging info
     const agingStyles = getAgingStyles(item.aging_color);
+    const isDownloadingImages = imageAction?.leadId === item.id && imageAction.type === 'download';
+    const isSharingImages = imageAction?.leadId === item.id && imageAction.type === 'share';
+    const imageActionInProgress = imageAction?.leadId === item.id;
+    const imageCount = inventoryFileCounts[item.id]?.images || 0;
+    const pdfCount = inventoryFileCounts[item.id]?.pdfs || 0;
+    const hasFiles = imageCount > 0 || pdfCount > 0;
+    const hasImages = imageCount > 0;
+    const lastWhatsappLabel = item.last_message_sent_on
+      ? `WhatsApp ${new Date(item.last_message_sent_on).toLocaleDateString()}`
+      : 'WhatsApp not sent';
 
     return (
       <View style={styles.leadCard}>
@@ -592,6 +846,21 @@ export default function InventoryLeadsScreen() {
             </View>
           </View>
 
+          <View style={styles.dateMetaRow}>
+            <View style={styles.dateMetaItem}>
+              <Ionicons name="add-circle-outline" size={13} color={colors.inkSubtle} />
+              <Text style={styles.dateMetaText} numberOfLines={1}>
+                Created {formatLeadDate(item.created_at)}
+              </Text>
+            </View>
+            <View style={styles.dateMetaItem}>
+              <Ionicons name="refresh-outline" size={13} color={colors.inkSubtle} />
+              <Text style={styles.dateMetaText} numberOfLines={1}>
+                Updated {formatLeadDate(item.updated_on || item.updated_at)}
+              </Text>
+            </View>
+          </View>
+
           {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
             <View style={styles.infoRow}>
@@ -607,10 +876,7 @@ export default function InventoryLeadsScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.whatsappButton}
-                    onPress={() => {
-                      const cleanPhone = (item.phone || '').replace(/[^0-9]/g, '');
-                      Linking.openURL(`https://wa.me/91${cleanPhone}`);
-                    }}
+                    onPress={() => openLoggedWhatsApp(item)}
                   >
                     <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
                   </TouchableOpacity>
@@ -623,12 +889,27 @@ export default function InventoryLeadsScreen() {
           {(item.address || item.location) && (
             <View style={styles.infoRow}>
               <Ionicons name="location" size={14} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
-              <Text 
-                style={[styles.infoText, canViewData && hasMapUrl && styles.linkText]} 
-                numberOfLines={2}
-              >
-                {displayAddressLocation}
-              </Text>
+              {canViewData && hasMapUrl ? (
+                <TouchableOpacity
+                  style={styles.locationLink}
+                  onPress={() => openMapUrl(item.Property_locationUrl!)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.infoText, styles.linkText]}
+                    numberOfLines={2}
+                  >
+                    {displayAddressLocation}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <Text
+                  style={styles.infoText}
+                  numberOfLines={2}
+                >
+                  {displayAddressLocation}
+                </Text>
+              )}
               {canViewData && hasMapUrl && (
                 <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
                   <Ionicons name="open-outline" size={14} color="#3B82F6" style={{ marginLeft: 4 }} />
@@ -639,6 +920,18 @@ export default function InventoryLeadsScreen() {
 
           {/* Tags Row - Removed property_type, added floor and facing */}
           <View style={styles.tagsRow}>
+            <View style={[styles.tag, item.whatsapp_sent_flag ? styles.whatsappSentTag : styles.whatsappPendingTag]}>
+              <Ionicons name="logo-whatsapp" size={12} color={item.whatsapp_sent_flag ? '#047857' : '#92400E'} />
+              <Text style={[styles.tagText, item.whatsapp_sent_flag ? styles.whatsappSentText : styles.whatsappPendingText]}>
+                {lastWhatsappLabel}
+              </Text>
+            </View>
+            {hasFiles && (
+              <View style={styles.tag}>
+                <Ionicons name="images-outline" size={12} color="#6B7280" />
+                <Text style={styles.tagText}>{imageCount} img / {pdfCount} pdf</Text>
+              </View>
+            )}
             {item.floor && (
               <View style={[styles.tag, styles.floorTag]}>
                 <Ionicons name="layers-outline" size={12} color="#6366F1" />
@@ -693,7 +986,7 @@ export default function InventoryLeadsScreen() {
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
           >
-            <Ionicons name="people-outline" size={18} color="#2563EB" />
+            <Ionicons name="people-outline" size={15} color="#2563EB" />
             <Text style={[styles.actionText, { color: '#2563EB' }]}>Clients</Text>
           </TouchableOpacity>
           <View style={styles.actionDivider} />
@@ -701,8 +994,46 @@ export default function InventoryLeadsScreen() {
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
           >
-            <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
-            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
+            <Ionicons name="alarm-outline" size={15} color="#F59E0B" />
+            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Remind</Text>
+          </TouchableOpacity>
+          {hasImages && (
+            <>
+              <View style={styles.actionDivider} />
+              <TouchableOpacity
+                style={[styles.actionButton, isDownloadingImages && styles.actionButtonDisabled]}
+                onPress={() => handleDownloadImages(item)}
+                disabled={imageActionInProgress}
+              >
+                {isDownloadingImages ? (
+                  <ActivityIndicator size="small" color="#2563EB" />
+                ) : (
+                  <Ionicons name="images-outline" size={15} color="#2563EB" />
+                )}
+                <Text style={[styles.actionText, { color: '#2563EB' }]}>Images</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          <View style={styles.actionDivider} />
+          <TouchableOpacity
+            style={[styles.actionButton, isSharingImages && styles.actionButtonDisabled]}
+            onPress={() => handleShareMenu(item)}
+            disabled={imageActionInProgress}
+          >
+            {isSharingImages ? (
+              <ActivityIndicator size="small" color="#25D366" />
+            ) : (
+              <Ionicons name="share-social-outline" size={15} color="#25D366" />
+            )}
+            <Text style={[styles.actionText, { color: '#15803D' }]}>Share</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleCopyPropertyInfo(item)}
+          >
+            <Ionicons name="copy-outline" size={15} color="#6D28D9" />
+            <Text style={[styles.actionText, { color: '#6D28D9' }]}>Copy</Text>
           </TouchableOpacity>
           {canViewData && (
             <>
@@ -711,7 +1042,7 @@ export default function InventoryLeadsScreen() {
                 style={styles.actionButton}
                 onPress={() => router.push(`/leads/edit/${item.id}` as any)}
               >
-                <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                <Ionicons name="create-outline" size={15} color="#3B82F6" />
                 <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
               </TouchableOpacity>
               <View style={styles.actionDivider} />
@@ -719,16 +1050,20 @@ export default function InventoryLeadsScreen() {
                 style={styles.actionButton}
                 onPress={() => handleDelete(item.id, item.name)}
               >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Ionicons name="trash-outline" size={15} color="#EF4444" />
                 <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
               </TouchableOpacity>
             </>
           )}
         </View>
-        
+
         {/* File Upload Row */}
         <View style={styles.fileUploadRow}>
-          <InventoryFileUpload leadId={item.id} compact />
+          <InventoryFileUpload
+            leadId={item.id}
+            compact
+            onFilesChange={(count) => updateInventoryFileCounts(item.id, count)}
+          />
         </View>
       </View>
     );
@@ -877,12 +1212,19 @@ export default function InventoryLeadsScreen() {
                   <Text style={[styles.statNumber, selectedStatTile === 'sell' && styles.statNumberActive]}>{stats.sell}</Text>
                   <Text style={[styles.statLabel, selectedStatTile === 'sell' && styles.statLabelActive]}>Sell</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.statItem, selectedStatTile === 'landlord' && styles.statItemActive]}
                   onPress={() => handleStatTileClick('landlord')}
                 >
                   <Text style={[styles.statNumber, selectedStatTile === 'landlord' && styles.statNumberActive]}>{stats.landlords}</Text>
                   <Text style={[styles.statLabel, selectedStatTile === 'landlord' && styles.statLabelActive]}>Rent</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statItem, selectedStatTile === 'agent' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('agent')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'agent' && styles.statNumberActive]}>{stats.agents}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'agent' && styles.statLabelActive]}>Agent</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1514,6 +1856,47 @@ export default function InventoryLeadsScreen() {
         setFacingSearch
       )}
 
+      <Modal visible={!!shareMenuLead} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.shareMenuOverlay}
+          activeOpacity={1}
+          onPress={() => setShareMenuLead(null)}
+        >
+          <View style={styles.shareMenuCard}>
+            <View style={styles.shareMenuHeader}>
+              <Text style={styles.shareMenuTitle}>Share</Text>
+              <TouchableOpacity onPress={() => setShareMenuLead(null)}>
+                <Ionicons name="close" size={22} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.shareMenuItem}
+              onPress={() => {
+                const leadToShare = shareMenuLead;
+                setShareMenuLead(null);
+                if (leadToShare) handleSharePropertyInfo(leadToShare);
+              }}
+            >
+              <Ionicons name="document-text-outline" size={20} color="#2563EB" />
+              <Text style={styles.shareMenuItemText}>Property Info</Text>
+            </TouchableOpacity>
+            {shareMenuLead && (inventoryFileCounts[shareMenuLead.id]?.images || 0) > 0 && (
+              <TouchableOpacity
+                style={styles.shareMenuItem}
+                onPress={() => {
+                  const leadToShare = shareMenuLead;
+                  setShareMenuLead(null);
+                  if (leadToShare) handleShareImages(leadToShare);
+                }}
+              >
+                <Ionicons name="images-outline" size={20} color="#15803D" />
+                <Text style={styles.shareMenuItemText}>Images</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* FAB - Add Button */}
       <TouchableOpacity
         style={styles.fab}
@@ -1918,6 +2301,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.inkSubtle,
   },
+  dateMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 10,
+    marginBottom: 10,
+  },
+  dateMetaItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dateMetaText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.inkMuted,
+  },
   typeBadgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1953,6 +2357,9 @@ const styles = StyleSheet.create({
     color: colors.primary,
     textDecorationLine: 'underline',
   },
+  locationLink: {
+    flex: 1,
+  },
   whatsappButton: {
     padding: 4,
     marginLeft: 8,
@@ -1980,6 +2387,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.ink,
     fontWeight: '500',
+  },
+  whatsappSentTag: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  whatsappPendingTag: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  whatsappSentText: {
+    color: '#047857',
+  },
+  whatsappPendingText: {
+    color: '#92400E',
   },
   statusTag: {
     backgroundColor: colors.accentSoft,
@@ -2031,19 +2458,25 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    minWidth: 0,
+    minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 2,
+  },
+  actionButtonDisabled: {
+    opacity: 0.65,
   },
   actionDivider: {
     width: 1,
     backgroundColor: '#F3F4F6',
   },
   actionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginLeft: 6,
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -2146,6 +2579,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  shareMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  shareMenuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+    ...shadows.card,
+  },
+  shareMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  shareMenuTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  shareMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  shareMenuItemText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink,
+    marginLeft: 12,
   },
   fab: {
     position: 'absolute',

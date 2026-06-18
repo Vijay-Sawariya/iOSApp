@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LOCATIONS, FLOORS, formatUnit } from '../constants/leadOptions';
 import { offlineApi } from '../services/offlineApi';
+import { api } from '../services/api';
 
 type MatchMode = 'inventory' | 'clients';
 
@@ -125,6 +126,12 @@ const openWhatsApp = async (phone: string, message?: string) => {
     : `https://wa.me/${phoneWithCountry}`;
   
   try {
+    await api.sendWhatsApp({
+      phone,
+      message: message || '',
+      status: 'opened',
+      source: 'ios_matching_modal',
+    }).catch((error) => console.warn('WhatsApp log failed:', error));
     const canOpen = await Linking.canOpenURL(whatsappUrl);
     if (canOpen) {
       await Linking.openURL(whatsappUrl);

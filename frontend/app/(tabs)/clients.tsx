@@ -16,8 +16,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
+import { api } from '../../services/api';
 import { router, useFocusEffect } from 'expo-router';
-import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
   LOCATIONS, 
@@ -52,6 +52,8 @@ interface Lead {
   bhk: string | null;
   building_facing: string | null;
   created_at?: string | null;
+  updated_on?: string | null;
+  updated_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
   // Action/Followup fields
@@ -72,6 +74,18 @@ interface Lead {
 const LOCATION_OPTIONS = [...LOCATIONS];
 const FLOOR_OPTIONS = [...FLOORS];
 
+const formatLeadDate = (value?: string | null) => {
+  if (!value) return 'Not available';
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
 export default function ClientLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
@@ -82,7 +96,6 @@ export default function ClientLeadsScreen() {
   const [showClosedLost, setShowClosedLost] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const { isOnline } = useOffline();
   const { user } = useAuth();
   
   // Location/Floor filter states
@@ -107,8 +120,8 @@ export default function ClientLeadsScreen() {
   };
 
   // Share WhatsApp message (matching PHP ShareMessage function)
-  const handleWhatsAppShare = (phoneNumber: string) => {
-    const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+  const handleWhatsAppShare = async (lead: Lead) => {
+    const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
     const greeting = getGreeting();
     const senderName = user?.full_name || 'Team';
     
@@ -124,7 +137,15 @@ www.sagarhome.com`;
 
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/91${cleanPhone}?text=${encodedMessage}`;
+    await api.sendWhatsApp({
+      phone: lead.phone || cleanPhone,
+      message,
+      lead_id: String(lead.id),
+      status: 'opened',
+      source: 'ios_client_card',
+    }).catch((error) => console.warn('WhatsApp log failed:', error));
     Linking.openURL(whatsappUrl);
+    loadLeadsRef.current();
   };
 
   // Memoized filtered lists for modals
@@ -145,8 +166,7 @@ www.sagarhome.com`;
     const total = leads.length;
     const buyers = leads.filter(l => l.lead_type === 'buyer').length;
     const tenants = leads.filter(l => l.lead_type === 'tenant').length;
-    const agents = leads.filter(l => l.lead_type === 'agent').length;
-    return { total, buyers, tenants, agents };
+    return { total, buyers, tenants };
   }, [leads]);
 
   const loadLeads = async (forceNetwork = false) => {
@@ -409,10 +429,6 @@ www.sagarhome.com`;
   };
 
   const handleDelete = (id: number, name: string) => {
-    if (!isOnline) {
-      Alert.alert('Offline', 'Cannot delete while offline.');
-      return;
-    }
     Alert.alert('Delete Lead', `Are you sure you want to delete "${name}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -420,9 +436,12 @@ www.sagarhome.com`;
         style: 'destructive',
         onPress: async () => {
           try {
-            await offlineApi.deleteLead(String(id));
+            const result = await offlineApi.deleteLead(String(id));
             loadLeadsRef.current();
-            Alert.alert('Success', 'Lead deleted successfully');
+            Alert.alert(
+              result?.is_pending_sync ? 'Queued Offline' : 'Success',
+              result?.is_pending_sync ? 'Delete saved on this device and will sync when internet is available.' : 'Lead deleted successfully'
+            );
           } catch (error: any) {
             console.error('Delete error:', error);
             Alert.alert('Error', error.message || 'Failed to delete lead');
@@ -571,6 +590,21 @@ www.sagarhome.com`;
             </View>
           </View>
 
+          <View style={styles.dateMetaRow}>
+            <View style={styles.dateMetaItem}>
+              <Ionicons name="add-circle-outline" size={13} color={colors.inkSubtle} />
+              <Text style={styles.dateMetaText} numberOfLines={1}>
+                Created {formatLeadDate(item.created_at)}
+              </Text>
+            </View>
+            <View style={styles.dateMetaItem}>
+              <Ionicons name="refresh-outline" size={13} color={colors.inkSubtle} />
+              <Text style={styles.dateMetaText} numberOfLines={1}>
+                Updated {formatLeadDate(item.updated_on || item.updated_at)}
+              </Text>
+            </View>
+          </View>
+
           {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
             <View style={styles.infoRow}>
@@ -586,7 +620,7 @@ www.sagarhome.com`;
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.whatsappButton}
-                    onPress={() => handleWhatsAppShare(item.phone || '')}
+                    onPress={() => handleWhatsAppShare(item)}
                   >
                     <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
                   </TouchableOpacity>
@@ -723,13 +757,6 @@ www.sagarhome.com`;
           >
             <Text style={[styles.statNumber, selectedStatTile === 'tenant' && styles.statNumberActive]}>{stats.tenants}</Text>
             <Text style={[styles.statLabel, selectedStatTile === 'tenant' && styles.statLabelActive]}>Tenants</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statItem, selectedStatTile === 'agent' && styles.statItemActive]}
-            onPress={() => handleStatTileClick('agent')}
-          >
-            <Text style={[styles.statNumber, selectedStatTile === 'agent' && styles.statNumberActive]}>{stats.agents}</Text>
-            <Text style={[styles.statLabel, selectedStatTile === 'agent' && styles.statLabelActive]}>Agents</Text>
           </TouchableOpacity>
         </View>
 
@@ -1403,6 +1430,27 @@ const styles = StyleSheet.create({
   createdByText: {
     fontSize: 12,
     color: colors.inkSubtle,
+  },
+  dateMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 10,
+    marginBottom: 10,
+  },
+  dateMetaItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dateMetaText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.inkMuted,
   },
   typeBadgeContainer: {
     flexDirection: 'row',

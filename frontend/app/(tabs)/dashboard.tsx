@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,14 @@ import {
   RefreshControl,
   ActivityIndicator,
   Linking,
+  TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
+import { notificationService } from '../../services/notificationService';
 import { canViewSensitiveData } from '../../constants/leadOptions';
 import { colors, radii, shadows } from '../../constants/theme';
 
@@ -66,24 +69,45 @@ interface SmartMatch {
   match_reasons: string[];
 }
 
+interface DashboardPlotPricing {
+  id: number;
+  plot_size: number;
+  min_price: number;
+  max_price: number;
+  floors?: { floor_label: string; tentative_floor_price: string }[];
+}
+
+interface DashboardLocationPricing {
+  location_id: number;
+  location_name: string;
+  colony_category: string;
+  circle_rate: number | string;
+  plots: DashboardPlotPricing[];
+}
+
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [urgentFollowups, setUrgentFollowups] = useState<UrgentFollowup[]>([]);
   const [smartMatches, setSmartMatches] = useState<SmartMatch[]>([]);
+  const [pricingData, setPricingData] = useState<DashboardLocationPricing[]>([]);
+  const [pricingSearch, setPricingSearch] = useState('');
+  const [expandedPricingLocationId, setExpandedPricingLocationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [statsData, followupsData, matchesData] = await Promise.all([
+      const [statsData, followupsData, matchesData, pricingRows] = await Promise.all([
         api.getDashboardStats(),
         api.getUrgentFollowups(5).catch(() => []),
         api.getSmartMatches(3).catch(() => []),
+        api.getAllPricing().catch(() => []),
       ]);
       setStats(statsData);
       setUrgentFollowups(followupsData);
       setSmartMatches(matchesData);
+      setPricingData(Array.isArray(pricingRows) ? pricingRows : []);
     } catch (error) {
       console.error('Dashboard fetch error:', error);
     } finally {
@@ -98,6 +122,10 @@ export default function DashboardScreen() {
     }, [])
   );
 
+  useEffect(() => {
+    notificationService.requestPermissions();
+  }, []);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
@@ -109,11 +137,18 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleWhatsApp = (phone: string, name: string) => {
+  const handleWhatsApp = async (phone: string, name: string, leadId?: number) => {
     if (phone) {
       const cleanPhone = phone.replace(/\D/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
       const message = `Hi ${name}, `;
+      await api.sendWhatsApp({
+        phone,
+        message,
+        lead_id: leadId ? String(leadId) : undefined,
+        status: 'opened',
+        source: 'ios_dashboard',
+      }).catch((error) => console.warn('WhatsApp log failed:', error));
       Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
     }
   };
@@ -128,16 +163,26 @@ export default function DashboardScreen() {
   }
 
   const funnelTotal = (stats?.new_leads || 0) + (stats?.contacted_leads || 0) + (stats?.qualified_leads || 0) + (stats?.negotiating_leads || 0) + (stats?.won_leads || 0);
+  const filteredPricingRows = pricingData
+    .filter((item) => item.location_name.toLowerCase().includes(pricingSearch.trim().toLowerCase()))
+    .slice(0, 5);
+
+  const getPricingRange = (plots: DashboardPlotPricing[]) => {
+    if (!plots.length) return 'No plots';
+    const min = Math.min(...plots.map((plot) => Number(plot.min_price) || 0).filter((value) => value > 0));
+    const max = Math.max(...plots.map((plot) => Number(plot.max_price) || 0).filter((value) => value > 0));
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return 'Price n/a';
+    return `₹${min} - ${max} CR`;
+  };
+
+  const getFloorCount = (plots: DashboardPlotPricing[]) =>
+    plots.reduce((sum, plot) => sum + (Array.isArray(plot.floors) ? plot.floors.length : 0), 0);
+
+  const togglePricingLocation = (locationId: number) => {
+    setExpandedPricingLocationId((current) => current === locationId ? null : locationId);
+  };
+
   const todayWorkItems = [
-    {
-      key: 'missed',
-      title: 'Missed follow-ups',
-      count: stats?.missed_followups || 0,
-      icon: 'alert-circle',
-      color: '#DC2626',
-      bg: '#FEF2F2',
-      route: '/reminders',
-    },
     {
       key: 'today',
       title: 'Due today',
@@ -145,6 +190,15 @@ export default function DashboardScreen() {
       icon: 'today',
       color: '#D97706',
       bg: '#FFFBEB',
+      route: '/reminders',
+    },
+    {
+      key: 'missed',
+      title: 'Missed follow-ups',
+      count: stats?.missed_followups || 0,
+      icon: 'alert-circle',
+      color: '#DC2626',
+      bg: '#FEF2F2',
       route: '/reminders',
     },
     {
@@ -201,26 +255,167 @@ export default function DashboardScreen() {
       bg: colors.primarySoft,
       route: smartMatches[0] ? `/leads/${smartMatches[0].inventory_id}` : '/inventory',
     },
+    {
+      key: 'pricing',
+      title: 'Plot pricing',
+      count: '₹',
+      icon: 'calculator',
+      color: '#A16207',
+      bg: '#FFFBEB',
+      route: '/pricing',
+    },
   ];
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.userName}>{user?.full_name || user?.username || 'User'}</Text>
+      <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>Welcome back,</Text>
+            <Text style={styles.userName}>{user?.full_name || user?.username || 'User'}</Text>
+          </View>
+          <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+            <Ionicons name="log-out-outline" size={24} color={colors.white} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-          <Ionicons name="log-out-outline" size={24} color="#6B7280" />
-        </TouchableOpacity>
-      </View>
+      </SafeAreaView>
 
       <ScrollView
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.overviewWidget}>
+          <TouchableOpacity style={styles.overviewItem} onPress={() => router.push('/clients' as any)}>
+            <Text style={styles.overviewValue}>{stats?.client_leads || 0}</Text>
+            <Text style={styles.overviewLabel}>Clients</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.overviewItem} onPress={() => router.push('/inventory' as any)}>
+            <Text style={styles.overviewValue}>{stats?.inventory_leads || 0}</Text>
+            <Text style={styles.overviewLabel}>Inventory</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.overviewItem} onPress={() => router.push('/builders' as any)}>
+            <Text style={styles.overviewValue}>{stats?.total_builders || 0}</Text>
+            <Text style={styles.overviewLabel}>Builders</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.healthWidget}>
+          <View style={styles.healthHeader}>
+            <Text style={styles.widgetTitle}>Business Health</Text>
+            <Ionicons name="pulse" size={18} color={colors.accent} />
+          </View>
+          <View style={styles.healthRows}>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Active follow-ups</Text>
+              <Text style={styles.healthValue}>{stats?.pending_reminders || 0}</Text>
+            </View>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Available inventory</Text>
+              <Text style={styles.healthValue}>{stats?.available_inventory || 0}</Text>
+            </View>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Weekly conversions</Text>
+              <Text style={styles.healthValue}>{stats?.leads_converted_this_week || 0}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.pricingWidget}>
+          <View style={styles.pricingWidgetHeader}>
+            <View>
+              <Text style={styles.pricingWidgetTitle}>Plot & Floor Pricing</Text>
+              <Text style={styles.pricingWidgetSubtitle}>Latest location-wise price ranges</Text>
+            </View>
+            <TouchableOpacity style={styles.pricingWidgetAction} onPress={() => router.push('/pricing' as any)}>
+              <Ionicons name="open-outline" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.pricingSearchBox}>
+            <Ionicons name="search" size={17} color={colors.inkMuted} />
+            <TextInput
+              style={styles.pricingSearchInput}
+              value={pricingSearch}
+              onChangeText={setPricingSearch}
+              placeholder="Search location"
+              placeholderTextColor={colors.inkMuted}
+            />
+            {pricingSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setPricingSearch('')}>
+                <Ionicons name="close-circle" size={18} color={colors.inkMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.pricingTable}>
+            <View style={styles.pricingTableHeader}>
+              <Text style={[styles.pricingTableHeadText, styles.pricingLocationCell]}>Location</Text>
+              <Text style={[styles.pricingTableHeadText, styles.pricingPlotsCell]}>Plots</Text>
+              <Text style={[styles.pricingTableHeadText, styles.pricingRangeCell]}>Range</Text>
+            </View>
+            {filteredPricingRows.length > 0 ? (
+              filteredPricingRows.map((item) => {
+                const isExpanded = expandedPricingLocationId === item.location_id;
+
+                return (
+                  <View key={item.location_id} style={styles.pricingLocationGroup}>
+                    <TouchableOpacity
+                      style={[styles.pricingTableRow, isExpanded && styles.pricingTableRowExpanded]}
+                      onPress={() => togglePricingLocation(item.location_id)}
+                    >
+                      <View style={styles.pricingLocationCell}>
+                        <Text style={styles.pricingLocationName} numberOfLines={1}>{item.location_name}</Text>
+                        <Text style={styles.pricingLocationMeta} numberOfLines={1}>{item.colony_category || 'N/A'} Category</Text>
+                      </View>
+                      <View style={styles.pricingPlotsCell}>
+                        <Text style={styles.pricingPlotCount}>{item.plots.length}</Text>
+                        <Text style={styles.pricingFloorCount}>{getFloorCount(item.plots)} floors</Text>
+                      </View>
+                      <View style={[styles.pricingRangeCell, styles.pricingRangeBox]}>
+                        <Text style={styles.pricingRangeValue} numberOfLines={1}>{getPricingRange(item.plots)}</Text>
+                        <Ionicons
+                          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={15}
+                          color={colors.inkMuted}
+                          style={styles.pricingExpandIcon}
+                        />
+                      </View>
+                    </TouchableOpacity>
+
+                    {isExpanded && (
+                      <View style={styles.pricingFloorPanel}>
+                        {item.plots.map((plot) => (
+                          <View key={plot.id} style={styles.pricingPlotDetail}>
+                            <View style={styles.pricingPlotDetailHeader}>
+                              <Text style={styles.pricingPlotSize}>{plot.plot_size} sq yds</Text>
+                              <Text style={styles.pricingPlotRange}>₹{plot.min_price} - {plot.max_price} CR</Text>
+                            </View>
+                            {plot.floors && plot.floors.length > 0 ? (
+                              plot.floors.map((floor, index) => (
+                                <View key={`${plot.id}-${floor.floor_label}-${index}`} style={styles.pricingFloorDetailRow}>
+                                  <Text style={styles.pricingFloorLabel} numberOfLines={1}>{floor.floor_label}</Text>
+                                  <Text style={styles.pricingFloorPrice}>₹{floor.tentative_floor_price} CR</Text>
+                                </View>
+                              ))
+                            ) : (
+                              <Text style={styles.pricingNoFloorText}>No floor pricing added.</Text>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.pricingEmptyRow}>
+                <Text style={styles.pricingEmptyText}>No pricing records found</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Work Today */}
         <View style={styles.todayWorkWidget}>
           <View style={styles.todayWorkHeader}>
@@ -228,9 +423,15 @@ export default function DashboardScreen() {
               <Text style={styles.todayWorkTitle}>Work Today</Text>
               <Text style={styles.todayWorkSubtitle}>Start with the leads most likely to need action.</Text>
             </View>
-            <TouchableOpacity style={styles.todayWorkRefresh} onPress={onRefresh}>
-              <Ionicons name="refresh" size={18} color="#3B82F6" />
-            </TouchableOpacity>
+            <View style={styles.todayWorkHeaderActions}>
+              <TouchableOpacity style={styles.todayWorkOpen} onPress={() => router.push('/workbench' as any)}>
+                <Ionicons name="briefcase-outline" size={16} color={colors.white} />
+                <Text style={styles.todayWorkOpenText}>Open</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.todayWorkRefresh} onPress={onRefresh}>
+                <Ionicons name="refresh" size={18} color="#3B82F6" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.todayWorkGrid}>
@@ -262,7 +463,7 @@ export default function DashboardScreen() {
                     <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
                       <Ionicons name="call" size={18} color="#10B981" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name)}>
+                    <TouchableOpacity style={styles.nextActionButton} onPress={() => handleWhatsApp(urgentFollowups[0].lead_phone, urgentFollowups[0].lead_name, urgentFollowups[0].lead_id)}>
                       <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                     </TouchableOpacity>
                   </>
@@ -315,7 +516,7 @@ export default function DashboardScreen() {
                         <TouchableOpacity style={styles.actionBtn} onPress={() => handleCall(followup.lead_phone)}>
                           <Ionicons name="call" size={18} color="#10B981" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name)}>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleWhatsApp(followup.lead_phone, followup.lead_name, followup.lead_id)}>
                           <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                         </TouchableOpacity>
                       </>
@@ -458,6 +659,10 @@ export default function DashboardScreen() {
               <Ionicons name="home" size={24} color="#F59E0B" />
               <Text style={styles.actionText}>View Inventory</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/pricing' as any)}>
+              <Ionicons name="calculator" size={24} color="#A16207" />
+              <Text style={styles.actionText}>Plot Pricing</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -471,6 +676,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  headerSafeArea: {
+    backgroundColor: colors.primary,
   },
   loadingContainer: {
     flex: 1,
@@ -487,25 +695,291 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 50,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: colors.primary,
   },
   greeting: {
     fontSize: 14,
-    color: '#6B7280',
+    color: 'rgba(255,255,255,0.78)',
   },
   userName: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1F2937',
+    color: colors.white,
   },
   logoutBtn: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollView: {
     flex: 1,
     padding: 16,
+  },
+  overviewWidget: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  overviewItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  overviewValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  overviewLabel: {
+    fontSize: 11,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  healthWidget: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  healthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  healthRows: {
+    marginTop: 4,
+  },
+  healthRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  healthLabel: {
+    fontSize: 13,
+    color: colors.inkMuted,
+  },
+  healthValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  pricingWidget: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  pricingWidgetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  pricingWidgetSubtitle: {
+    color: colors.inkMuted,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  pricingWidgetTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  pricingWidgetAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pricingSearchBox: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceMuted,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  pricingSearchInput: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+    paddingVertical: 9,
+  },
+  pricingTable: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    overflow: 'hidden',
+  },
+  pricingTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  pricingTableHeadText: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  pricingTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 58,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  pricingTableRowExpanded: {
+    backgroundColor: '#FFFBEB',
+  },
+  pricingLocationGroup: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  pricingLocationCell: {
+    flex: 1.4,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  pricingPlotsCell: {
+    flex: 0.65,
+    minWidth: 62,
+    paddingRight: 8,
+  },
+  pricingRangeCell: {
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
+  },
+  pricingRangeBox: {
+    alignItems: 'flex-end',
+  },
+  pricingLocationName: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  pricingLocationMeta: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  pricingPlotCount: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  pricingFloorCount: {
+    color: colors.inkMuted,
+    fontSize: 10,
+    marginTop: 1,
+  },
+  pricingRangeValue: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  pricingExpandIcon: {
+    marginTop: 2,
+  },
+  pricingFloorPanel: {
+    backgroundColor: '#FFFDF7',
+    padding: 10,
+  },
+  pricingPlotDetail: {
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    padding: 10,
+    marginBottom: 8,
+  },
+  pricingPlotDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pricingPlotSize: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pricingPlotRange: {
+    color: '#A16207',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pricingFloorDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginTop: 6,
+  },
+  pricingFloorLabel: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  pricingFloorPrice: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pricingNoFloorText: {
+    color: colors.inkMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    paddingVertical: 4,
+  },
+  pricingEmptyRow: {
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    minHeight: 58,
+    justifyContent: 'center',
+    padding: 12,
+  },
+  pricingEmptyText: {
+    color: colors.inkMuted,
+    fontSize: 13,
+    fontWeight: '700',
   },
   // Urgent Followups Widget
   urgentWidget: {
@@ -616,6 +1090,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 14,
+  },
+  todayWorkHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  todayWorkOpen: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  todayWorkOpenText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '800',
   },
   todayWorkTitle: {
     fontSize: 20,

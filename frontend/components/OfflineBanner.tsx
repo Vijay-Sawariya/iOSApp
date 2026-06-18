@@ -2,9 +2,10 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOffline } from '../contexts/OfflineContext';
+import { colors, radii } from '../constants/theme';
 
 export const OfflineBanner: React.FC = () => {
-  const { isOnline, isSyncing, syncProgress, formatLastSync, triggerSync } = useOffline();
+  const { isOnline, isSyncing, syncProgress, formatLastSync } = useOffline();
   const [showSyncComplete, setShowSyncComplete] = React.useState(false);
   const [wasJustSyncing, setWasJustSyncing] = React.useState(false);
 
@@ -50,7 +51,7 @@ export const OfflineBanner: React.FC = () => {
         <View style={styles.offlineContent}>
           <Ionicons name="cloud-offline" size={16} color="#FFFFFF" />
           <View style={styles.offlineTextContainer}>
-            <Text style={styles.offlineText}>You're offline - Viewing cached data</Text>
+            <Text style={styles.offlineText}>You are offline - Viewing cached data</Text>
             <Text style={styles.lastSyncText}>Last synced: {formatLastSync()}</Text>
           </View>
         </View>
@@ -91,8 +92,8 @@ export const SyncButton: React.FC = () => {
 
 const styles = StyleSheet.create({
   offlineContainer: {
-    backgroundColor: '#6B7280',
-    paddingVertical: 10,
+    backgroundColor: colors.primary,
+    paddingVertical: 5,
     paddingHorizontal: 16,
   },
   offlineContent: {
@@ -114,36 +115,36 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   syncingContainer: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 5,
     paddingHorizontal: 16,
   },
   syncCompleteContainer: {
-    backgroundColor: '#10B981',
+    backgroundColor: colors.accent,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 5,
     paddingHorizontal: 16,
   },
   syncingText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
-    marginLeft: 10,
+    marginLeft: 8,
   },
   syncButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: colors.border,
   },
   syncButtonDisabled: {
     opacity: 0.7,

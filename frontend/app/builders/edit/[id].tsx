@@ -81,28 +81,30 @@ export default function EditBuilderScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color="#1F2937" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{'Edit Builder'}</Text>
-          <TouchableOpacity 
-            style={[styles.saveButton, saving && styles.disabledButton]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.saveButtonText}>{'Save'}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>{'Edit Builder'}</Text>
+            <TouchableOpacity 
+              style={[styles.saveButton, saving && styles.disabledButton]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveButtonText}>{'Save'}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Basic Info */}
@@ -157,6 +159,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
+  headerSafeArea: {
+    backgroundColor: '#3B82F6',
+  },
   keyboardView: {
     flex: 1,
   },
@@ -176,20 +181,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#3B82F6',
   },
   backButton: {
     padding: 8,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   saveButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,

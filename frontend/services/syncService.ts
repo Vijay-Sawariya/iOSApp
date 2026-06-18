@@ -63,9 +63,35 @@ class SyncService {
     return response.json();
   }
 
+  private async putToApi(endpoint: string, payload: any): Promise<any> {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    return response.json();
+  }
+
+  private async deleteFromApi(endpoint: string): Promise<any> {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    if (response.status === 404) return { message: 'Already deleted' };
+    return response.json();
+  }
+
   private async pushPendingOperations(onProgress?: ProgressCallback): Promise<void> {
     const pending = await db.getPendingOperations();
     if (pending.length === 0) return;
+    const localLeadIdMap = new Map<number, number>();
+    const localReminderIdMap = new Map<number, number>();
 
     onProgress?.({ stage: `Uploading ${pending.length} offline change${pending.length > 1 ? 's' : ''}...`, progress: 0, total: pending.length });
 
@@ -77,6 +103,9 @@ class SyncService {
           const created = await this.postToApi('/api/leads', payload);
           await db.deletePendingOperation(operation.id);
           if (operation.local_entity_id) {
+            if (created?.id) {
+              localLeadIdMap.set(operation.local_entity_id, created.id);
+            }
             await db.removeLocalLead(operation.local_entity_id);
           }
           await db.saveLeads([created]);
@@ -86,6 +115,62 @@ class SyncService {
               floor_amount: parseFloat(fp.price || fp.floor_amount || 0),
             })));
           }
+        } else if (operation.entity_type === 'lead' && operation.operation_type === 'update') {
+          const queuedLeadId = payload.id || operation.local_entity_id;
+          const leadId = queuedLeadId < 0 ? localLeadIdMap.get(queuedLeadId) : queuedLeadId;
+          if (!leadId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline lead update...', progress: index + 1, total: pending.length });
+            continue;
+          }
+          const updated = await this.putToApi(`/api/leads/${leadId}`, payload.data || payload);
+          await db.deletePendingOperation(operation.id);
+          await db.saveLeads([updated]);
+          if (updated?.id && payload.data?.floor_pricing && Array.isArray(payload.data.floor_pricing)) {
+            await db.saveFloorPricing(updated.id, payload.data.floor_pricing.map((fp: any) => ({
+              floor_label: fp.floor || fp.floor_label,
+              floor_amount: parseFloat(fp.price || fp.floor_amount || 0),
+            })));
+          }
+        } else if (operation.entity_type === 'lead' && operation.operation_type === 'delete') {
+          const queuedLeadId = payload.id || operation.local_entity_id;
+          const leadId = queuedLeadId < 0 ? localLeadIdMap.get(queuedLeadId) : queuedLeadId;
+          if (!leadId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline lead delete...', progress: index + 1, total: pending.length });
+            continue;
+          }
+          await this.deleteFromApi(`/api/leads/${leadId}`);
+          await db.deletePendingOperation(operation.id);
+          if (leadId) {
+            await db.removeLocalLead(leadId);
+          }
+        } else if (operation.entity_type === 'reminder' && operation.operation_type === 'create') {
+          const created = await this.postToApi('/api/reminders', payload);
+          if (operation.local_entity_id && created?.id) {
+            localReminderIdMap.set(operation.local_entity_id, created.id);
+          }
+          await db.deletePendingOperation(operation.id);
+        } else if (operation.entity_type === 'reminder' && operation.operation_type === 'update') {
+          const queuedReminderId = payload.id || operation.local_entity_id;
+          const reminderId = queuedReminderId < 0 ? localReminderIdMap.get(queuedReminderId) : queuedReminderId;
+          if (!reminderId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline reminder update...', progress: index + 1, total: pending.length });
+            continue;
+          }
+          await this.putToApi(`/api/reminders/${reminderId}`, payload.data || payload);
+          await db.deletePendingOperation(operation.id);
+        } else if (operation.entity_type === 'reminder' && operation.operation_type === 'delete') {
+          const queuedReminderId = payload.id || operation.local_entity_id;
+          const reminderId = queuedReminderId < 0 ? localReminderIdMap.get(queuedReminderId) : queuedReminderId;
+          if (!reminderId) {
+            await db.deletePendingOperation(operation.id);
+            onProgress?.({ stage: 'Skipped superseded offline reminder delete...', progress: index + 1, total: pending.length });
+            continue;
+          }
+          await this.deleteFromApi(`/api/reminders/${reminderId}`);
+          await db.deletePendingOperation(operation.id);
         }
       } catch (error: any) {
         await db.markPendingOperationError(operation.id, error.message || 'Sync failed');

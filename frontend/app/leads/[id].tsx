@@ -12,15 +12,17 @@ import {
   Modal,
   Image,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { offlineApi } from '../../services/offlineApi';
+import { api } from '../../services/api';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
@@ -45,6 +47,26 @@ const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
 const CHANNELS = ['Call', 'WhatsApp', 'SMS', 'Email', 'Visit'];
 const OUTCOMES = ['Connected', 'No Answer', 'Call Back', 'Left VM', 'Rescheduled', 'Not Interested', 'Deal Won', 'Deal Lost', 'Other'];
 
+
+const formatDateForInput = (date: Date) => date.toISOString().split('T')[0];
+const parseInputDate = (dateValue: string) => {
+  if (!dateValue) return new Date();
+  const parsed = new Date(`${dateValue}T09:00:00`);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const formatLeadDate = (value?: string | null) => {
+  if (!value) return 'Not available';
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
 export default function LeadDetailScreen() {
   const { id } = useLocalSearchParams();
   const [lead, setLead] = useState<any>(null);
@@ -55,6 +77,7 @@ export default function LeadDetailScreen() {
   
   // Followup/Conversation state
   const [followups, setFollowups] = useState<any[]>([]);
+  const [activityItems, setActivityItems] = useState<any[]>([]);
   const [showLogModal, setShowLogModal] = useState(false);
   const [logChannel, setLogChannel] = useState('Call');
   const [logOutcome, setLogOutcome] = useState('Connected');
@@ -62,6 +85,8 @@ export default function LeadDetailScreen() {
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [nextReminderDate, setNextReminderDate] = useState('');
   const [savingLog, setSavingLog] = useState(false);
+  const [showLogDatePicker, setShowLogDatePicker] = useState(false);
+  const [showNextDatePicker, setShowNextDatePicker] = useState(false);
   
   // File upload state
   const [images, setImages] = useState<any[]>([]);
@@ -80,6 +105,7 @@ export default function LeadDetailScreen() {
     useCallback(() => {
       loadLead();
       loadFollowups();
+      loadActivity();
       loadFiles();
     }, [id])
   );
@@ -109,6 +135,16 @@ export default function LeadDetailScreen() {
       setFollowups(data || []);
     } catch (err) {
       console.error('Failed to load followups:', err);
+    }
+  };
+
+  const loadActivity = async () => {
+    try {
+      const data = await api.getLeadActivity(String(id));
+      setActivityItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load activity timeline:', err);
+      setActivityItems([]);
     }
   };
 
@@ -282,6 +318,7 @@ export default function LeadDetailScreen() {
       setLogDate(new Date().toISOString().split('T')[0]);
       setNextReminderDate('');
       loadFollowups();
+      loadActivity();
     } catch (err) {
       console.error('Failed to save log:', err);
       Alert.alert('Error', 'Failed to save conversation log');
@@ -302,17 +339,51 @@ export default function LeadDetailScreen() {
     });
   };
 
+  const openLogModal = (channel = 'Call', outcome = 'Connected', seedNote = '') => {
+    setLogChannel(channel);
+    setLogOutcome(outcome);
+    setLogNotes(seedNote);
+    setLogDate(formatDateForInput(new Date()));
+    setShowLogModal(true);
+  };
+
+  const showContactFollowThrough = (channel: 'Call' | 'WhatsApp') => {
+    Alert.alert(
+      `${channel} started`,
+      'Log this conversation or set the next follow-up?',
+      [
+        { text: 'Add Note', onPress: () => openLogModal(channel, 'Connected') },
+        {
+          text: 'Reminder',
+          onPress: () => router.push(`/reminders/add?lead_id=${id}&lead_name=${encodeURIComponent(safeStr(lead?.name))}` as any),
+        },
+        { text: 'Later', style: 'cancel' },
+      ]
+    );
+  };
+
   const handleCall = () => {
     if (lead?.phone) {
       Linking.openURL(`tel:${safeStr(lead.phone)}`);
+      showContactFollowThrough('Call');
     }
   };
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
     if (lead?.phone) {
       const cleanPhone = safeStr(lead.phone).replace(/[^0-9]/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-      Linking.openURL(`https://wa.me/${phoneWithCountry}`);
+      const message = `Hi ${safeStr(lead.name)}, `;
+      await api.sendWhatsApp({
+        phone: safeStr(lead.phone),
+        message,
+        lead_id: String(lead.id || id),
+        status: 'opened',
+        source: 'ios_lead_detail',
+      }).catch((error) => console.warn('WhatsApp log failed:', error));
+      Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
+      showContactFollowThrough('WhatsApp');
+      loadActivity();
     }
   };
 
@@ -333,8 +404,11 @@ export default function LeadDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await offlineApi.deleteLead(String(id));
-              Alert.alert('Success', 'Lead deleted successfully');
+              const result = await offlineApi.deleteLead(String(id));
+              Alert.alert(
+                result?.is_pending_sync ? 'Queued Offline' : 'Success',
+                result?.is_pending_sync ? 'Delete saved on this device and will sync when internet is available.' : 'Lead deleted successfully'
+              );
               router.back();
             } catch (err) {
               Alert.alert('Error', 'Failed to delete lead');
@@ -508,7 +582,7 @@ export default function LeadDetailScreen() {
 
   const isInventoryLead = (): boolean => {
     const type = safeStr(lead.lead_type).toLowerCase();
-    return ['seller', 'landlord', 'builder'].includes(type);
+    return ['seller', 'landlord', 'builder', 'agent'].includes(type);
   };
 
   const isClientLead = (): boolean => {
@@ -587,6 +661,36 @@ export default function LeadDetailScreen() {
       Alert.alert('Share Failed', error?.message || 'Could not share via WhatsApp.');
     } finally {
       setSharingMatched(false);
+    }
+  };
+
+  const getActivityIcon = (activity: any): keyof typeof Ionicons.glyphMap => {
+    switch (safeStr(activity.type).toLowerCase()) {
+      case 'whatsapp': return 'logo-whatsapp';
+      case 'visit': return 'location';
+      case 'deal': return 'cash';
+      case 'action': return 'calendar';
+      case 'conversation':
+        switch (safeStr(activity.meta?.channel || activity.title).toLowerCase()) {
+          case 'call': return 'call';
+          case 'whatsapp': return 'logo-whatsapp';
+          case 'sms': return 'chatbubble';
+          case 'email': return 'mail';
+          case 'visit': return 'walk';
+          default: return 'chatbubbles';
+        }
+      default: return 'ellipse';
+    }
+  };
+
+  const getActivityColor = (activity: any) => {
+    switch (safeStr(activity.type).toLowerCase()) {
+      case 'whatsapp': return '#25D366';
+      case 'visit': return '#10B981';
+      case 'deal': return '#B7791F';
+      case 'action': return '#3B82F6';
+      case 'conversation': return '#6D5BD0';
+      default: return '#6B7280';
     }
   };
 
@@ -731,6 +835,29 @@ export default function LeadDetailScreen() {
             </Text>
           </View>
         ) : null}
+      </View>
+
+      {/* Lead Dates */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{'Lead Information'}</Text>
+        <View style={styles.leadDatesRow}>
+          <View style={styles.leadDateItem}>
+            <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+            <View>
+              <Text style={styles.leadDateLabel}>Created</Text>
+              <Text style={styles.leadDateValue}>{formatLeadDate(lead.created_at)}</Text>
+            </View>
+          </View>
+          <View style={styles.leadDateItem}>
+            <Ionicons name="refresh-outline" size={18} color="#6B7280" />
+            <View>
+              <Text style={styles.leadDateLabel}>Updated</Text>
+              <Text style={styles.leadDateValue}>
+                {formatLeadDate(lead.updated_on || lead.updated_at)}
+              </Text>
+            </View>
+          </View>
+        </View>
       </View>
 
       {/* Contact Info */}
@@ -1115,10 +1242,10 @@ export default function LeadDetailScreen() {
         </View>
       ) : null}
 
-      {/* Log Conversation Section */}
+      {/* Activity Timeline Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{'Conversation History'}</Text>
+          <Text style={styles.sectionTitle}>{'Activity Timeline'}</Text>
           <TouchableOpacity 
             style={styles.addLogButton}
             onPress={() => setShowLogModal(true)}
@@ -1128,53 +1255,38 @@ export default function LeadDetailScreen() {
           </TouchableOpacity>
         </View>
         
-        {followups.length > 0 ? (
-          followups.map((followup, index) => (
-            <View key={index} style={styles.followupCard}>
-              <View style={styles.followupHeader}>
-                <View style={styles.followupChannelBadge}>
-                  <Ionicons 
-                    name={
-                      followup.channel === 'Call' ? 'call' :
-                      followup.channel === 'WhatsApp' ? 'logo-whatsapp' :
-                      followup.channel === 'SMS' ? 'chatbubble' :
-                      followup.channel === 'Email' ? 'mail' :
-                      followup.channel === 'Visit' ? 'walk' : 'chatbubbles'
-                    } 
-                    size={14} 
-                    color="#FFFFFF" 
-                  />
-                  <Text style={styles.followupChannelText}>{safeStr(followup.channel)}</Text>
+        {activityItems.length > 0 ? (
+          activityItems.map((activity, index) => {
+            const activityColor = getActivityColor(activity);
+            return (
+              <View key={`${activity.type}-${activity.id}-${index}`} style={styles.timelineCard}>
+                <View style={[styles.timelineIcon, { backgroundColor: activityColor }]}>
+                  <Ionicons name={getActivityIcon(activity)} size={15} color="#FFFFFF" />
                 </View>
-                <View style={[
-                  styles.followupOutcomeBadge,
-                  { backgroundColor: followup.outcome === 'Connected' ? '#DCFCE7' : 
-                    followup.outcome === 'No Answer' ? '#FEE2E2' :
-                    followup.outcome === 'Deal Won' ? '#D1FAE5' :
-                    followup.outcome === 'Deal Lost' ? '#FEE2E2' : '#F3F4F6' }
-                ]}>
-                  <Text style={[
-                    styles.followupOutcomeText,
-                    { color: followup.outcome === 'Connected' ? '#166534' : 
-                      followup.outcome === 'No Answer' ? '#991B1B' :
-                      followup.outcome === 'Deal Won' ? '#065F46' :
-                      followup.outcome === 'Deal Lost' ? '#991B1B' : '#4B5563' }
-                  ]}>{safeStr(followup.outcome)}</Text>
+                <View style={styles.timelineContent}>
+                  <View style={styles.timelineHeader}>
+                    <Text style={styles.timelineTitle}>{safeStr(activity.title || activity.description || activity.type)}</Text>
+                    {activity.status ? (
+                      <View style={styles.timelineStatusBadge}>
+                        <Text style={styles.timelineStatusText}>{safeStr(activity.status)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {activity.description ? (
+                    <Text style={styles.timelineDescription}>{safeStr(activity.description)}</Text>
+                  ) : null}
+                  <View style={styles.timelineFooter}>
+                    <Text style={styles.timelineDate}>{formatDateTime(activity.date)}</Text>
+                    {activity.created_by ? (
+                      <Text style={styles.timelineOwner}>by {safeStr(activity.created_by)}</Text>
+                    ) : null}
+                  </View>
                 </View>
               </View>
-              {followup.notes ? (
-                <Text style={styles.followupNotes}>{safeStr(followup.notes)}</Text>
-              ) : null}
-              <View style={styles.followupFooter}>
-                <Text style={styles.followupDate}>{formatDateTime(followup.created_at)}</Text>
-                {followup.owner_name ? (
-                  <Text style={styles.followupOwner}>{'by '}{safeStr(followup.owner_name)}</Text>
-                ) : null}
-              </View>
-            </View>
-          ))
+            );
+          })
         ) : (
-          <Text style={styles.noFollowupsText}>{'No conversations logged yet'}</Text>
+          <Text style={styles.noFollowupsText}>{'No activity logged yet'}</Text>
         )}
       </View>
 
@@ -1189,7 +1301,10 @@ export default function LeadDetailScreen() {
         transparent={true}
         onRequestClose={() => setShowLogModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{'Log Conversation'}</Text>
@@ -1198,39 +1313,54 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
             </View>
             
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={styles.modalLabel}>{'Date of Conversation'}</Text>
-              <TextInput
-                style={styles.dateInput}
-                placeholder="YYYY-MM-DD"
-                value={logDate}
-                onChangeText={setLogDate}
-              />
+              <TouchableOpacity style={styles.dateSelector} onPress={() => setShowLogDatePicker(true)}>
+                <Text style={styles.dateSelectorText}>{logDate || 'Select date'}</Text>
+                <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+              {showLogDatePicker && (
+                <DateTimePicker
+                  style={styles.compactDatePicker}
+                  value={parseInputDate(logDate)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                  onChange={(_, date) => {
+                    setShowLogDatePicker(false);
+                    if (date) setLogDate(formatDateForInput(date));
+                  }}
+                />
+              )}
               
               <Text style={styles.modalLabel}>{'Channel'}</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={logChannel}
-                  onValueChange={setLogChannel}
-                  style={styles.picker}
-                >
-                  {CHANNELS.map((channel) => (
-                    <Picker.Item key={channel} label={channel} value={channel} />
-                  ))}
-                </Picker>
+              <View style={styles.optionWrap}>
+                {CHANNELS.map((channel) => (
+                  <TouchableOpacity
+                    key={channel}
+                    style={[styles.optionChip, logChannel === channel && styles.optionChipActive]}
+                    onPress={() => setLogChannel(channel)}
+                  >
+                    <Text style={[styles.optionChipText, logChannel === channel && styles.optionChipTextActive]}>{channel}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
               
               <Text style={styles.modalLabel}>{'Outcome'}</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={logOutcome}
-                  onValueChange={setLogOutcome}
-                  style={styles.picker}
-                >
-                  {OUTCOMES.map((outcome) => (
-                    <Picker.Item key={outcome} label={outcome} value={outcome} />
-                  ))}
-                </Picker>
+              <View style={styles.optionWrap}>
+                {OUTCOMES.map((outcome) => (
+                  <TouchableOpacity
+                    key={outcome}
+                    style={[styles.optionChip, logOutcome === outcome && styles.optionChipActive]}
+                    onPress={() => setLogOutcome(outcome)}
+                  >
+                    <Text style={[styles.optionChipText, logOutcome === outcome && styles.optionChipTextActive]}>{outcome}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
               
               <Text style={styles.modalLabel}>{'Notes'}</Text>
@@ -1244,12 +1374,22 @@ export default function LeadDetailScreen() {
               />
               
               <Text style={styles.modalLabel}>{'Next Reminder Date (Optional)'}</Text>
-              <TextInput
-                style={styles.dateInput}
-                placeholder="YYYY-MM-DD"
-                value={nextReminderDate}
-                onChangeText={setNextReminderDate}
-              />
+              <TouchableOpacity style={styles.dateSelector} onPress={() => setShowNextDatePicker(true)}>
+                <Text style={styles.dateSelectorText}>{nextReminderDate || 'Select next reminder date'}</Text>
+                <Ionicons name="calendar-outline" size={18} color="#6B7280" />
+              </TouchableOpacity>
+              {showNextDatePicker && (
+                <DateTimePicker
+                  style={styles.compactDatePicker}
+                  value={parseInputDate(nextReminderDate)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                  onChange={(_, date) => {
+                    setShowNextDatePicker(false);
+                    if (date) setNextReminderDate(formatDateForInput(date));
+                  }}
+                />
+              )}
             </ScrollView>
             
             <View style={styles.modalActions}>
@@ -1272,7 +1412,7 @@ export default function LeadDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <MatchingLeadsModal
@@ -1544,6 +1684,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1F2937',
     marginBottom: 16,
+  },
+  leadDatesRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  leadDateItem: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 10,
+  },
+  leadDateLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  leadDateValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 2,
   },
   detailRow: {
     flexDirection: 'row',
@@ -1919,23 +2083,98 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     fontStyle: 'italic',
   },
+  timelineCard: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  timelineIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 2,
+  },
+  timelineContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  timelineTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    lineHeight: 20,
+  },
+  timelineStatusBadge: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  timelineStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4338CA',
+  },
+  timelineDescription: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 19,
+    marginTop: 5,
+  },
+  timelineFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 8,
+  },
+  timelineDate: {
+    flex: 1,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  timelineOwner: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 40,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    maxHeight: '82%',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   modalTitle: {
     fontSize: 20,
@@ -1949,14 +2188,56 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 12,
   },
-  pickerContainer: {
+  modalScroll: {
+    flexGrow: 0,
+  },
+  modalScrollContent: {
+    paddingBottom: 12,
+  },
+  optionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dateSelector: {
     backgroundColor: '#F3F4F6',
     borderRadius: 10,
-    overflow: 'hidden',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  picker: {
-    height: 50,
+  dateSelectorText: {
+    fontSize: 14,
     color: '#1F2937',
+  },
+  compactDatePicker: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+
+  optionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  optionChipActive: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#3B82F6',
+  },
+  optionChipText: {
+    fontSize: 13,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  optionChipTextActive: {
+    color: '#1D4ED8',
+    fontWeight: '600',
   },
   notesInput: {
     backgroundColor: '#F3F4F6',
@@ -1965,7 +2246,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1F2937',
     textAlignVertical: 'top',
-    minHeight: 80,
+    minHeight: 110,
+    maxHeight: 150,
   },
   dateInput: {
     backgroundColor: '#F3F4F6',
@@ -1977,7 +2259,7 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    marginTop: 20,
+    marginTop: 12,
   },
   cancelButton: {
     flex: 1,

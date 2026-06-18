@@ -179,7 +179,8 @@ class OfflineApiService {
   // ============ REMINDERS ============
   async getReminders(): Promise<any[]> {
     try {
-      return await api.getReminders();
+      const reminders = await api.getReminders();
+      return Array.isArray(reminders) ? reminders : [];
     } catch (error) {
       console.log('Cached API fetch failed, reminders cache unavailable');
       return [];
@@ -199,7 +200,7 @@ class OfflineApiService {
   }
 
   // ============ WHATSAPP ============
-  async sendWhatsApp(data: { phone: string; message: string; lead_id?: string }): Promise<any> {
+  async sendWhatsApp(data: { phone: string; message: string; lead_id?: string; status?: string; source?: string }): Promise<any> {
     const online = await this.isOnline();
     if (!online) {
       throw new Error('Cannot send WhatsApp while offline. Please connect to the internet.');
@@ -210,16 +211,17 @@ class OfflineApiService {
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to send WhatsApp');
+    if (!response.ok) throw new Error('Failed to log WhatsApp');
     return response.json();
   }
 
-  async getWhatsAppLogs(): Promise<any[]> {
+  async getWhatsAppLogs(leadId?: string | number): Promise<any[]> {
     const online = await this.isOnline();
     if (!online) {
       return [];
     }
-    return this.fetchFromNetwork('/api/whatsapp/logs');
+    const query = leadId ? `?lead_id=${encodeURIComponent(String(leadId))}` : '';
+    return this.fetchFromNetwork(`/api/whatsapp/logs${query}`);
   }
 
   // ============ UTILITY ============

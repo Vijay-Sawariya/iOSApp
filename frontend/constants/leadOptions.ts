@@ -5,7 +5,7 @@ export const LEAD_TYPES = ['buyer', 'tenant', 'seller', 'landlord', 'builder', '
 export type LeadType = typeof LEAD_TYPES[number];
 
 // Client-specific lead types (for Client Add/Edit forms)
-export const CLIENT_LEAD_TYPES = ['buyer', 'tenant', 'agent'] as const;
+export const CLIENT_LEAD_TYPES = ['buyer', 'tenant'] as const;
 // Inventory-specific lead types (for Inventory Add/Edit forms)
 export const INVENTORY_LEAD_TYPES = ['builder', 'seller', 'landlord', 'agent'] as const;
 
@@ -142,11 +142,11 @@ export const FILTER_FACINGS = ['Any', ...FACINGS] as const;
 
 // Type guards
 export const isClientType = (type: string | null): boolean => {
-  return type === 'buyer' || type === 'tenant' || type === 'agent';
+  return type === 'buyer' || type === 'tenant';
 };
 
 export const isInventoryType = (type: string | null): boolean => {
-  return type === 'seller' || type === 'landlord' || type === 'builder';
+  return type === 'seller' || type === 'landlord' || type === 'builder' || type === 'agent';
 };
 
 // Color mappings
@@ -245,9 +245,14 @@ export interface Lead {
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;
+  updated_on?: string | null;
+  updated_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
   created_by_name?: string | null;
   Property_locationUrl?: string | null;
+  last_message_sent_on?: string | null;
+  last_sent_message?: string | null;
+  whatsapp_sent_flag?: number | boolean | null;
   // Lead Scoring fields
   lead_score?: number | null;
   days_since_contact?: number | null;

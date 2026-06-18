@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,6 +16,7 @@ import { notificationService } from '../../services/notificationService';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
+import { colors, radii, shadows } from '../../constants/theme';
 
 interface Reminder {
   id: number;
@@ -24,9 +26,21 @@ interface Reminder {
   status: string;
   notes: string | null;
   lead_id: number | null;
+  user_id?: number | null;
+  assigned_to?: number | null;
   lead_name?: string;
   lead_phone?: string;
   lead_created_by?: number | null;
+  assigned_to_name?: string | null;
+  assigned_to_username?: string | null;
+  created_by_name?: string | null;
+  created_by_username?: string | null;
+}
+
+interface ReminderUser {
+  id: number;
+  username?: string | null;
+  full_name?: string | null;
 }
 
 // India timezone offset (UTC+5:30)
@@ -132,27 +146,52 @@ const getDateInfo = (dateString: string) => {
 export default function RemindersScreen() {
   const { user } = useAuth();
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [usersById, setUsersById] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
+  const [deletingReminderId, setDeletingReminderId] = useState<number | null>(null);
 
-  const loadReminders = async () => {
+  const loadReminders = useCallback(async () => {
     try {
       const data = await api.getReminders();
-      setReminders(data);
+      setReminders(Array.isArray(data) ? data : []);
+
+      try {
+        const users = await api.getAssignableUsers();
+        const userMap = (Array.isArray(users) ? users : []).reduce<Record<number, string>>((acc, item: ReminderUser) => {
+          if (item.id) {
+            acc[item.id] = item.full_name || item.username || `User #${item.id}`;
+          }
+          return acc;
+        }, {});
+        if (user?.id) {
+          const currentUserId = Number(user.id);
+          userMap[currentUserId] = user.full_name || user.username || `User #${currentUserId}`;
+        }
+        setUsersById(userMap);
+      } catch (userError) {
+        console.error('Failed to load reminder users:', userError);
+        if (user?.id) {
+          const currentUserId = Number(user.id);
+          setUsersById({
+            [currentUserId]: user.full_name || user.username || `User #${currentUserId}`,
+          });
+        }
+      }
     } catch (error) {
       console.error('Failed to load reminders:', error);
     }
-  };
+  }, [user?.full_name, user?.id, user?.username]);
 
   useEffect(() => {
     notificationService.requestPermissions();
     loadReminders();
-  }, []);
+  }, [loadReminders]);
 
   useFocusEffect(
     useCallback(() => {
       loadReminders();
-    }, [])
+    }, [loadReminders])
   );
 
   const onRefresh = async () => {
@@ -162,19 +201,31 @@ export default function RemindersScreen() {
   };
 
   const handleDelete = (id: number, title: string) => {
+    if (deletingReminderId !== null) return;
+
     Alert.alert('Delete Follow-up', `Are you sure you want to delete "${title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
+          setDeletingReminderId(id);
           try {
-            await api.deleteReminder(id.toString());
-            await notificationService.cancelReminderNotification(id.toString());
-            loadReminders();
+            const result = await api.deleteReminder(id.toString());
+            try {
+              await notificationService.cancelReminderNotification(id.toString());
+            } catch (notificationError) {
+              console.warn('Failed to cancel reminder notification:', notificationError);
+            }
+            await loadReminders();
+            if (result?.is_pending_sync) {
+              Alert.alert('Queued Offline', 'Follow-up delete saved on this device and will sync when internet is available.');
+            }
           } catch (error) {
             console.error('Delete error:', error);
             Alert.alert('Error', 'Failed to delete follow-up');
+          } finally {
+            setDeletingReminderId(null);
           }
         },
       },
@@ -183,9 +234,12 @@ export default function RemindersScreen() {
 
   const handleMarkComplete = async (id: number) => {
     try {
-      await api.updateReminder(id.toString(), { status: 'completed' });
+      const result = await api.updateReminder(id.toString(), { status: 'completed' });
       await notificationService.cancelReminderNotification(id.toString());
       loadReminders();
+      if (result?.is_pending_sync) {
+        Alert.alert('Queued Offline', 'Completion saved on this device and will sync when internet is available.');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to update follow-up');
     }
@@ -206,6 +260,18 @@ export default function RemindersScreen() {
   const getStatusColor = (status: string) => {
     const statusLower = status?.toLowerCase() || '';
     return statusLower === 'completed' ? '#10B981' : '#F59E0B';
+  };
+
+  const getPersonName = (name?: string | null, username?: string | null) => {
+    return name || username || '';
+  };
+
+  const getReminderUserName = (
+    id?: number | null,
+    name?: string | null,
+    username?: string | null
+  ) => {
+    return getPersonName(name, username) || (id ? usersById[id] || `User #${id}` : '');
   };
 
   const filteredReminders = reminders.filter(r => {
@@ -230,6 +296,10 @@ export default function RemindersScreen() {
     const { dateLabel, timeStr, isPast, isToday } = getDateInfo(item.reminder_date);
     const statusLower = (item.status || '').toLowerCase();
     const isOverdue = isPast && statusLower === 'pending';
+    const isDeleting = deletingReminderId === item.id;
+    const deleteDisabled = deletingReminderId !== null;
+    const assignedToName = getReminderUserName(item.assigned_to, item.assigned_to_name, item.assigned_to_username);
+    const createdByName = getReminderUserName(item.user_id, item.created_by_name, item.created_by_username);
 
     return (
       <TouchableOpacity
@@ -261,6 +331,20 @@ export default function RemindersScreen() {
                       : maskPhone(item.lead_phone)}
                   </Text>
                 )}
+              </View>
+            )}
+
+            {assignedToName && (
+              <View style={styles.metaRow}>
+                <Ionicons name="person-circle-outline" size={12} color="#6B7280" />
+                <Text style={styles.metaText}>Assigned To: {assignedToName}</Text>
+              </View>
+            )}
+
+            {createdByName && (
+              <View style={styles.metaRow}>
+                <Ionicons name="create-outline" size={12} color="#6B7280" />
+                <Text style={styles.metaText}>Created By: {createdByName}</Text>
               </View>
             )}
             
@@ -314,10 +398,15 @@ export default function RemindersScreen() {
             )}
             
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.deleteButton, deleteDisabled && styles.disabledAction]}
               onPress={() => handleDelete(item.id, item.title)}
+              disabled={deleteDisabled}
             >
-              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+              {isDeleting ? (
+                <ActivityIndicator size="small" color={colors.danger} />
+              ) : (
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -331,54 +420,55 @@ export default function RemindersScreen() {
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Follow-ups</Text>
-          <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>{pendingCount} pending</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/reminders/add')}>
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
-            All ({reminders.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'pending' && styles.filterTabActive]}
-          onPress={() => setFilter('pending')}
-        >
-          <Text style={[styles.filterText, filter === 'pending' && styles.filterTextActive]}>
-            Pending ({pendingCount})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'completed' && styles.filterTabActive]}
-          onPress={() => setFilter('completed')}
-        >
-          <Text style={[styles.filterText, filter === 'completed' && styles.filterTextActive]}>
-            Done ({completedCount})
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <View style={styles.contentArea}>
+        {/* Stats Bar */}
+        <View style={styles.statsBar}>
+          <TouchableOpacity
+            style={[styles.statItem, filter === 'all' && styles.statItemActive]}
+            onPress={() => setFilter('all')}
+          >
+            <Text style={[styles.statNumber, filter === 'all' && styles.statNumberActive]}>{reminders.length}</Text>
+            <Text style={[styles.statLabel, filter === 'all' && styles.statLabelActive]}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statItem, filter === 'pending' && styles.statItemActive]}
+            onPress={() => setFilter('pending')}
+          >
+            <Text style={[styles.statNumber, filter === 'pending' && styles.statNumberActive]}>{pendingCount}</Text>
+            <Text style={[styles.statLabel, filter === 'pending' && styles.statLabelActive]}>Pending</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statItem, filter === 'completed' && styles.statItemActive]}
+            onPress={() => setFilter('completed')}
+          >
+            <Text style={[styles.statNumber, filter === 'completed' && styles.statNumberActive]}>{completedCount}</Text>
+            <Text style={[styles.statLabel, filter === 'completed' && styles.statLabelActive]}>Done</Text>
+          </TouchableOpacity>
+        </View>
 
-      <FlatList
-        data={sortedReminders}
-        renderItem={renderReminder}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="notifications-outline" size={64} color="#D1D5DB" />
-            <Text style={styles.emptyText}>No follow-ups found</Text>
-            <Text style={styles.emptySubtext}>Tap + to add your first follow-up</Text>
-          </View>
-        }
-      />
+        <FlatList
+          data={sortedReminders}
+          renderItem={renderReminder}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="notifications-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyText}>No follow-ups found</Text>
+              <Text style={styles.emptySubtext}>Tap + to add your first follow-up</Text>
+            </View>
+          }
+        />
+      </View>
 
       <TouchableOpacity style={styles.fab} onPress={() => router.push('/reminders/add')}>
         <Ionicons name="add" size={28} color="#FFFFFF" />
@@ -390,79 +480,91 @@ export default function RemindersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.primary,
   },
   headerSafeArea: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   blueHeader: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.white,
   },
-  headerBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  headerBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  filterContainer: {
+  headerActions: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contentArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
-  filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: radii.md,
+    marginHorizontal: 4,
   },
-  filterTabActive: {
-    backgroundColor: '#3B82F6',
+  statItemActive: {
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
-  filterText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#6B7280',
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.ink,
   },
-  filterTextActive: {
-    color: '#FFFFFF',
+  statNumberActive: {
+    color: colors.primary,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  statLabelActive: {
+    color: colors.primary,
   },
   listContent: {
     padding: 16,
     paddingBottom: 100,
   },
   reminderCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.lg,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   overdueCard: {
     borderLeftWidth: 4,
-    borderLeftColor: '#EF4444',
+    borderLeftColor: colors.danger,
   },
   reminderHeader: {
     flexDirection: 'row',
@@ -471,8 +573,8 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 40,
     height: 40,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -486,12 +588,12 @@ const styles = StyleSheet.create({
   reminderTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.ink,
     marginBottom: 4,
   },
   reminderType: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.inkMuted,
     marginBottom: 6,
   },
   clientRow: {
@@ -508,6 +610,17 @@ const styles = StyleSheet.create({
   clientPhone: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   dateContainer: {
     flexDirection: 'row',
@@ -572,6 +685,13 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     padding: 4,
+    minWidth: 28,
+    minHeight: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledAction: {
+    opacity: 0.55,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -592,17 +712,13 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 20,
+    bottom: 90,
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.floating,
   },
 });
