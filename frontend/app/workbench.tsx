@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -54,6 +55,14 @@ type PendingContact = {
   suggestedNextDays?: number;
 };
 
+type PendingActionOutcome = {
+  leadId?: number;
+  actionId?: number;
+  leadName?: string;
+  channel: ContactChannel | 'Task';
+  outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer' | 'Completed';
+};
+
 export default function WorkbenchScreen() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +74,11 @@ export default function WorkbenchScreen() {
   const [contactOutcome, setContactOutcome] = useState('');
   const [nextFollowupDate, setNextFollowupDate] = useState(dateAfterDays(2));
   const [showNextDatePicker, setShowNextDatePicker] = useState(false);
+  const [pendingActionOutcome, setPendingActionOutcome] = useState<PendingActionOutcome | null>(null);
+  const [actionNote, setActionNote] = useState('');
+  const [createNextAction, setCreateNextAction] = useState(false);
+  const [actionNextDate, setActionNextDate] = useState(dateAfterDays(2));
+  const [showActionDatePicker, setShowActionDatePicker] = useState(false);
   const appLeftForContact = useRef(false);
   const pendingContactRef = useRef<PendingContact | null>(null);
 
@@ -110,49 +124,75 @@ export default function WorkbenchScreen() {
     loadData(true);
   };
 
-  const markDone = async (id: number) => {
-    try {
-      await api.updateReminder(String(id), { status: 'completed' });
-      await loadData(true);
-    } catch (error: any) {
-      await loadData(true);
-      Alert.alert('Error', error?.message || 'Failed to complete follow-up');
-    }
+  const openActionOutcomeModal = (action: PendingActionOutcome, nextDays = 2) => {
+    setPendingActionOutcome(action);
+    setActionNote('');
+    setCreateNextAction(false);
+    setActionNextDate(dateAfterDays(nextDays));
+    setShowActionDatePicker(false);
   };
 
-  const recordOutcome = async (
+  const recordOutcome = (
     leadId: number,
     actionId: number | undefined,
     channel: ContactChannel,
     outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer',
     nextDays: number,
+    leadName?: string,
   ) => {
-    const key = `${leadId}-${actionId || 'lead'}-${outcome}`;
-    const nextAt = `${isoDate(dateAfterDays(nextDays))}T10:00`;
+    openActionOutcomeModal({ leadId, actionId, leadName, channel, outcome }, nextDays);
+  };
+
+  const closeActionOutcomeModal = () => {
+    setPendingActionOutcome(null);
+    setActionNote('');
+    setCreateNextAction(false);
+    setShowActionDatePicker(false);
+  };
+
+  const saveActionOutcome = async () => {
+    if (!pendingActionOutcome) return;
+
+    const { leadId, actionId, channel, outcome } = pendingActionOutcome;
+    const key = `${leadId || 'none'}-${actionId || 'lead'}-${outcome}`;
+    const note = actionNote.trim();
+    if (!note) {
+      Alert.alert('Note Required', 'Please enter a note before completing this action.');
+      return;
+    }
+    const nextAt = createNextAction ? `${isoDate(actionNextDate)}T10:00` : undefined;
     setSavingKey(key);
 
     try {
-      await api.createFollowup(String(leadId), {
-        channel,
-        outcome,
-        notes: `${outcome} from Today Action Center`,
-        followup_date: isoDate(new Date()),
-        next_followup: nextAt,
-      });
+      if (leadId) {
+        await api.createFollowup(String(leadId), {
+          channel,
+          outcome,
+          notes: note,
+          followup_date: isoDate(new Date()),
+          next_followup: nextAt,
+        });
 
-      await api.createReminder({
-        lead_id: leadId,
-        title: `${channel} follow-up`,
-        reminder_date: nextAt,
-        reminder_type: channel,
-        notes: `Auto scheduled after ${outcome}`,
-        priority: outcome === 'No Answer' ? 'High' : 'Medium',
-      });
-
-      if (actionId) {
-        await api.updateReminder(String(actionId), { status: 'completed', outcome });
+        if (createNextAction && nextAt) {
+          await api.createReminder({
+            lead_id: leadId,
+            title: `${channel === 'Task' ? 'Follow-up' : channel} follow-up`,
+            reminder_date: nextAt,
+            reminder_type: channel === 'Task' ? 'Follow-up' : channel,
+            notes: note,
+            priority: outcome === 'No Answer' ? 'High' : 'Medium',
+          });
+        }
       }
 
+      if (actionId) {
+        await api.updateReminder(String(actionId), {
+          status: 'completed',
+          outcome: note,
+        });
+      }
+
+      closeActionOutcomeModal();
       await loadData(true);
     } catch (error: any) {
       await loadData(true);
@@ -365,7 +405,13 @@ export default function WorkbenchScreen() {
                 onOpen={() => router.push(
                   item.lead_id ? `/leads/${item.lead_id}` as any : `/reminders/edit/${item.id}` as any
                 )}
-                onDone={() => markDone(item.id)}
+                onDone={() => openActionOutcomeModal({
+                  leadId: item.lead_id,
+                  actionId: item.id,
+                  leadName: item.lead_name || item.title,
+                  channel: 'Task',
+                  outcome: 'Completed',
+                })}
                 onOutcome={item.lead_id ? recordOutcome : undefined}
                 savingKey={savingKey}
               />
@@ -541,6 +587,136 @@ export default function WorkbenchScreen() {
               )}
               <Text style={styles.saveOutcomeButtonText}>
                 {contactOutcome === 'Not sent' ? 'Close without logging' : 'Save outcome'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(pendingActionOutcome)}
+        animationType="slide"
+        transparent
+        onRequestClose={closeActionOutcomeModal}
+      >
+        <View style={styles.outcomeModalOverlay}>
+          <View style={styles.outcomeModal}>
+            <View style={styles.outcomeModalHeader}>
+              <View style={styles.outcomeModalTitleRow}>
+                <Ionicons name="checkmark-circle-outline" size={22} color={colors.primary} />
+                <View>
+                  <Text style={styles.outcomeModalTitle}>
+                    {pendingActionOutcome?.outcome || 'Complete action'}
+                  </Text>
+                  <Text style={styles.outcomeModalSubtitle}>
+                    {pendingActionOutcome?.leadName || 'Add details before saving'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.modalCloseButton} onPress={closeActionOutcomeModal}>
+                <Ionicons name="close" size={20} color={colors.inkMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.nextFollowupLabel}>Note</Text>
+            <TextInput
+              style={styles.actionNoteInput}
+              value={actionNote}
+              onChangeText={setActionNote}
+              placeholder="What happened?"
+              placeholderTextColor={colors.inkSubtle}
+              multiline
+              textAlignVertical="top"
+            />
+
+            {pendingActionOutcome?.leadId ? (
+              <View style={styles.optionalFollowupPanel}>
+                <TouchableOpacity
+                  style={styles.optionalFollowupToggle}
+                  onPress={() => {
+                    setCreateNextAction((current) => !current);
+                    setShowActionDatePicker(false);
+                  }}
+                >
+                  <Ionicons
+                    name={createNextAction ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={createNextAction ? colors.primary : colors.inkMuted}
+                  />
+                  <View style={styles.optionalFollowupCopy}>
+                    <Text style={styles.optionalFollowupTitle}>Create next follow-up</Text>
+                    <Text style={styles.optionalFollowupHint}>Optional — no reminder is created unless selected.</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {createNextAction ? (
+                  <View style={styles.nextFollowupPanel}>
+                    <TouchableOpacity
+                      style={styles.nextFollowupDateButton}
+                      onPress={() => setShowActionDatePicker((current) => !current)}
+                    >
+                      <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                      <Text style={styles.nextFollowupDateText}>
+                        {actionNextDate.toLocaleDateString('en-IN', {
+                          weekday: 'short',
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </Text>
+                      <Ionicons name="chevron-down" size={16} color={colors.inkMuted} />
+                    </TouchableOpacity>
+
+                    <View style={styles.datePresetRow}>
+                      {[1, 2, 3, 7].map((days) => (
+                        <TouchableOpacity
+                          key={days}
+                          style={styles.datePresetButton}
+                          onPress={() => setActionNextDate(dateAfterDays(days))}
+                        >
+                          <Text style={styles.datePresetText}>{days === 1 ? 'Tomorrow' : `${days} days`}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {showActionDatePicker ? (
+                      <View style={styles.datePickerWrap}>
+                        <DateTimePicker
+                          value={actionNextDate}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                          minimumDate={new Date()}
+                          onChange={(_, selectedDate) => {
+                            if (Platform.OS !== 'ios') setShowActionDatePicker(false);
+                            if (selectedDate) {
+                              selectedDate.setHours(10, 0, 0, 0);
+                              setActionNextDate(selectedDate);
+                            }
+                          }}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.noLogHint}>
+                This action is not linked to a lead, so it can be completed but a next follow-up cannot be created.
+              </Text>
+            )}
+
+            <TouchableOpacity
+              style={[styles.saveOutcomeButton, savingKey && styles.saveOutcomeButtonDisabled]}
+              onPress={saveActionOutcome}
+              disabled={Boolean(savingKey)}
+            >
+              {savingKey ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Ionicons name="checkmark" size={18} color={colors.white} />
+              )}
+              <Text style={styles.saveOutcomeButtonText}>
+                {createNextAction ? 'Save and create follow-up' : 'Save and complete'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -744,6 +920,7 @@ type OutcomeHandler = (
   channel: ContactChannel,
   outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer',
   nextDays: number,
+  leadName?: string,
 ) => void;
 
 function ActionRow({
@@ -798,21 +975,21 @@ function ActionRow({
         <View style={styles.quickOutcomes}>
           <TouchableOpacity
             style={styles.outcomeButton}
-            onPress={() => onOutcome(leadId, actionId, 'Call', 'Connected', 2)}
+            onPress={() => onOutcome(leadId, actionId, 'Call', 'Connected', 2, name)}
             disabled={isSaving('Connected')}
           >
             <Text style={styles.outcomeButtonText}>{isSaving('Connected') ? 'Saving...' : 'Call done'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.outcomeButton}
-            onPress={() => onOutcome(leadId, actionId, 'WhatsApp', 'WhatsApp Sent', 2)}
+            onPress={() => onOutcome(leadId, actionId, 'WhatsApp', 'WhatsApp Sent', 2, name)}
             disabled={isSaving('WhatsApp Sent')}
           >
             <Text style={styles.outcomeButtonText}>{isSaving('WhatsApp Sent') ? 'Saving...' : 'WA sent'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.outcomeButton, styles.noAnswerButton]}
-            onPress={() => onOutcome(leadId, actionId, 'Call', 'No Answer', 1)}
+            onPress={() => onOutcome(leadId, actionId, 'Call', 'No Answer', 1, name)}
             disabled={isSaving('No Answer')}
           >
             <Text style={[styles.outcomeButtonText, styles.noAnswerText]}>
@@ -1083,7 +1260,48 @@ const styles = StyleSheet.create({
   outcomeOptionTextActive: {
     color: colors.primary,
   },
+  actionNoteInput: {
+    minHeight: 92,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    color: colors.ink,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  optionalFollowupPanel: {
+    marginBottom: 18,
+  },
+  optionalFollowupToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    padding: 12,
+  },
+  optionalFollowupCopy: {
+    flex: 1,
+  },
+  optionalFollowupTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.ink,
+  },
+  optionalFollowupHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
   nextFollowupPanel: {
+    marginTop: 12,
     marginBottom: 18,
   },
   nextFollowupLabel: {
