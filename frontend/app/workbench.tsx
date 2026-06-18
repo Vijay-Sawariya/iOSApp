@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Keyboard,
   Linking,
   Modal,
   Platform,
@@ -12,6 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -485,8 +487,9 @@ export default function WorkbenchScreen() {
         transparent
         onRequestClose={closeOutcomeModal}
       >
-        <View style={styles.outcomeModalOverlay}>
-          <View style={styles.outcomeModal}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.outcomeModalOverlay}>
+            <View style={styles.outcomeModal}>
             <View style={styles.outcomeModalHeader}>
               <View style={styles.outcomeModalTitleRow}>
                 <Ionicons
@@ -589,8 +592,9 @@ export default function WorkbenchScreen() {
                 {contactOutcome === 'Not sent' ? 'Close without logging' : 'Save outcome'}
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       <Modal
@@ -599,8 +603,9 @@ export default function WorkbenchScreen() {
         transparent
         onRequestClose={closeActionOutcomeModal}
       >
-        <View style={styles.outcomeModalOverlay}>
-          <View style={styles.outcomeModal}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.outcomeModalOverlay}>
+            <View style={styles.outcomeModal}>
             <View style={styles.outcomeModalHeader}>
               <View style={styles.outcomeModalTitleRow}>
                 <Ionicons name="checkmark-circle-outline" size={22} color={colors.primary} />
@@ -719,8 +724,9 @@ export default function WorkbenchScreen() {
                 {createNextAction ? 'Save and create follow-up' : 'Save and complete'}
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </SafeAreaView>
   );
