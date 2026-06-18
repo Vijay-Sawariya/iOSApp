@@ -1,8 +1,11 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Linking,
+  Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,27 +16,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { api } from '../services/api';
 import { colors, radii, shadows } from '../constants/theme';
-
-const callPhone = (phone?: string) => {
-  if (phone) Linking.openURL(`tel:${phone}`);
-};
-
-const openWhatsApp = async (phone?: string, name?: string, messageOverride?: string, leadId?: number, source = 'ios_workbench') => {
-  if (!phone) return;
-  const cleanPhone = phone.replace(/\D/g, '');
-  const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-  const message = messageOverride || `Hi ${name || ''}, `;
-  await api.sendWhatsApp({
-    phone,
-    message,
-    lead_id: leadId ? String(leadId) : undefined,
-    status: 'opened',
-    source,
-  }).catch((error) => console.warn('WhatsApp log failed:', error));
-  Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
-};
 
 const formatDate = (value?: string) => {
   if (!value) return 'No date';
@@ -49,10 +34,24 @@ const formatCr = (value?: number | string | null) => {
 
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
 
-const nextFollowupAt = (days: number) => {
+const dateAfterDays = (days: number) => {
   const next = new Date();
   next.setDate(next.getDate() + days);
-  return `${isoDate(next)}T10:00`;
+  next.setHours(10, 0, 0, 0);
+  return next;
+};
+
+type ContactChannel = 'Call' | 'WhatsApp';
+
+type PendingContact = {
+  channel: ContactChannel;
+  leadId?: number;
+  actionId?: number;
+  phone: string;
+  name?: string;
+  message?: string;
+  source?: string;
+  suggestedNextDays?: number;
 };
 
 export default function WorkbenchScreen() {
@@ -61,6 +60,32 @@ export default function WorkbenchScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savingMatchKey, setSavingMatchKey] = useState<string | null>(null);
+  const [pendingContact, setPendingContact] = useState<PendingContact | null>(null);
+  const [showOutcomeModal, setShowOutcomeModal] = useState(false);
+  const [contactOutcome, setContactOutcome] = useState('');
+  const [nextFollowupDate, setNextFollowupDate] = useState(dateAfterDays(2));
+  const [showNextDatePicker, setShowNextDatePicker] = useState(false);
+  const appLeftForContact = useRef(false);
+  const pendingContactRef = useRef<PendingContact | null>(null);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const activeContact = pendingContactRef.current;
+      if (!activeContact) return;
+      if (nextState === 'inactive' || nextState === 'background') {
+        appLeftForContact.current = true;
+        return;
+      }
+      if (nextState === 'active' && appLeftForContact.current) {
+        appLeftForContact.current = false;
+        const defaultOutcome = activeContact.channel === 'Call' ? 'Connected' : 'Message sent';
+        setContactOutcome(defaultOutcome);
+        setNextFollowupDate(dateAfterDays(activeContact.suggestedNextDays || 2));
+        setShowOutcomeModal(true);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   const loadData = async (force = false) => {
     try {
@@ -94,46 +119,105 @@ export default function WorkbenchScreen() {
     }
   };
 
-  const recordOutcome = async (
-    leadId: number | undefined,
-    actionId: number | undefined,
-    channel: 'Call' | 'WhatsApp',
-    outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer',
-    nextDays: number,
-  ) => {
-    if (!leadId) {
-      Alert.alert('Lead Missing', 'This action is not linked with a lead.');
+  const startContact = async (contact: PendingContact) => {
+    if (!contact.phone) {
+      Alert.alert('No Phone', 'This lead does not have a contact number.');
       return;
     }
 
-    const key = `${leadId}-${actionId || 'lead'}-${outcome}`;
-    setSavingKey(key);
     try {
-      const nextAt = nextFollowupAt(nextDays);
-      await api.createFollowup(String(leadId), {
-        channel,
-        outcome,
-        notes: `${outcome} from Today Action Center`,
-        followup_date: isoDate(new Date()),
-        next_followup: nextAt,
-      });
+      pendingContactRef.current = contact;
+      setPendingContact(contact);
+      appLeftForContact.current = false;
+      if (contact.channel === 'Call') {
+        await Linking.openURL(`tel:${contact.phone}`);
+      } else {
+        const cleanPhone = contact.phone.replace(/\D/g, '');
+        const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+        const message = contact.message || `Hi ${contact.name || ''}, `;
+        await Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
+      }
+    } catch (error: any) {
+      pendingContactRef.current = null;
+      setPendingContact(null);
+      Alert.alert('Contact Failed', error?.message || `Could not open ${contact.channel}`);
+    }
+  };
 
-      await api.createReminder({
-        lead_id: leadId,
-        title: `${channel} follow-up`,
-        reminder_date: nextAt,
-        reminder_type: channel,
-        notes: `Auto scheduled after ${outcome}`,
-        priority: outcome === 'No Answer' ? 'High' : 'Medium',
-      });
+  const closeOutcomeModal = () => {
+    setShowOutcomeModal(false);
+    setShowNextDatePicker(false);
+    setContactOutcome('');
+    pendingContactRef.current = null;
+    setPendingContact(null);
+  };
 
-      if (actionId) {
-        await api.updateReminder(String(actionId), { status: 'completed', outcome });
+  const selectContactOutcome = (outcome: string) => {
+    setContactOutcome(outcome);
+    if (outcome === 'No Answer' || outcome === 'Call Back') {
+      setNextFollowupDate(dateAfterDays(1));
+    } else if (outcome === 'Connected' || outcome === 'Message sent') {
+      setNextFollowupDate(dateAfterDays(pendingContact?.suggestedNextDays || 2));
+    }
+  };
+
+  const saveContactOutcome = async () => {
+    if (!pendingContact) return;
+    if (!pendingContact.leadId) {
+      closeOutcomeModal();
+      Alert.alert('Lead Missing', 'This contact is not linked with a lead, so no activity was logged.');
+      return;
+    }
+
+    if (pendingContact.channel === 'WhatsApp' && contactOutcome === 'Not sent') {
+      closeOutcomeModal();
+      return;
+    }
+
+    const outcome = pendingContact.channel === 'WhatsApp' ? 'WhatsApp Sent' : contactOutcome;
+    const needsNextReminder = contactOutcome !== 'Not Interested';
+    const nextAt = `${isoDate(nextFollowupDate)}T10:00`;
+    const key = `${pendingContact.leadId}-${pendingContact.actionId || 'lead'}-${outcome}`;
+    setSavingKey(key);
+
+    try {
+      if (pendingContact.channel === 'WhatsApp') {
+        await api.sendWhatsApp({
+          phone: pendingContact.phone,
+          message: pendingContact.message || `Hi ${pendingContact.name || ''}, `,
+          lead_id: String(pendingContact.leadId),
+          status: 'confirmed_sent',
+          source: pendingContact.source || 'ios_workbench',
+        });
       }
 
+      await api.createFollowup(String(pendingContact.leadId), {
+        channel: pendingContact.channel,
+        outcome,
+        notes: `${outcome} confirmed from Today Action Center`,
+        followup_date: isoDate(new Date()),
+        next_followup: needsNextReminder ? nextAt : undefined,
+      });
+
+      if (needsNextReminder) {
+        await api.createReminder({
+          lead_id: pendingContact.leadId,
+          title: `${pendingContact.channel} follow-up`,
+          reminder_date: nextAt,
+          reminder_type: pendingContact.channel,
+          notes: `Scheduled after ${outcome}`,
+          priority: contactOutcome === 'No Answer' ? 'High' : 'Medium',
+        });
+      }
+
+      if (pendingContact.actionId) {
+        await api.updateReminder(String(pendingContact.actionId), { status: 'completed', outcome });
+      }
+
+      closeOutcomeModal();
       await loadData(true);
     } catch (error: any) {
-      Alert.alert('Update Failed', error?.message || 'Could not save action outcome');
+      Alert.alert('Update Failed', error?.message || 'Could not save contact outcome');
     } finally {
       setSavingKey(null);
     }
@@ -162,35 +246,15 @@ export default function WorkbenchScreen() {
       Alert.alert('No Phone', 'This lead does not have a WhatsApp number.');
       return;
     }
-
-    const key = `${lead.id}-lead-WhatsApp Sent`;
-    setSavingKey(key);
-    try {
-      const message = lead.suggested_message || `Hi ${lead.name || ''}, `;
-      const nextDays = Number(lead.suggested_next_followup_days || 2);
-      const nextAt = nextFollowupAt(nextDays);
-      await openWhatsApp(lead.phone, lead.name, message, lead.id, 'ios_whatsapp_intelligence');
-      await api.createFollowup(String(lead.id), {
-        channel: 'WhatsApp',
-        outcome: 'WhatsApp Sent',
-        notes: `Suggested WhatsApp sent: ${message}`,
-        followup_date: isoDate(new Date()),
-        next_followup: nextAt,
-      });
-      await api.createReminder({
-        lead_id: lead.id,
-        title: 'WhatsApp follow-up',
-        reminder_date: nextAt,
-        reminder_type: 'WhatsApp',
-        notes: `Auto scheduled from WhatsApp intelligence. Reason: ${lead.whatsapp_reason || 'Follow-up due'}`,
-        priority: lead.whatsapp_priority === 'High' ? 'High' : 'Medium',
-      });
-      await loadData(true);
-    } catch (error: any) {
-      Alert.alert('WhatsApp Failed', error?.message || 'Could not send suggested WhatsApp');
-    } finally {
-      setSavingKey(null);
-    }
+    await startContact({
+      channel: 'WhatsApp',
+      leadId: lead.id,
+      phone: lead.phone,
+      name: lead.name,
+      message: lead.suggested_message || `Hi ${lead.name || ''}, `,
+      source: 'ios_whatsapp_intelligence',
+      suggestedNextDays: Number(lead.suggested_next_followup_days || 2),
+    });
   };
 
   if (loading) {
@@ -251,14 +315,27 @@ export default function WorkbenchScreen() {
               </View>
               <Text style={styles.cardBody} numberOfLines={2}>{item.description || 'No description'}</Text>
               <ActionRow
-                leadId={item.lead_id}
-                actionId={item.id}
                 phone={item.lead_phone}
                 name={item.lead_name}
                 onOpen={() => item.lead_id && router.push(`/leads/${item.lead_id}` as any)}
                 onDone={() => markDone(item.id)}
-                onOutcome={recordOutcome}
-                savingKey={savingKey}
+                doneLabel="Complete"
+                onCall={() => startContact({
+                  channel: 'Call',
+                  leadId: item.lead_id,
+                  actionId: item.id,
+                  phone: item.lead_phone,
+                  name: item.lead_name,
+                  suggestedNextDays: 2,
+                })}
+                onWhatsApp={() => startContact({
+                  channel: 'WhatsApp',
+                  leadId: item.lead_id,
+                  actionId: item.id,
+                  phone: item.lead_phone,
+                  name: item.lead_name,
+                  suggestedNextDays: 2,
+                })}
               />
             </View>
           ))}
@@ -270,7 +347,7 @@ export default function WorkbenchScreen() {
               key={`wa-${lead.id}`}
               lead={lead}
               metaExtra={lead.last_message_sent_on ? `Last WA ${formatDate(lead.last_message_sent_on)}` : 'Never messaged'}
-              onOutcome={recordOutcome}
+              onStartContact={startContact}
               onSuggestedWhatsApp={sendSuggestedWhatsApp}
               savingKey={savingKey}
             />
@@ -301,7 +378,7 @@ export default function WorkbenchScreen() {
 
         <Section title="Hot Leads Without Next Action" empty="Every hot lead has a pending next action.">
           {hotLeads.map((lead: any) => (
-            <LeadCard key={`hot-${lead.id}`} lead={lead} onOutcome={recordOutcome} savingKey={savingKey} />
+            <LeadCard key={`hot-${lead.id}`} lead={lead} onStartContact={startContact} savingKey={savingKey} />
           ))}
         </Section>
 
@@ -312,16 +389,131 @@ export default function WorkbenchScreen() {
               match={match}
               saving={savingMatchKey === `${match.buyer_id}-${match.inventory_id}`}
               onSave={() => savePreferredMatch(match.buyer_id, match.inventory_id)}
+              onStartContact={startContact}
             />
           ))}
         </Section>
 
         <Section title="Notes Missing" empty="No missing-note leads.">
           {notesMissing.map((lead: any) => (
-            <LeadCard key={`notes-${lead.id}`} lead={lead} onOutcome={recordOutcome} savingKey={savingKey} />
+            <LeadCard key={`notes-${lead.id}`} lead={lead} onStartContact={startContact} savingKey={savingKey} />
           ))}
         </Section>
       </ScrollView>
+
+      <Modal
+        visible={showOutcomeModal}
+        animationType="slide"
+        transparent
+        onRequestClose={closeOutcomeModal}
+      >
+        <View style={styles.outcomeModalOverlay}>
+          <View style={styles.outcomeModal}>
+            <View style={styles.outcomeModalHeader}>
+              <View style={styles.outcomeModalTitleRow}>
+                <Ionicons
+                  name={pendingContact?.channel === 'WhatsApp' ? 'logo-whatsapp' : 'call'}
+                  size={20}
+                  color={pendingContact?.channel === 'WhatsApp' ? '#25D366' : colors.primary}
+                />
+                <View>
+                  <Text style={styles.outcomeModalTitle}>
+                    {pendingContact?.channel === 'WhatsApp' ? 'Was the message sent?' : 'How did the call go?'}
+                  </Text>
+                  <Text style={styles.outcomeModalSubtitle}>{pendingContact?.name || 'Lead'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.modalCloseButton} onPress={closeOutcomeModal}>
+                <Ionicons name="close" size={20} color={colors.inkMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.outcomeOptions}>
+              {(pendingContact?.channel === 'WhatsApp'
+                ? ['Message sent', 'Not sent']
+                : ['Connected', 'No Answer', 'Call Back', 'Not Interested']
+              ).map((outcome) => (
+                <TouchableOpacity
+                  key={outcome}
+                  style={[styles.outcomeOption, contactOutcome === outcome && styles.outcomeOptionActive]}
+                  onPress={() => selectContactOutcome(outcome)}
+                >
+                  <Text style={[styles.outcomeOptionText, contactOutcome === outcome && styles.outcomeOptionTextActive]}>
+                    {outcome}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {contactOutcome !== 'Not sent' && contactOutcome !== 'Not Interested' ? (
+              <View style={styles.nextFollowupPanel}>
+                <Text style={styles.nextFollowupLabel}>Next follow-up date</Text>
+                <TouchableOpacity
+                  style={styles.nextFollowupDateButton}
+                  onPress={() => setShowNextDatePicker((current) => !current)}
+                >
+                  <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                  <Text style={styles.nextFollowupDateText}>
+                    {nextFollowupDate.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.inkMuted} />
+                </TouchableOpacity>
+
+                <View style={styles.datePresetRow}>
+                  {[1, 2, 3, 7].map((days) => (
+                    <TouchableOpacity
+                      key={days}
+                      style={styles.datePresetButton}
+                      onPress={() => setNextFollowupDate(dateAfterDays(days))}
+                    >
+                      <Text style={styles.datePresetText}>{days === 1 ? 'Tomorrow' : `${days} days`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {showNextDatePicker ? (
+                  <View style={styles.datePickerWrap}>
+                    <DateTimePicker
+                      value={nextFollowupDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      minimumDate={new Date()}
+                      onChange={(_, selectedDate) => {
+                        if (Platform.OS !== 'ios') setShowNextDatePicker(false);
+                        if (selectedDate) {
+                          selectedDate.setHours(10, 0, 0, 0);
+                          setNextFollowupDate(selectedDate);
+                        }
+                      }}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.noLogHint}>
+                {contactOutcome === 'Not sent'
+                  ? 'No WhatsApp activity or reminder will be created.'
+                  : 'The call will be logged and the current action closed without creating another reminder.'}
+              </Text>
+            )}
+
+            <TouchableOpacity
+              style={[styles.saveOutcomeButton, savingKey && styles.saveOutcomeButtonDisabled]}
+              onPress={saveContactOutcome}
+              disabled={Boolean(savingKey)}
+            >
+              {savingKey ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Ionicons name="checkmark" size={18} color={colors.white} />
+              )}
+              <Text style={styles.saveOutcomeButtonText}>
+                {contactOutcome === 'Not sent' ? 'Close without logging' : 'Save outcome'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -348,13 +540,13 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 function LeadCard({
   lead,
   metaExtra,
-  onOutcome,
+  onStartContact,
   onSuggestedWhatsApp,
   savingKey,
 }: {
   lead: any;
   metaExtra?: string;
-  onOutcome?: (leadId: number | undefined, actionId: number | undefined, channel: 'Call' | 'WhatsApp', outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer', nextDays: number) => void;
+  onStartContact?: (contact: PendingContact) => Promise<void>;
   onSuggestedWhatsApp?: (lead: any) => void;
   savingKey?: string | null;
 }) {
@@ -401,20 +593,41 @@ function LeadCard({
         </View>
       ) : null}
       <ActionRow
-        leadId={lead.id}
         phone={lead.phone}
         name={lead.name}
         onOpen={() => router.push(`/leads/${lead.id}` as any)}
         doneLabel="Reminder"
         onDone={() => router.push(`/reminders/add?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name || '')}` as any)}
-        onOutcome={onOutcome}
-        savingKey={savingKey}
+        onCall={() => onStartContact?.({
+          channel: 'Call',
+          leadId: lead.id,
+          phone: lead.phone,
+          name: lead.name,
+          suggestedNextDays: 2,
+        })}
+        onWhatsApp={() => onStartContact?.({
+          channel: 'WhatsApp',
+          leadId: lead.id,
+          phone: lead.phone,
+          name: lead.name,
+          suggestedNextDays: lead.suggested_next_followup_days || 2,
+        })}
       />
     </View>
   );
 }
 
-function MatchCard({ match, saving, onSave }: { match: any; saving: boolean; onSave: () => void }) {
+function MatchCard({
+  match,
+  saving,
+  onSave,
+  onStartContact,
+}: {
+  match: any;
+  saving: boolean;
+  onSave: () => void;
+  onStartContact: (contact: PendingContact) => Promise<void>;
+}) {
   const buyerBudget = [formatCr(match.buyer_budget_min), formatCr(match.buyer_budget_max)].filter(Boolean).join(' - ');
   const inventoryPrice = [formatCr(match.inventory_price_min), formatCr(match.inventory_price_max)].filter(Boolean).join(' - ');
   const reasons = Array.isArray(match.match_reasons) ? match.match_reasons : [];
@@ -456,10 +669,30 @@ function MatchCard({ match, saving, onSave }: { match: any; saving: boolean; onS
       <Text style={styles.cardBody} numberOfLines={2}>{reasons.join(', ') || 'Potential match'}</Text>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.iconAction} onPress={() => callPhone(match.buyer_phone)} disabled={!match.buyer_phone}>
+        <TouchableOpacity
+          style={styles.iconAction}
+          onPress={() => onStartContact({
+            channel: 'Call',
+            leadId: match.buyer_id,
+            phone: match.buyer_phone,
+            name: match.buyer_name,
+            suggestedNextDays: 2,
+          })}
+          disabled={!match.buyer_phone}
+        >
           <Ionicons name="call" size={17} color={match.buyer_phone ? colors.accent : colors.inkSubtle} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconAction} onPress={() => openWhatsApp(match.buyer_phone, match.buyer_name)} disabled={!match.buyer_phone}>
+        <TouchableOpacity
+          style={styles.iconAction}
+          onPress={() => onStartContact({
+            channel: 'WhatsApp',
+            leadId: match.buyer_id,
+            phone: match.buyer_phone,
+            name: match.buyer_name,
+            suggestedNextDays: 2,
+          })}
+          disabled={!match.buyer_phone}
+        >
           <Ionicons name="logo-whatsapp" size={17} color={match.buyer_phone ? '#25D366' : colors.inkSubtle} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.smallButton} onPress={() => router.push(`/leads/${match.buyer_id}` as any)}>
@@ -484,42 +717,36 @@ function MatchCard({ match, saving, onSave }: { match: any; saving: boolean; onS
   );
 }
 
-type OutcomeHandler = (
-  leadId: number | undefined,
-  actionId: number | undefined,
-  channel: 'Call' | 'WhatsApp',
-  outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer',
-  nextDays: number,
-) => void;
-
 function ActionRow({
-  leadId,
-  actionId,
   phone,
   name,
   onOpen,
   onDone,
+  onCall,
+  onWhatsApp,
   doneLabel = 'Done',
-  onOutcome,
-  savingKey,
 }: {
-  leadId?: number;
-  actionId?: number;
   phone?: string;
   name?: string;
   onOpen: () => void;
   onDone: () => void;
+  onCall?: () => void;
+  onWhatsApp?: () => void;
   doneLabel?: string;
-  onOutcome?: OutcomeHandler;
-  savingKey?: string | null;
 }) {
-  const isSaving = (outcome: string) => savingKey === `${leadId}-${actionId || 'lead'}-${outcome}`;
+  const openUntrackedWhatsApp = () => {
+    if (!phone) return;
+    const cleanPhone = phone.replace(/\D/g, '');
+    const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+    Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hi ${name || ''}, `)}`);
+  };
+
   return (
     <View style={styles.actions}>
-      <TouchableOpacity style={styles.iconAction} onPress={() => callPhone(phone)} disabled={!phone}>
+      <TouchableOpacity style={styles.iconAction} onPress={onCall || (() => phone && Linking.openURL(`tel:${phone}`))} disabled={!phone}>
         <Ionicons name="call" size={17} color={phone ? colors.accent : colors.inkSubtle} />
       </TouchableOpacity>
-      <TouchableOpacity style={styles.iconAction} onPress={() => openWhatsApp(phone, name)} disabled={!phone}>
+      <TouchableOpacity style={styles.iconAction} onPress={onWhatsApp || openUntrackedWhatsApp} disabled={!phone}>
         <Ionicons name="logo-whatsapp" size={17} color={phone ? '#25D366' : colors.inkSubtle} />
       </TouchableOpacity>
       <TouchableOpacity style={styles.smallButton} onPress={onOpen}>
@@ -529,31 +756,6 @@ function ActionRow({
       <TouchableOpacity style={[styles.smallButton, styles.primarySmallButton]} onPress={onDone}>
         <Text style={styles.primarySmallButtonText}>{doneLabel}</Text>
       </TouchableOpacity>
-      {onOutcome && (
-        <View style={styles.quickOutcomes}>
-          <TouchableOpacity
-            style={styles.outcomeButton}
-            onPress={() => onOutcome(leadId, actionId, 'Call', 'Connected', 2)}
-            disabled={isSaving('Connected')}
-          >
-            <Text style={styles.outcomeButtonText}>{isSaving('Connected') ? 'Saving...' : 'Call done'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.outcomeButton}
-            onPress={() => onOutcome(leadId, actionId, 'WhatsApp', 'WhatsApp Sent', 2)}
-            disabled={isSaving('WhatsApp Sent')}
-          >
-            <Text style={styles.outcomeButtonText}>{isSaving('WhatsApp Sent') ? 'Saving...' : 'WA sent'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.outcomeButton, styles.noAnswerButton]}
-            onPress={() => onOutcome(leadId, actionId, 'Call', 'No Answer', 1)}
-            disabled={isSaving('No Answer')}
-          >
-            <Text style={[styles.outcomeButtonText, styles.noAnswerText]}>{isSaving('No Answer') ? 'Saving...' : 'No answer'}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 }
@@ -719,31 +921,153 @@ const styles = StyleSheet.create({
   badge: { maxWidth: 92, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radii.pill },
   badgeText: { fontSize: 11, fontWeight: '800' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' },
-  quickOutcomes: {
-    width: '100%',
+  outcomeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+    justifyContent: 'flex-end',
+  },
+  outcomeModal: {
+    backgroundColor: colors.surfaceRaised,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 18,
+    paddingBottom: 28,
+    maxHeight: '88%',
+  },
+  outcomeModalHeader: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 18,
+  },
+  outcomeModalTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  outcomeModalTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: colors.ink,
+  },
+  outcomeModalSubtitle: {
+    fontSize: 12,
+    color: colors.inkMuted,
     marginTop: 2,
   },
-  outcomeButton: {
-    flex: 1,
-    minHeight: 34,
+  modalCloseButton: {
+    width: 34,
+    height: 34,
     borderRadius: 9,
-    backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    backgroundColor: colors.surfaceMuted,
   },
-  outcomeButtonText: {
-    color: colors.accent,
-    fontSize: 11,
+  outcomeOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  outcomeOption: {
+    minHeight: 40,
+    paddingHorizontal: 13,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outcomeOptionActive: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  outcomeOptionText: {
+    color: colors.inkMuted,
+    fontSize: 13,
     fontWeight: '800',
   },
-  noAnswerButton: {
-    backgroundColor: colors.dangerSoft,
+  outcomeOptionTextActive: {
+    color: colors.primary,
   },
-  noAnswerText: {
-    color: colors.danger,
+  nextFollowupPanel: {
+    marginBottom: 18,
+  },
+  nextFollowupLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.ink,
+    marginBottom: 7,
+  },
+  nextFollowupDateButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+  },
+  nextFollowupDateText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  datePresetRow: {
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 9,
+    flexWrap: 'wrap',
+  },
+  datePresetButton: {
+    minHeight: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePresetText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '800',
+  },
+  datePickerWrap: {
+    marginTop: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted,
+  },
+  noLogHint: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.inkMuted,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 18,
+  },
+  saveOutcomeButton: {
+    minHeight: 46,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  saveOutcomeButtonDisabled: {
+    opacity: 0.65,
+  },
+  saveOutcomeButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '900',
   },
   iconAction: {
     width: 34,
