@@ -2261,9 +2261,12 @@ def update_reminder(reminder_id: int, reminder_data: dict, current_user: dict = 
             raise HTTPException(status_code=400, detail="No fields to update")
         
         values.append(reminder_id)
-        values.append(current_user['id'])
-        values.append(current_user['id'])
-        query = f"UPDATE actions SET {', '.join(update_fields)} WHERE id = %s AND (user_id = %s OR assigned_to = %s)"
+        if current_user.get('role') == 'admin':
+            query = f"UPDATE actions SET {', '.join(update_fields)} WHERE id = %s"
+        else:
+            values.append(current_user['id'])
+            values.append(current_user['id'])
+            query = f"UPDATE actions SET {', '.join(update_fields)} WHERE id = %s AND (user_id = %s OR assigned_to = %s)"
         
         cursor.execute(query, values)
         conn.commit()

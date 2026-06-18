@@ -113,9 +113,52 @@ export default function WorkbenchScreen() {
   const markDone = async (id: number) => {
     try {
       await api.updateReminder(String(id), { status: 'completed' });
-      loadData(true);
+      await loadData(true);
     } catch (error: any) {
+      await loadData(true);
       Alert.alert('Error', error?.message || 'Failed to complete follow-up');
+    }
+  };
+
+  const recordOutcome = async (
+    leadId: number,
+    actionId: number | undefined,
+    channel: ContactChannel,
+    outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer',
+    nextDays: number,
+  ) => {
+    const key = `${leadId}-${actionId || 'lead'}-${outcome}`;
+    const nextAt = `${isoDate(dateAfterDays(nextDays))}T10:00`;
+    setSavingKey(key);
+
+    try {
+      await api.createFollowup(String(leadId), {
+        channel,
+        outcome,
+        notes: `${outcome} from Today Action Center`,
+        followup_date: isoDate(new Date()),
+        next_followup: nextAt,
+      });
+
+      await api.createReminder({
+        lead_id: leadId,
+        title: `${channel} follow-up`,
+        reminder_date: nextAt,
+        reminder_type: channel,
+        notes: `Auto scheduled after ${outcome}`,
+        priority: outcome === 'No Answer' ? 'High' : 'Medium',
+      });
+
+      if (actionId) {
+        await api.updateReminder(String(actionId), { status: 'completed', outcome });
+      }
+
+      await loadData(true);
+    } catch (error: any) {
+      await loadData(true);
+      Alert.alert('Update Failed', error?.message || 'Could not save action outcome');
+    } finally {
+      setSavingKey(null);
     }
   };
 
@@ -315,27 +358,16 @@ export default function WorkbenchScreen() {
               </View>
               <Text style={styles.cardBody} numberOfLines={2}>{item.description || 'No description'}</Text>
               <ActionRow
+                leadId={item.lead_id}
+                actionId={item.id}
                 phone={item.lead_phone}
                 name={item.lead_name}
-                onOpen={() => item.lead_id && router.push(`/leads/${item.lead_id}` as any)}
+                onOpen={() => router.push(
+                  item.lead_id ? `/leads/${item.lead_id}` as any : `/reminders/edit/${item.id}` as any
+                )}
                 onDone={() => markDone(item.id)}
-                doneLabel="Complete"
-                onCall={() => startContact({
-                  channel: 'Call',
-                  leadId: item.lead_id,
-                  actionId: item.id,
-                  phone: item.lead_phone,
-                  name: item.lead_name,
-                  suggestedNextDays: 2,
-                })}
-                onWhatsApp={() => startContact({
-                  channel: 'WhatsApp',
-                  leadId: item.lead_id,
-                  actionId: item.id,
-                  phone: item.lead_phone,
-                  name: item.lead_name,
-                  suggestedNextDays: 2,
-                })}
+                onOutcome={item.lead_id ? recordOutcome : undefined}
+                savingKey={savingKey}
               />
             </View>
           ))}
@@ -347,7 +379,7 @@ export default function WorkbenchScreen() {
               key={`wa-${lead.id}`}
               lead={lead}
               metaExtra={lead.last_message_sent_on ? `Last WA ${formatDate(lead.last_message_sent_on)}` : 'Never messaged'}
-              onStartContact={startContact}
+              onOutcome={recordOutcome}
               onSuggestedWhatsApp={sendSuggestedWhatsApp}
               savingKey={savingKey}
             />
@@ -378,7 +410,7 @@ export default function WorkbenchScreen() {
 
         <Section title="Hot Leads Without Next Action" empty="Every hot lead has a pending next action.">
           {hotLeads.map((lead: any) => (
-            <LeadCard key={`hot-${lead.id}`} lead={lead} onStartContact={startContact} savingKey={savingKey} />
+            <LeadCard key={`hot-${lead.id}`} lead={lead} onOutcome={recordOutcome} savingKey={savingKey} />
           ))}
         </Section>
 
@@ -396,7 +428,7 @@ export default function WorkbenchScreen() {
 
         <Section title="Notes Missing" empty="No missing-note leads.">
           {notesMissing.map((lead: any) => (
-            <LeadCard key={`notes-${lead.id}`} lead={lead} onStartContact={startContact} savingKey={savingKey} />
+            <LeadCard key={`notes-${lead.id}`} lead={lead} onOutcome={recordOutcome} savingKey={savingKey} />
           ))}
         </Section>
       </ScrollView>
@@ -540,13 +572,13 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 function LeadCard({
   lead,
   metaExtra,
-  onStartContact,
+  onOutcome,
   onSuggestedWhatsApp,
   savingKey,
 }: {
   lead: any;
   metaExtra?: string;
-  onStartContact?: (contact: PendingContact) => Promise<void>;
+  onOutcome?: OutcomeHandler;
   onSuggestedWhatsApp?: (lead: any) => void;
   savingKey?: string | null;
 }) {
@@ -593,25 +625,14 @@ function LeadCard({
         </View>
       ) : null}
       <ActionRow
+        leadId={lead.id}
         phone={lead.phone}
         name={lead.name}
         onOpen={() => router.push(`/leads/${lead.id}` as any)}
         doneLabel="Reminder"
         onDone={() => router.push(`/reminders/add?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name || '')}` as any)}
-        onCall={() => onStartContact?.({
-          channel: 'Call',
-          leadId: lead.id,
-          phone: lead.phone,
-          name: lead.name,
-          suggestedNextDays: 2,
-        })}
-        onWhatsApp={() => onStartContact?.({
-          channel: 'WhatsApp',
-          leadId: lead.id,
-          phone: lead.phone,
-          name: lead.name,
-          suggestedNextDays: lead.suggested_next_followup_days || 2,
-        })}
+        onOutcome={onOutcome}
+        savingKey={savingKey}
       />
     </View>
   );
@@ -717,23 +738,40 @@ function MatchCard({
   );
 }
 
+type OutcomeHandler = (
+  leadId: number,
+  actionId: number | undefined,
+  channel: ContactChannel,
+  outcome: 'Connected' | 'WhatsApp Sent' | 'No Answer',
+  nextDays: number,
+) => void;
+
 function ActionRow({
+  leadId,
+  actionId,
   phone,
   name,
   onOpen,
   onDone,
   onCall,
   onWhatsApp,
+  onOutcome,
+  savingKey,
   doneLabel = 'Done',
 }: {
+  leadId?: number;
+  actionId?: number;
   phone?: string;
   name?: string;
   onOpen: () => void;
   onDone: () => void;
   onCall?: () => void;
   onWhatsApp?: () => void;
+  onOutcome?: OutcomeHandler;
+  savingKey?: string | null;
   doneLabel?: string;
 }) {
+  const isSaving = (outcome: string) => savingKey === `${leadId}-${actionId || 'lead'}-${outcome}`;
   const openUntrackedWhatsApp = () => {
     if (!phone) return;
     const cleanPhone = phone.replace(/\D/g, '');
@@ -756,6 +794,33 @@ function ActionRow({
       <TouchableOpacity style={[styles.smallButton, styles.primarySmallButton]} onPress={onDone}>
         <Text style={styles.primarySmallButtonText}>{doneLabel}</Text>
       </TouchableOpacity>
+      {onOutcome && leadId ? (
+        <View style={styles.quickOutcomes}>
+          <TouchableOpacity
+            style={styles.outcomeButton}
+            onPress={() => onOutcome(leadId, actionId, 'Call', 'Connected', 2)}
+            disabled={isSaving('Connected')}
+          >
+            <Text style={styles.outcomeButtonText}>{isSaving('Connected') ? 'Saving...' : 'Call done'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.outcomeButton}
+            onPress={() => onOutcome(leadId, actionId, 'WhatsApp', 'WhatsApp Sent', 2)}
+            disabled={isSaving('WhatsApp Sent')}
+          >
+            <Text style={styles.outcomeButtonText}>{isSaving('WhatsApp Sent') ? 'Saving...' : 'WA sent'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.outcomeButton, styles.noAnswerButton]}
+            onPress={() => onOutcome(leadId, actionId, 'Call', 'No Answer', 1)}
+            disabled={isSaving('No Answer')}
+          >
+            <Text style={[styles.outcomeButtonText, styles.noAnswerText]}>
+              {isSaving('No Answer') ? 'Saving...' : 'No answer'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -921,6 +986,32 @@ const styles = StyleSheet.create({
   badge: { maxWidth: 92, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radii.pill },
   badgeText: { fontSize: 11, fontWeight: '800' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  quickOutcomes: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  outcomeButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 9,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  outcomeButtonText: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  noAnswerButton: {
+    backgroundColor: colors.dangerSoft,
+  },
+  noAnswerText: {
+    color: colors.danger,
+  },
   outcomeModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.48)',
