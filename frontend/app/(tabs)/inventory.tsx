@@ -767,7 +767,12 @@ export default function InventoryLeadsScreen() {
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
     // Check if user can view sensitive data for this lead
-    const canViewData = canViewSensitiveData(user?.role, user?.id, item.created_by);
+    const canViewData = canViewSensitiveData(
+      user?.role,
+      user?.id,
+      item.created_by,
+      item.current_assignee_id || item.assigned_to
+    );
     
     // Determine what to display for phone and address (location is always visible)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);

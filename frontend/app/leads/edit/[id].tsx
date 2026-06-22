@@ -67,6 +67,7 @@ export default function EditLeadScreen() {
   const [builders, setBuilders] = useState<Builder[]>([]);
   const { user } = useAuth();  // Get current user for permission checks
   const [originalCreatedBy, setOriginalCreatedBy] = useState<number | null>(null);  // Store original creator
+  const [originalAssignedTo, setOriginalAssignedTo] = useState<number | null>(null);
   
   // Basic Info
   const [name, setName] = useState('');
@@ -143,6 +144,7 @@ export default function EditLeadScreen() {
       
       // Store original creator for permission checks
       setOriginalCreatedBy(data.created_by || null);
+      setOriginalAssignedTo(data.current_assignee_id || data.assigned_to || null);
       
       // Basic Info
       setName(data.name || '');
@@ -391,7 +393,7 @@ export default function EditLeadScreen() {
   }
 
   // Check if user can view sensitive data for this lead
-  const canViewData = canViewSensitiveData(user?.role, user?.id, originalCreatedBy);
+  const canViewData = canViewSensitiveData(user?.role, user?.id, originalCreatedBy, originalAssignedTo);
   
   // Determine display values for sensitive fields in edit mode
   const displayPhone = canViewData ? phone : (phone ? '**********' : '');

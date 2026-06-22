@@ -52,13 +52,20 @@ def mask_address(address: str) -> str:
     masked = re.sub(r'\b[A-Za-z]?-?\d+[A-Za-z]?\b', '***', address)
     return masked
 
-def should_mask_data(user_role: str, user_id: int, created_by: int) -> bool:
-    """Determine if data should be masked based on user role and ownership"""
+def should_mask_data(
+    user_role: str,
+    user_id: int,
+    created_by: Optional[int],
+    assigned_to: Optional[int] = None,
+) -> bool:
+    """Mask unless the user is admin, creator, or current assignee."""
     # Admin can see everything
     if user_role and user_role.lower() == 'admin':
         return False
-    # Owner can see their own data
-    if created_by is not None and user_id == created_by:
+    # Creator and current assignee can see sensitive lead data.
+    if created_by is not None and int(user_id or 0) == int(created_by):
+        return False
+    if assigned_to is not None and int(user_id or 0) == int(assigned_to):
         return False
     # Everyone else gets masked data
     return True
@@ -66,12 +73,61 @@ def should_mask_data(user_role: str, user_id: int, created_by: int) -> bool:
 def apply_lead_masking(lead: dict, user_role: str, user_id: int) -> dict:
     """Apply masking to a lead based on user permissions"""
     created_by = lead.get('created_by')
-    if should_mask_data(user_role, user_id, created_by):
+    assigned_to = (
+        lead.get('current_assignee_id')
+        or lead.get('assigned_to')
+        or lead.get('assigned_user_id')
+    )
+    can_view_sensitive = not should_mask_data(user_role, user_id, created_by, assigned_to)
+    lead['can_view_sensitive'] = can_view_sensitive
+    if not can_view_sensitive:
         if lead.get('phone'):
             lead['phone'] = mask_phone(lead['phone'])
         if lead.get('address'):
             lead['address'] = mask_address(lead['address'])
+        if 'Property_locationUrl' in lead:
+            lead['Property_locationUrl'] = None
+        if 'property_location_url' in lead:
+            lead['property_location_url'] = None
+        if 'location_url' in lead:
+            lead['location_url'] = None
     return lead
+
+def current_assignee_map(cursor, lead_ids: List[int]) -> Dict[int, Optional[int]]:
+    """Resolve the current owner from web assignments, falling back to leads.assigned_to."""
+    clean_ids = sorted({int(item) for item in lead_ids if int(item) > 0})
+    if not clean_ids:
+        return {}
+    placeholders = ','.join(['%s'] * len(clean_ids))
+    result: Dict[int, Optional[int]] = {}
+    if _table_exists(cursor, 'lead_assignments'):
+        assignment_columns = _table_columns(cursor, 'lead_assignments')
+        assignment_order = "assigned_at DESC"
+        if 'id' in assignment_columns:
+            assignment_order += ", id DESC"
+        cursor.execute(f"""
+            SELECT lead_id, user_id
+            FROM lead_assignments
+            WHERE lead_id IN ({placeholders})
+            ORDER BY lead_id, {assignment_order}
+        """, clean_ids)
+        for row in cursor.fetchall():
+            result.setdefault(int(row['lead_id']), row.get('user_id'))
+    if 'assigned_to' in _table_columns(cursor, 'leads'):
+        cursor.execute(f"""
+            SELECT id, assigned_to
+            FROM leads
+            WHERE id IN ({placeholders})
+        """, clean_ids)
+        for row in cursor.fetchall():
+            result.setdefault(int(row['id']), row.get('assigned_to'))
+    return result
+
+def attach_current_assignees(cursor, leads: List[dict]) -> List[dict]:
+    assignment_map = current_assignee_map(cursor, [lead.get('id') for lead in leads if lead.get('id')])
+    for lead in leads:
+        lead['current_assignee_id'] = assignment_map.get(int(lead['id'])) if lead.get('id') else None
+    return leads
 
 # MySQL connection config
 MYSQL_CONFIG = {
@@ -164,6 +220,123 @@ def ensure_security_audit_table(cursor):
             INDEX idx_security_audit_event_type (event_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """)
+
+def ensure_collaboration_tables(cursor):
+    """Keep mobile collaboration compatible with the shared web LMS schema."""
+    try:
+        cursor.execute("SHOW COLUMNS FROM leads LIKE 'assigned_to'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE leads ADD COLUMN assigned_to INT NULL")
+    except Exception as exc:
+        logging.warning(f"Lead assignment bridge column guard skipped: {exc}")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_assignments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT NOT NULL,
+            user_id INT NOT NULL,
+            assigned_by INT NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_lead_user (lead_id, user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_comments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT NOT NULL,
+            user_id INT NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_lead_comments_lead_created (lead_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_comment_mentions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            comment_id INT NOT NULL,
+            user_id INT NOT NULL,
+            is_read TINYINT(1) NOT NULL DEFAULT 0,
+            read_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_comment_mention (comment_id, user_id),
+            INDEX idx_mentions_user_read (user_id, is_read)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_collaborators (
+            lead_id INT NOT NULL,
+            user_id INT NOT NULL,
+            added_by INT NULL,
+            source VARCHAR(40) NOT NULL DEFAULT 'mention',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (lead_id, user_id),
+            INDEX idx_lead_collaborators_user (user_id, lead_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_handoffs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT NOT NULL,
+            from_user_id INT NULL,
+            to_user_id INT NOT NULL,
+            initiated_by INT NOT NULL,
+            note TEXT NULL,
+            status VARCHAR(30) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            responded_at DATETIME NULL,
+            INDEX idx_handoff_lead_status (lead_id, status),
+            INDEX idx_handoff_recipient_status (to_user_id, status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS collaboration_notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            lead_id INT NULL,
+            notification_type VARCHAR(40) NOT NULL,
+            reference_id INT NULL,
+            message VARCHAR(500) NOT NULL,
+            is_read TINYINT(1) NOT NULL DEFAULT 0,
+            read_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_collaboration_user_read (user_id, is_read, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+def can_access_collaboration_lead(cursor, lead_id: int, current_user: dict) -> bool:
+    role = str(current_user.get('role') or '').strip().lower()
+    if role in {'admin', 'manager'}:
+        return True
+    cursor.execute("""
+        SELECT l.id
+        FROM leads l
+        WHERE l.id = %s AND (l.is_deleted IS NULL OR l.is_deleted = 0)
+          AND (
+              l.created_by = %s
+              OR l.assigned_to = %s
+              OR EXISTS (
+                  SELECT 1 FROM lead_assignments la
+                  WHERE la.lead_id = l.id AND la.user_id = %s
+              )
+              OR EXISTS (
+                  SELECT 1 FROM lead_collaborators lc
+                  WHERE lc.lead_id = l.id AND lc.user_id = %s
+              )
+              OR EXISTS (
+                  SELECT 1 FROM lead_handoffs lh
+                  WHERE lh.lead_id = l.id AND lh.to_user_id = %s AND lh.status = 'pending'
+              )
+          )
+        LIMIT 1
+    """, (
+        lead_id,
+        current_user['id'],
+        current_user['id'],
+        current_user['id'],
+        current_user['id'],
+        current_user['id'],
+    ))
+    return bool(cursor.fetchone())
 
 INVENTORY_LEAD_TYPES_SQL = "'seller', 'landlord', 'builder', 'agent'"
 CLIENT_LEAD_TYPES_SQL = "'buyer', 'tenant'"
@@ -532,6 +705,17 @@ class ReminderCreate(BaseModel):
     status: str = "Pending"
     priority: Optional[str] = "Medium"
 
+class CollaborationCommentCreate(BaseModel):
+    body: str
+    mention_ids: Optional[List[int]] = None
+
+class CollaborationHandoffCreate(BaseModel):
+    to_user_id: int
+    note: Optional[str] = None
+
+class CollaborationHandoffResponse(BaseModel):
+    decision: str
+
 class DashboardStats(BaseModel):
     total_leads: int
     client_leads: int  # buyer, tenant
@@ -827,6 +1011,7 @@ def get_client_leads(
             (limit, skip)
         )
         leads = cursor.fetchall()
+        attach_current_assignees(cursor, leads)
         
         if leads:
             lead_ids = [lead['id'] for lead in leads]
@@ -1070,6 +1255,7 @@ def get_matching_inventory(
             ORDER BY l.created_at DESC
         """, (lead_id,))
         candidates = cursor.fetchall()
+        attach_current_assignees(cursor, candidates)
         pricing_map = _get_floor_pricing_map(cursor, [row['id'] for row in candidates])
 
         cursor.execute(
@@ -1172,6 +1358,7 @@ def get_matching_clients(
             ORDER BY l.created_at DESC
         """, [lead_id, *target_types])
         candidates = cursor.fetchall()
+        attach_current_assignees(cursor, candidates)
 
         cursor.execute(
             "SELECT lead_id FROM preferred_leads WHERE matching_lead_id = %s AND lead_id IS NOT NULL",
@@ -1287,6 +1474,7 @@ def get_inventory_leads(
             (limit, skip)
         )
         leads = cursor.fetchall()
+        attach_current_assignees(cursor, leads)
         
         # Fetch floor pricing for all leads
         if leads:
@@ -1356,9 +1544,12 @@ def search_leads(q: str, current_user: dict = Depends(get_current_user)):
     search_term = f"%{q}%"
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        conn.commit()
         cursor.execute(
-            """SELECT id, name, phone, email, lead_type, lead_status, location 
-               FROM leads 
+            """SELECT id, name, phone, email, lead_type, lead_status, location,
+                      address, created_by, assigned_to
+               FROM leads
                WHERE (is_deleted IS NULL OR is_deleted = 0)
                AND (name LIKE %s OR phone LIKE %s OR email LIKE %s)
                ORDER BY name ASC
@@ -1366,8 +1557,12 @@ def search_leads(q: str, current_user: dict = Depends(get_current_user)):
             (search_term, search_term, search_term)
         )
         leads = cursor.fetchall()
-    
-    return [dict(lead) for lead in leads]
+        attach_current_assignees(cursor, leads)
+
+    return [
+        apply_lead_masking(dict(lead), current_user.get('role', ''), current_user.get('id'))
+        for lead in leads
+    ]
 
 @api_router.get("/leads", response_model=List[LeadResponse])
 def get_all_leads(
@@ -1385,14 +1580,21 @@ def get_all_leads(
             (limit, skip)
         )
         leads = cursor.fetchall()
-    
-    return [LeadResponse(**lead) for lead in leads]
+        attach_current_assignees(cursor, leads)
+
+    masked = [
+        apply_lead_masking(dict(lead), current_user.get('role', ''), current_user.get('id'))
+        for lead in leads
+    ]
+    return [LeadResponse(**lead) for lead in masked]
 
 @api_router.get("/leads/map-data")
 def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Get leads with location data for map view"""
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        conn.commit()
         
         # First check if locations table exists and has latitude/longitude columns
         try:
@@ -1407,7 +1609,8 @@ def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depe
         if has_coordinates:
             query = """
                 SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
-                       l.budget_min, l.budget_max, l.bhk, l.area_size, loc.latitude, loc.longitude
+                       l.budget_min, l.budget_max, l.bhk, l.area_size, l.created_by, l.assigned_to,
+                       loc.latitude, loc.longitude
                 FROM leads l
                 LEFT JOIN locations loc ON LOWER(l.location) LIKE CONCAT('%%', LOWER(loc.name), '%%')
                 WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
@@ -1416,7 +1619,8 @@ def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depe
         else:
             query = """
                 SELECT l.id, l.name, l.lead_type, l.location, l.address, l.Property_locationUrl,
-                       l.budget_min, l.budget_max, l.bhk, l.area_size, NULL as latitude, NULL as longitude
+                       l.budget_min, l.budget_max, l.bhk, l.area_size, l.created_by, l.assigned_to,
+                       NULL as latitude, NULL as longitude
                 FROM leads l
                 WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
                 AND l.location IS NOT NULL AND l.location != ''
@@ -1431,7 +1635,11 @@ def get_leads_for_map(lead_type: Optional[str] = None, current_user: dict = Depe
         query += " LIMIT 100"
         cursor.execute(query, params)
         leads = cursor.fetchall()
-        return [dict(l) for l in leads]
+        attach_current_assignees(cursor, leads)
+        return [
+            apply_lead_masking(dict(lead), current_user.get('role', ''), current_user.get('id'))
+            for lead in leads
+        ]
 
 @api_router.get("/leads/export")
 def export_leads(
@@ -1465,6 +1673,11 @@ def export_leads(
         query += " ORDER BY created_at DESC"
         cursor.execute(query, params)
         leads = cursor.fetchall()
+        attach_current_assignees(cursor, leads)
+        leads = [
+            apply_lead_masking(dict(lead), current_user.get('role', ''), current_user.get('id'))
+            for lead in leads
+        ]
         log_security_event(cursor, current_user['id'], "leads_exported", "leads", None, {
             "lead_type": lead_type,
             "category": selected_category or "all",
@@ -1495,6 +1708,7 @@ def export_leads(
 def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
         cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
         lead = cursor.fetchone()
         
@@ -1507,6 +1721,7 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
             (lead_id,)
         )
         floor_pricing_rows = cursor.fetchall()
+        attach_current_assignees(cursor, [lead])
         
     # Build floor pricing list
     floor_pricing = []
@@ -1577,6 +1792,7 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
                     m.notes as property_notes,
                     m.unit as property_unit,
                     m.created_by as property_created_by,
+                    m.assigned_to as property_assigned_to,
                     u.full_name as created_by_fullname,
                     u.phone as created_by_phone
                 FROM preferred_leads pl
@@ -1586,6 +1802,10 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
                 ORDER BY pl.created_at DESC
             """, (lead_id,))
             matched_properties = cursor.fetchall()
+            property_assignment_map = current_assignee_map(
+                cursor,
+                [prop.get('property_id') for prop in matched_properties if prop.get('property_id')]
+            )
             
             # Fetch floor pricing for each matched property
             for prop in matched_properties:
@@ -1601,12 +1821,28 @@ def get_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
                     ]
                 else:
                     prop['floor_pricing'] = []
+                prop['property_current_assignee_id'] = property_assignment_map.get(prop.get('property_id'))
+                if should_mask_data(
+                    current_user.get('role', ''),
+                    current_user.get('id'),
+                    prop.get('property_created_by'),
+                    prop.get('property_current_assignee_id') or prop.get('property_assigned_to'),
+                ):
+                    prop['can_view_sensitive'] = False
+                    if prop.get('property_phone'):
+                        prop['property_phone'] = mask_phone(prop['property_phone'])
+                    if prop.get('property_address'):
+                        prop['property_address'] = mask_address(prop['property_address'])
+                    prop['property_map_url'] = None
+                    prop['created_by_phone'] = None
+                else:
+                    prop['can_view_sensitive'] = True
             
             response['matched_properties'] = matched_properties
     else:
         response['matched_properties'] = []
     
-    return response
+    return apply_lead_masking(response, current_user.get('role', ''), current_user.get('id'))
 
 @api_router.post("/leads", response_model=LeadResponse)
 def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)):
@@ -1692,6 +1928,19 @@ def create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)
 def update_lead(lead_id: int, lead_data: dict, current_user: dict = Depends(get_current_user)):
     with get_db() as conn:
         cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        cursor.execute("SELECT created_by FROM leads WHERE id = %s", (lead_id,))
+        existing_lead = cursor.fetchone()
+        if not existing_lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        assignment_map = current_assignee_map(cursor, [lead_id])
+        if should_mask_data(
+            current_user.get('role', ''),
+            current_user.get('id'),
+            existing_lead.get('created_by'),
+            assignment_map.get(lead_id),
+        ):
+            raise HTTPException(status_code=403, detail="Only the lead creator or current assignee can edit this lead")
         
         # Build dynamic update query based on provided fields
         update_fields = []
@@ -1749,6 +1998,19 @@ def delete_lead(lead_id: int, current_user: dict = Depends(get_current_user)):
     try:
         with get_db() as conn:
             cursor = conn.cursor()
+            ensure_collaboration_tables(cursor)
+            cursor.execute("SELECT created_by FROM leads WHERE id = %s", (lead_id,))
+            existing_lead = cursor.fetchone()
+            if not existing_lead:
+                raise HTTPException(status_code=404, detail="Lead not found")
+            assignment_map = current_assignee_map(cursor, [lead_id])
+            if should_mask_data(
+                current_user.get('role', ''),
+                current_user.get('id'),
+                existing_lead.get('created_by'),
+                assignment_map.get(lead_id),
+            ):
+                raise HTTPException(status_code=403, detail="Only the lead creator or current assignee can delete this lead")
             
             # Delete related floor pricing first
             try:
@@ -1844,8 +2106,12 @@ def get_builder_leads(builder_id: int, current_user: dict = Depends(get_current_
             
             for lead in leads:
                 lead['floor_pricing'] = floor_pricing_map.get(lead['id'], [])
-    
-    return leads
+        attach_current_assignees(cursor, leads)
+
+    return [
+        apply_lead_masking(dict(lead), current_user.get('role', ''), current_user.get('id'))
+        for lead in leads
+    ]
 
 @api_router.post("/builders", response_model=BuilderResponse)
 def create_builder(builder: BuilderCreate, current_user: dict = Depends(get_current_user)):
@@ -2084,8 +2350,31 @@ def get_whatsapp_logs(lead_id: Optional[int] = None, limit: int = 100, current_u
             LIMIT %s
         """, [*params, safe_limit])
         logs = cursor.fetchall()
+        lead_ids = [row.get('lead_id') for row in logs if row.get('lead_id')]
+        assignment_map = current_assignee_map(cursor, lead_ids)
+        creator_map: Dict[int, Optional[int]] = {}
+        if lead_ids:
+            clean_ids = sorted({int(item) for item in lead_ids})
+            placeholders = ','.join(['%s'] * len(clean_ids))
+            cursor.execute(
+                f"SELECT id, created_by FROM leads WHERE id IN ({placeholders})",
+                clean_ids,
+            )
+            creator_map = {int(row['id']): row.get('created_by') for row in cursor.fetchall()}
 
-    return [dict(log) for log in logs]
+    result = []
+    for log in logs:
+        item = dict(log)
+        log_lead_id = item.get('lead_id')
+        if should_mask_data(
+            current_user.get('role', ''),
+            current_user.get('id'),
+            creator_map.get(int(log_lead_id)) if log_lead_id else None,
+            assignment_map.get(int(log_lead_id)) if log_lead_id else None,
+        ) and item.get('phone'):
+            item['phone'] = mask_phone(item['phone'])
+        result.append(item)
+    return result
 
 # ============= Reminder Routes (using actions table) =============
 @api_router.get("/reminders")
@@ -2112,6 +2401,10 @@ def get_reminders(
             (current_user['id'], current_user['id'], limit, skip)
         )
         actions = cursor.fetchall()
+        assignment_map = current_assignee_map(
+            cursor,
+            [action.get('lead_id') for action in actions if action.get('lead_id')]
+        )
         
         # Convert to expected frontend format
         result = []
@@ -2137,7 +2430,16 @@ def get_reminders(
     user_id = current_user.get('id')
     for item in result:
         lead_created_by = item.get('lead_created_by')
-        if should_mask_data(user_role, user_id, lead_created_by):
+        item['lead_current_assignee_id'] = (
+            assignment_map.get(int(item['lead_id'])) if item.get('lead_id') else None
+        )
+        item['can_view_sensitive'] = not should_mask_data(
+            user_role,
+            user_id,
+            lead_created_by,
+            item.get('lead_current_assignee_id'),
+        )
+        if not item['can_view_sensitive']:
             if item.get('lead_phone'):
                 item['lead_phone'] = mask_phone(item['lead_phone'])
     
@@ -2520,6 +2822,7 @@ def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int
             LIMIT 40
         """)
         buyers = cursor.fetchall()
+        attach_current_assignees(cursor, buyers)
         
         # Get available inventory
         cursor.execute("""
@@ -2534,6 +2837,7 @@ def get_smart_matches(current_user: dict = Depends(get_current_user), limit: int
             LIMIT 100
         """)
         inventory = cursor.fetchall()
+        attach_current_assignees(cursor, inventory)
 
         buyer_ids = [row['id'] for row in buyers]
         saved_pairs = set()
@@ -2649,6 +2953,10 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
         """, (limit,))
         
         followups = cursor.fetchall()
+        assignment_map = current_assignee_map(
+            cursor,
+            [item.get('lead_id') for item in followups if item.get('lead_id')]
+        )
         
         result = []
         today = datetime.utcnow().date()
@@ -2668,7 +2976,8 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
                 'due_time': str(f['due_time']) if f['due_time'] else None,
                 'status': 'Missed' if is_missed else 'Due Today',
                 'is_missed': is_missed,
-                'created_by': f['created_by']
+                'created_by': f['created_by'],
+                'current_assignee_id': assignment_map.get(int(f['lead_id']))
             })
         
         # Apply masking to phone numbers based on user permissions
@@ -2676,7 +2985,13 @@ def get_urgent_followups(current_user: dict = Depends(get_current_user), limit: 
         user_id = current_user.get('id')
         for item in result:
             created_by = item.get('created_by')
-            if should_mask_data(user_role, user_id, created_by):
+            item['can_view_sensitive'] = not should_mask_data(
+                user_role,
+                user_id,
+                created_by,
+                item.get('current_assignee_id'),
+            )
+            if not item['can_view_sensitive']:
                 if item.get('lead_phone'):
                     item['lead_phone'] = mask_phone(item['lead_phone'])
         
@@ -3273,7 +3588,27 @@ def get_site_visits(current_user: dict = Depends(get_current_user), status: Opti
             query += " ORDER BY sv.visit_date ASC, sv.visit_time ASC, COALESCE(sv.visit_order, 999) ASC"
             cursor.execute(query, params)
             visits = cursor.fetchall()
-            return [dict(v) for v in visits]
+            assignment_map = current_assignee_map(
+                cursor,
+                [visit.get('lead_id') for visit in visits if visit.get('lead_id')]
+            )
+            result = []
+            for visit in visits:
+                item = dict(visit)
+                item['lead_current_assignee_id'] = assignment_map.get(int(item['lead_id'])) if item.get('lead_id') else None
+                item['can_view_sensitive'] = not should_mask_data(
+                    current_user.get('role', ''),
+                    current_user.get('id'),
+                    item.get('lead_created_by'),
+                    item.get('lead_current_assignee_id'),
+                )
+                if not item['can_view_sensitive']:
+                    if item.get('lead_phone'):
+                        item['lead_phone'] = mask_phone(item['lead_phone'])
+                    item['property_map_url'] = None
+                    item['location_url'] = None
+                result.append(item)
+            return result
     except Exception as e:
         logging.error(f"Site visits error: {e}")
         return []
@@ -3414,7 +3749,7 @@ def get_deals(current_user: dict = Depends(get_current_user), status: Optional[s
             if has_property_lead_id:
                 query = """
                     SELECT d.*, 
-                           l.name as lead_name, l.phone as lead_phone,
+                           l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
                            p.name as property_name, p.location as property_location
                     FROM deals d
                     LEFT JOIN leads l ON d.lead_id = l.id
@@ -3424,7 +3759,7 @@ def get_deals(current_user: dict = Depends(get_current_user), status: Optional[s
             else:
                 query = """
                     SELECT d.*, 
-                           l.name as lead_name, l.phone as lead_phone,
+                           l.name as lead_name, l.phone as lead_phone, l.created_by as lead_created_by,
                            NULL as property_name, NULL as property_location
                     FROM deals d
                     LEFT JOIN leads l ON d.lead_id = l.id
@@ -3443,7 +3778,22 @@ def get_deals(current_user: dict = Depends(get_current_user), status: Optional[s
             query += " ORDER BY d.created_at DESC"
             cursor.execute(query, params)
             deals = cursor.fetchall()
-            return [dict(d) for d in deals]
+            assignment_map = current_assignee_map(
+                cursor,
+                [deal.get('lead_id') for deal in deals if deal.get('lead_id')]
+            )
+            result = []
+            for deal in deals:
+                item = dict(deal)
+                if should_mask_data(
+                    current_user.get('role', ''),
+                    current_user.get('id'),
+                    item.get('lead_created_by'),
+                    assignment_map.get(int(item['lead_id'])) if item.get('lead_id') else None,
+                ) and item.get('lead_phone'):
+                    item['lead_phone'] = mask_phone(item['lead_phone'])
+                result.append(item)
+            return result
     except Exception as e:
         logging.error(f"Deals error: {e}")
         return []
@@ -3509,6 +3859,15 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
     
     with get_db() as conn:
         cursor = conn.cursor()
+        cursor.execute("SELECT created_by FROM leads WHERE id = %s", (lead_id,))
+        lead_owner = cursor.fetchone() or {}
+        assignment_map = current_assignee_map(cursor, [lead_id])
+        can_view_sensitive = not should_mask_data(
+            current_user.get('role', ''),
+            current_user.get('id'),
+            lead_owner.get('created_by'),
+            assignment_map.get(lead_id),
+        )
 
         # Get conversation logs from followups table.
         try:
@@ -3590,7 +3949,7 @@ def get_lead_activity(lead_id: int, current_user: dict = Depends(get_current_use
                     'created_by': w.get('created_by_name'),
                     'icon': 'logo-whatsapp',
                     'meta': {
-                        'phone': w.get('phone'),
+                        'phone': w.get('phone') if can_view_sensitive else mask_phone(w.get('phone')),
                         'source': w.get('source'),
                     }
                 })
@@ -3818,7 +4177,9 @@ def _lead_summary(row: dict, user_role: str, user_id: int) -> dict:
         "created_by": lead.get("created_by"),
         "created_by_name": lead.get("created_by_name"),
         "assigned_to": lead.get("assigned_to"),
+        "current_assignee_id": lead.get("current_assignee_id"),
         "assigned_to_name": lead.get("assigned_to_name"),
+        "can_view_sensitive": lead.get("can_view_sensitive"),
         "created_at": lead.get("created_at").isoformat() if lead.get("created_at") else None,
     }
 
@@ -4093,9 +4454,22 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
 
     def normalize_action_rows(rows):
         normalized = []
+        assignment_map = current_assignee_map(
+            cursor,
+            [row.get('lead_id') for row in rows if row.get('lead_id')]
+        )
         for row in rows:
             item = dict(row)
-            if should_mask_data(user_role, user_id, item.get('lead_created_by')):
+            item['lead_current_assignee_id'] = (
+                assignment_map.get(int(item['lead_id'])) if item.get('lead_id') else None
+            )
+            item['can_view_sensitive'] = not should_mask_data(
+                user_role,
+                user_id,
+                item.get('lead_created_by'),
+                item.get('lead_current_assignee_id'),
+            )
+            if not item['can_view_sensitive']:
                 item['lead_phone'] = mask_phone(item.get('lead_phone'))
             item['due_date'] = str(item['due_date']) if item.get('due_date') else None
             item['due_time'] = str(item['due_time']) if item.get('due_time') else None
@@ -4161,7 +4535,9 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
             ORDER BY l.created_at DESC
             LIMIT 10
         """)
-        hot_leads = [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
+        hot_rows = cursor.fetchall()
+        attach_current_assignees(cursor, hot_rows)
+        hot_leads = [_lead_summary(row, user_role, user_id) for row in hot_rows]
 
         cursor.execute("""
             SELECT l.*, u.full_name as created_by_name, NULL as assigned_to_name
@@ -4173,7 +4549,9 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
             ORDER BY l.created_at DESC
             LIMIT 10
         """)
-        notes_missing = [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
+        notes_rows = cursor.fetchall()
+        attach_current_assignees(cursor, notes_rows)
+        notes_missing = [_lead_summary(row, user_role, user_id) for row in notes_rows]
 
         cursor.execute("""
             SELECT l.*, u.full_name as created_by_name, NULL as assigned_to_name,
@@ -4199,7 +4577,9 @@ def get_mobile_workbench(current_user: dict = Depends(get_current_user)):
             LIMIT 15
         """)
         whatsapp_due = []
-        for row in cursor.fetchall():
+        whatsapp_rows = cursor.fetchall()
+        attach_current_assignees(cursor, whatsapp_rows)
+        for row in whatsapp_rows:
             item = _lead_summary(row, user_role, user_id)
             item["last_message_sent_on"] = row.get("last_message_sent_on").isoformat() if row.get("last_message_sent_on") else None
             item["days_since_whatsapp"] = row.get("days_since_whatsapp")
@@ -4254,22 +4634,46 @@ def get_mobile_assigned_leads(current_user: dict = Depends(get_current_user), li
     safe_limit = max(1, min(limit, 500))
     with get_db() as conn:
         cursor = conn.cursor()
-        if 'assigned_to' not in _table_columns(cursor, 'leads'):
-            return []
-        where = "l.assigned_to IS NOT NULL" if user_role == 'admin' else "l.assigned_to = %s"
+        ensure_collaboration_tables(cursor)
+        conn.commit()
+        assignment_columns = _table_columns(cursor, 'lead_assignments')
+        assignment_order = "la.assigned_at DESC"
+        if 'id' in assignment_columns:
+            assignment_order += ", la.id DESC"
+        where = (
+            "(l.assigned_to IS NOT NULL OR EXISTS (SELECT 1 FROM lead_assignments la WHERE la.lead_id = l.id))"
+            if user_role == 'admin'
+            else """(
+                l.assigned_to = %s OR EXISTS (
+                    SELECT 1 FROM lead_assignments la
+                    WHERE la.lead_id = l.id AND la.user_id = %s
+                )
+            )"""
+        )
         params: List[Any] = [] if user_role == 'admin' else [user_id]
+        if user_role != 'admin':
+            params.append(user_id)
         params.append(safe_limit)
         cursor.execute(f"""
-            SELECT l.*, u.full_name as created_by_name, assignee.full_name as assigned_to_name
+            SELECT l.*, u.full_name as created_by_name,
+                   COALESCE(latest_assignee.full_name, assignee.full_name) as assigned_to_name
             FROM leads l
             LEFT JOIN users u ON u.id = l.created_by
             LEFT JOIN users assignee ON assignee.id = l.assigned_to
+            LEFT JOIN users latest_assignee ON latest_assignee.id = (
+                SELECT la.user_id FROM lead_assignments la
+                WHERE la.lead_id = l.id
+                ORDER BY {assignment_order}
+                LIMIT 1
+            )
             WHERE {where}
               AND (l.is_deleted IS NULL OR l.is_deleted = 0)
             ORDER BY l.created_at DESC
             LIMIT %s
         """, params)
-        return [_lead_summary(row, user_role, user_id) for row in cursor.fetchall()]
+        rows = cursor.fetchall()
+        attach_current_assignees(cursor, rows)
+        return [_lead_summary(row, user_role, user_id) for row in rows]
 
 @api_router.get("/mobile/enquiries")
 def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100, category: Optional[str] = None, search: Optional[str] = None):
@@ -4378,6 +4782,484 @@ def convert_mobile_enquiry(enquiry_id: int, current_user: dict = Depends(get_cur
         conn.commit()
         return {"message": "Enquiry converted", "lead_id": lead_id}
 
+# ============= Mobile Collaboration & Performance =============
+@api_router.get("/collaboration/inbox")
+def get_collaboration_inbox(limit: int = 80, current_user: dict = Depends(get_current_user)):
+    safe_limit = max(1, min(limit, 100))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        conn.commit()
+        cursor.execute("""
+            SELECT n.*, l.name AS lead_name,
+                   CASE
+                     WHEN n.notification_type = 'handoff' THEN (
+                       SELECT h.status FROM lead_handoffs h WHERE h.id = n.reference_id
+                     )
+                     ELSE NULL
+                   END AS handoff_status
+            FROM collaboration_notifications n
+            LEFT JOIN leads l ON l.id = n.lead_id
+            WHERE n.user_id = %s
+            ORDER BY n.is_read ASC, n.created_at DESC, n.id DESC
+            LIMIT %s
+        """, (current_user['id'], safe_limit))
+        rows = [dict(row) for row in cursor.fetchall()]
+        unread = sum(1 for row in rows if not row.get('is_read'))
+        return {"unread": unread, "items": rows}
+
+@api_router.put("/collaboration/inbox/read")
+def mark_collaboration_inbox_read(current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        cursor.execute("""
+            UPDATE collaboration_notifications
+            SET is_read = 1, read_at = NOW()
+            WHERE user_id = %s AND is_read = 0
+        """, (current_user['id'],))
+        conn.commit()
+        return {"message": "Team inbox marked read"}
+
+@api_router.get("/leads/{lead_id}/collaboration")
+def get_lead_collaboration(lead_id: int, current_user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        conn.commit()
+        if not can_access_collaboration_lead(cursor, lead_id, current_user):
+            raise HTTPException(status_code=403, detail="You do not have access to this lead")
+
+        cursor.execute("""
+            SELECT c.id, c.lead_id, c.user_id, c.body, c.created_at,
+                   u.full_name AS author_name
+            FROM lead_comments c
+            LEFT JOIN users u ON u.id = c.user_id
+            WHERE c.lead_id = %s
+            ORDER BY c.created_at DESC, c.id DESC
+            LIMIT 50
+        """, (lead_id,))
+        comments = [dict(row) for row in cursor.fetchall()]
+        if comments:
+            comment_ids = [row['id'] for row in comments]
+            placeholders = ','.join(['%s'] * len(comment_ids))
+            cursor.execute(f"""
+                SELECT m.comment_id, m.user_id, u.full_name
+                FROM lead_comment_mentions m
+                JOIN users u ON u.id = m.user_id
+                WHERE m.comment_id IN ({placeholders})
+                ORDER BY u.full_name
+            """, comment_ids)
+            mention_map: Dict[int, List[dict]] = {}
+            for row in cursor.fetchall():
+                mention_map.setdefault(row['comment_id'], []).append(dict(row))
+            for comment in comments:
+                comment['mentions'] = mention_map.get(comment['id'], [])
+
+        cursor.execute("""
+            SELECT h.*, from_user.full_name AS from_user_name,
+                   to_user.full_name AS to_user_name,
+                   initiator.full_name AS initiated_by_name
+            FROM lead_handoffs h
+            LEFT JOIN users from_user ON from_user.id = h.from_user_id
+            LEFT JOIN users to_user ON to_user.id = h.to_user_id
+            LEFT JOIN users initiator ON initiator.id = h.initiated_by
+            WHERE h.lead_id = %s
+            ORDER BY h.created_at DESC, h.id DESC
+            LIMIT 20
+        """, (lead_id,))
+        handoffs = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT id, username, full_name, role
+            FROM users
+            WHERE LOWER(TRIM(role)) IN ('admin','manager','user','caller','tele caller','telecaller')
+            ORDER BY COALESCE(NULLIF(full_name, ''), username)
+        """)
+        users = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT COALESCE(
+                (
+                    SELECT la.user_id
+                    FROM lead_assignments la
+                    WHERE la.lead_id = l.id
+                    ORDER BY la.assigned_at DESC
+                    LIMIT 1
+                ),
+                NULLIF(l.assigned_to, 0),
+                l.created_by
+            ) AS user_id
+            FROM leads l
+            WHERE l.id = %s
+        """, (lead_id,))
+        owner_row = cursor.fetchone() or {}
+        owner_id = owner_row.get('user_id')
+        owner = next((user for user in users if user.get('id') == owner_id), None)
+
+        cursor.execute("""
+            UPDATE collaboration_notifications
+            SET is_read = 1, read_at = NOW()
+            WHERE lead_id = %s AND user_id = %s AND is_read = 0
+        """, (lead_id, current_user['id']))
+        cursor.execute("""
+            UPDATE lead_comment_mentions m
+            JOIN lead_comments c ON c.id = m.comment_id
+            SET m.is_read = 1, m.read_at = NOW()
+            WHERE c.lead_id = %s AND m.user_id = %s AND m.is_read = 0
+        """, (lead_id, current_user['id']))
+        conn.commit()
+
+        return {
+            "comments": comments,
+            "handoffs": handoffs,
+            "users": users,
+            "owner": owner,
+            "current_user_id": current_user['id'],
+        }
+
+@api_router.post("/leads/{lead_id}/collaboration/comments")
+def add_lead_comment(
+    lead_id: int,
+    payload: CollaborationCommentCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Comment text is required")
+    if len(body) > 5000:
+        raise HTTPException(status_code=400, detail="Comment is too long")
+    mention_ids = sorted({
+        int(user_id) for user_id in (payload.mention_ids or [])
+        if int(user_id) > 0 and int(user_id) != current_user['id']
+    })
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        if not can_access_collaboration_lead(cursor, lead_id, current_user):
+            raise HTTPException(status_code=403, detail="You do not have access to this lead")
+        if mention_ids:
+            placeholders = ','.join(['%s'] * len(mention_ids))
+            cursor.execute(f"""
+                SELECT id FROM users
+                WHERE id IN ({placeholders})
+                  AND LOWER(TRIM(role)) IN ('admin','manager','user','caller','tele caller','telecaller')
+            """, mention_ids)
+            mention_ids = [row['id'] for row in cursor.fetchall()]
+
+        try:
+            cursor.execute(
+                "INSERT INTO lead_comments (lead_id, user_id, body) VALUES (%s, %s, %s)",
+                (lead_id, current_user['id'], body),
+            )
+            comment_id = cursor.lastrowid
+            author = current_user.get('full_name') or current_user.get('username') or 'A teammate'
+            for mentioned_user_id in mention_ids:
+                cursor.execute("""
+                    INSERT INTO lead_collaborators (lead_id, user_id, added_by, source)
+                    VALUES (%s, %s, %s, 'mention')
+                    ON DUPLICATE KEY UPDATE added_by = VALUES(added_by)
+                """, (lead_id, mentioned_user_id, current_user['id']))
+                cursor.execute("""
+                    INSERT IGNORE INTO lead_comment_mentions (comment_id, user_id)
+                    VALUES (%s, %s)
+                """, (comment_id, mentioned_user_id))
+                cursor.execute("""
+                    INSERT INTO collaboration_notifications
+                        (user_id, lead_id, notification_type, reference_id, message)
+                    VALUES (%s, %s, 'mention', %s, %s)
+                """, (
+                    mentioned_user_id,
+                    lead_id,
+                    comment_id,
+                    f"{author} mentioned you in a lead comment.",
+                ))
+            conn.commit()
+            return {"message": "Comment added", "comment_id": comment_id}
+        except Exception:
+            conn.rollback()
+            raise
+
+@api_router.post("/leads/{lead_id}/collaboration/handoffs")
+def request_lead_handoff(
+    lead_id: int,
+    payload: CollaborationHandoffCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        if not can_access_collaboration_lead(cursor, lead_id, current_user):
+            raise HTTPException(status_code=403, detail="You do not have access to this lead")
+
+        cursor.execute("""
+            SELECT COALESCE(
+                (
+                    SELECT la.user_id FROM lead_assignments la
+                    WHERE la.lead_id = l.id ORDER BY la.assigned_at DESC LIMIT 1
+                ),
+                NULLIF(l.assigned_to, 0),
+                l.created_by
+            ) AS owner_id
+            FROM leads l WHERE l.id = %s
+        """, (lead_id,))
+        owner_id = (cursor.fetchone() or {}).get('owner_id')
+        role = str(current_user.get('role') or '').lower()
+        if current_user['id'] != owner_id and role not in {'admin', 'manager'}:
+            raise HTTPException(status_code=403, detail="Only the current owner or manager can request a handoff")
+        if payload.to_user_id == owner_id:
+            raise HTTPException(status_code=400, detail="Choose a different teammate")
+
+        cursor.execute("SELECT id, full_name FROM users WHERE id = %s", (payload.to_user_id,))
+        recipient = cursor.fetchone()
+        if not recipient:
+            raise HTTPException(status_code=404, detail="Selected teammate was not found")
+        cursor.execute("""
+            SELECT id FROM lead_handoffs
+            WHERE lead_id = %s AND to_user_id = %s AND status = 'pending'
+        """, (lead_id, payload.to_user_id))
+        if cursor.fetchone():
+            raise HTTPException(status_code=409, detail="A handoff to this teammate is already pending")
+
+        cursor.execute("""
+            INSERT INTO lead_handoffs
+                (lead_id, from_user_id, to_user_id, initiated_by, note, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+        """, (
+            lead_id,
+            owner_id,
+            payload.to_user_id,
+            current_user['id'],
+            (payload.note or '').strip(),
+        ))
+        handoff_id = cursor.lastrowid
+        initiator = current_user.get('full_name') or current_user.get('username') or 'A teammate'
+        cursor.execute("""
+            INSERT INTO collaboration_notifications
+                (user_id, lead_id, notification_type, reference_id, message)
+            VALUES (%s, %s, 'handoff', %s, %s)
+        """, (
+            payload.to_user_id,
+            lead_id,
+            handoff_id,
+            f"{initiator} requested a lead handoff to you.",
+        ))
+        conn.commit()
+        return {"message": "Handoff request sent", "handoff_id": handoff_id}
+
+@api_router.put("/collaboration/handoffs/{handoff_id}")
+def respond_to_lead_handoff(
+    handoff_id: int,
+    payload: CollaborationHandoffResponse,
+    current_user: dict = Depends(get_current_user),
+):
+    decision = payload.decision.strip().lower()
+    if decision not in {'accepted', 'declined'}:
+        raise HTTPException(status_code=400, detail="Decision must be accepted or declined")
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_collaboration_tables(cursor)
+        ensure_action_assignment_column(cursor)
+        conn.begin()
+        try:
+            cursor.execute("""
+                SELECT * FROM lead_handoffs
+                WHERE id = %s AND to_user_id = %s AND status = 'pending'
+                FOR UPDATE
+            """, (handoff_id, current_user['id']))
+            handoff = cursor.fetchone()
+            if not handoff:
+                raise HTTPException(status_code=404, detail="Handoff is no longer pending")
+            cursor.execute("""
+                UPDATE lead_handoffs SET status = %s, responded_at = NOW() WHERE id = %s
+            """, (decision, handoff_id))
+
+            if decision == 'accepted':
+                lead_id = handoff['lead_id']
+                cursor.execute("DELETE FROM lead_assignments WHERE lead_id = %s", (lead_id,))
+                cursor.execute("""
+                    INSERT INTO lead_assignments (lead_id, user_id, assigned_by)
+                    VALUES (%s, %s, %s)
+                """, (lead_id, current_user['id'], handoff['initiated_by']))
+                cursor.execute("""
+                    UPDATE leads SET assigned_to = %s WHERE id = %s
+                """, (current_user['id'], lead_id))
+                cursor.execute("""
+                    UPDATE actions
+                    SET user_id = %s, assigned_to = %s
+                    WHERE lead_id = %s AND status IN ('Pending','Missed','Up Coming')
+                """, (current_user['id'], current_user['id'], lead_id))
+
+            responder = current_user.get('full_name') or current_user.get('username') or 'The recipient'
+            notify_ids = {
+                int(handoff.get('initiated_by') or 0),
+                int(handoff.get('from_user_id') or 0),
+            }
+            for notify_user_id in notify_ids:
+                if notify_user_id <= 0 or notify_user_id == current_user['id']:
+                    continue
+                cursor.execute("""
+                    INSERT INTO collaboration_notifications
+                        (user_id, lead_id, notification_type, reference_id, message)
+                    VALUES (%s, %s, 'handoff_response', %s, %s)
+                """, (
+                    notify_user_id,
+                    handoff['lead_id'],
+                    handoff_id,
+                    f"{responder} {decision} the lead handoff.",
+                ))
+            cursor.execute("""
+                UPDATE collaboration_notifications
+                SET is_read = 1, read_at = NOW()
+                WHERE user_id = %s AND notification_type = 'handoff' AND reference_id = %s
+            """, (current_user['id'], handoff_id))
+            conn.commit()
+            return {"message": f"Handoff {decision}", "lead_id": handoff['lead_id']}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception:
+            conn.rollback()
+            raise
+
+@api_router.get("/mobile/performance")
+def get_mobile_performance(
+    days: int = 30,
+    agent_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    safe_days = max(7, min(days, 90))
+    role = str(current_user.get('role') or '').strip().lower()
+    selected_agent_id = agent_id if role in {'admin', 'manager'} and agent_id else current_user['id']
+    from_date = datetime.utcnow().date() - timedelta(days=safe_days - 1)
+    today = datetime.utcnow().date()
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        ensure_action_assignment_column(cursor)
+        ensure_collaboration_tables(cursor)
+        conn.commit()
+
+        cursor.execute("""
+            SELECT id, username, full_name, role
+            FROM users WHERE id = %s
+        """, (selected_agent_id,))
+        agent = cursor.fetchone()
+        if not agent:
+            raise HTTPException(status_code=404, detail="Team member not found")
+
+        owner_expr = "COALESCE(NULLIF(a.assigned_to, 0), a.user_id)"
+        cursor.execute(f"""
+            SELECT
+              COUNT(*) AS actions_due,
+              SUM(a.status = 'Completed') AS actions_completed,
+              SUM(
+                a.status = 'Completed'
+                AND a.completed_at IS NOT NULL
+                AND a.completed_at <= CONCAT(a.due_date, ' ', COALESCE(a.due_time, '23:59:59'))
+              ) AS completed_on_time,
+              SUM(
+                a.status IN ('Pending','Missed','Up Coming')
+                AND CONCAT(a.due_date, ' ', COALESCE(a.due_time, '23:59:59')) < NOW()
+              ) AS overdue_actions
+            FROM actions a
+            WHERE {owner_expr} = %s AND a.due_date BETWEEN %s AND %s
+        """, (selected_agent_id, from_date, today))
+        action_stats = dict(cursor.fetchone() or {})
+
+        cursor.execute("""
+            SELECT COUNT(DISTINCT l.id) AS open_portfolio
+            FROM leads l
+            WHERE (l.is_deleted IS NULL OR l.is_deleted = 0)
+              AND LOWER(IFNULL(l.lead_status,'')) NOT IN ('sold','closed','closed/lost','closed/lost','already rented')
+              AND (
+                  l.created_by = %s OR l.assigned_to = %s OR EXISTS (
+                      SELECT 1 FROM lead_assignments la
+                      WHERE la.lead_id = l.id AND la.user_id = %s
+                  )
+              )
+        """, (selected_agent_id, selected_agent_id, selected_agent_id))
+        open_portfolio = int((cursor.fetchone() or {}).get('open_portfolio') or 0)
+
+        cursor.execute("""
+            SELECT COUNT(*) AS leads_created,
+                   SUM(lead_status = 'Won') AS won_leads
+            FROM leads
+            WHERE created_by = %s
+              AND (is_deleted IS NULL OR is_deleted = 0)
+              AND DATE(created_at) BETWEEN %s AND %s
+        """, (selected_agent_id, from_date, today))
+        lead_stats = dict(cursor.fetchone() or {})
+
+        visits = 0
+        if _table_exists(cursor, 'site_visits'):
+            visit_columns = _table_columns(cursor, 'site_visits')
+            owner_column = 'created_by' if 'created_by' in visit_columns else None
+            date_column = 'visit_date' if 'visit_date' in visit_columns else 'created_at'
+            if owner_column:
+                cursor.execute(f"""
+                    SELECT COUNT(*) AS total FROM site_visits
+                    WHERE {owner_column} = %s AND DATE({date_column}) BETWEEN %s AND %s
+                """, (selected_agent_id, from_date, today))
+                visits = int((cursor.fetchone() or {}).get('total') or 0)
+
+        due = int(action_stats.get('actions_due') or 0)
+        completed = int(action_stats.get('actions_completed') or 0)
+        on_time = int(action_stats.get('completed_on_time') or 0)
+        overdue = int(action_stats.get('overdue_actions') or 0)
+        summary = {
+            "actions_due": due,
+            "actions_completed": completed,
+            "completed_on_time": on_time,
+            "overdue_actions": overdue,
+            "completion_rate": round((completed / due) * 100, 1) if due else 0,
+            "on_time_rate": round((on_time / completed) * 100, 1) if completed else 0,
+            "open_portfolio": open_portfolio,
+            "leads_created": int(lead_stats.get('leads_created') or 0),
+            "won_leads": int(lead_stats.get('won_leads') or 0),
+            "site_visits": visits,
+        }
+
+        cursor.execute(f"""
+            SELECT a.id, a.lead_id, a.title, a.action_type, a.due_date, a.due_time,
+                   l.name AS lead_name,
+                   TIMESTAMPDIFF(
+                     HOUR,
+                     CONCAT(a.due_date, ' ', COALESCE(a.due_time, '23:59:59')),
+                     NOW()
+                   ) AS hours_overdue
+            FROM actions a
+            LEFT JOIN leads l ON l.id = a.lead_id
+            WHERE {owner_expr} = %s
+              AND a.status IN ('Pending','Missed','Up Coming')
+              AND CONCAT(a.due_date, ' ', COALESCE(a.due_time, '23:59:59')) < NOW()
+            ORDER BY hours_overdue DESC
+            LIMIT 10
+        """, (selected_agent_id,))
+        overdue_items = [dict(row) for row in cursor.fetchall()]
+
+        available_agents = []
+        if role in {'admin', 'manager'}:
+            cursor.execute("""
+                SELECT id, username, full_name, role
+                FROM users
+                WHERE LOWER(TRIM(role)) IN ('admin','manager','user','caller','tele caller','telecaller')
+                ORDER BY COALESCE(NULLIF(full_name, ''), username)
+            """)
+            available_agents = [dict(row) for row in cursor.fetchall()]
+
+        return {
+            "agent": dict(agent),
+            "days": safe_days,
+            "from": from_date.isoformat(),
+            "to": today.isoformat(),
+            "summary": summary,
+            "overdue": overdue_items,
+            "agents": available_agents,
+        }
+
 @api_router.get("/team/members")
 def get_team_members(current_user: dict = Depends(get_current_user)):
     """Get all team members (admin only)"""
@@ -4419,9 +5301,28 @@ def assign_lead_to_member(lead_id: int, user_id: int, current_user: dict = Depen
     
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE leads SET assigned_to = %s WHERE id = %s", (user_id, lead_id))
-        conn.commit()
-        return {"message": "Lead assigned successfully"}
+        ensure_collaboration_tables(cursor)
+        try:
+            cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Team member not found")
+            cursor.execute("SELECT id FROM leads WHERE id = %s", (lead_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Lead not found")
+            cursor.execute("DELETE FROM lead_assignments WHERE lead_id = %s", (lead_id,))
+            cursor.execute("""
+                INSERT INTO lead_assignments (lead_id, user_id, assigned_by)
+                VALUES (%s, %s, %s)
+            """, (lead_id, user_id, current_user['id']))
+            cursor.execute("UPDATE leads SET assigned_to = %s WHERE id = %s", (user_id, lead_id))
+            conn.commit()
+            return {"message": "Lead assigned successfully"}
+        except HTTPException:
+            conn.rollback()
+            raise
+        except Exception:
+            conn.rollback()
+            raise
 
 @api_router.get("/team/performance")
 def get_team_performance(current_user: dict = Depends(get_current_user)):

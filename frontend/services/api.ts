@@ -212,6 +212,85 @@ export const api = {
     );
   },
 
+  getCollaborationInbox: async () => {
+    const response = await fetch(`${API_URL}/api/collaboration/inbox`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to load team inbox'));
+    }
+    return response.json();
+  },
+
+  markCollaborationInboxRead: async () => {
+    const response = await fetch(`${API_URL}/api/collaboration/inbox/read`, {
+      method: 'PUT',
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to mark team inbox read'));
+    }
+    return response.json();
+  },
+
+  getLeadCollaboration: async (leadId: string | number) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/collaboration`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to load lead collaboration'));
+    }
+    return response.json();
+  },
+
+  addLeadComment: async (leadId: string | number, body: string, mentionIds: number[] = []) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/collaboration/comments`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ body, mention_ids: mentionIds }),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to add comment'));
+    }
+    return response.json();
+  },
+
+  requestLeadHandoff: async (leadId: string | number, toUserId: number, note: string) => {
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/collaboration/handoffs`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ to_user_id: toUserId, note }),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to request handoff'));
+    }
+    return response.json();
+  },
+
+  respondToLeadHandoff: async (handoffId: number, decision: 'accepted' | 'declined') => {
+    const response = await fetch(`${API_URL}/api/collaboration/handoffs/${handoffId}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ decision }),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to respond to handoff'));
+    }
+    return response.json();
+  },
+
+  getMobilePerformance: async (days = 30, agentId?: number) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (agentId) params.set('agent_id', String(agentId));
+    const response = await fetch(`${API_URL}/api/mobile/performance?${params.toString()}`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to load performance'));
+    }
+    return response.json();
+  },
+
   getEnquiries: async (options?: CacheFetchOptions) => {
     return fetchWithCache(
       `${API_URL}/api/mobile/enquiries`,

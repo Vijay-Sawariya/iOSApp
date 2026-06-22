@@ -39,6 +39,8 @@ function RootLayoutContent() {
         <Stack.Screen name="enquiries" />
         <Stack.Screen name="legacy-inventory" />
         <Stack.Screen name="assigned" />
+        <Stack.Screen name="collaboration" />
+        <Stack.Screen name="performance" />
         <Stack.Screen name="builders/add" />
         <Stack.Screen name="builders/[id]" />
         <Stack.Screen name="builders/edit/[id]" />

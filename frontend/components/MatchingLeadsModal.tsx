@@ -573,7 +573,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
         </View>
 
         {/* Phone with Call and WhatsApp icons */}
-        {item.phone && (
+        {item.phone && item.can_view_sensitive !== false && (
           <View style={styles.phoneRow}>
             <Ionicons name="call-outline" size={14} color="#64748B" />
             <Text style={styles.phoneText}>{item.phone}</Text>

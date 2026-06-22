@@ -35,6 +35,7 @@ interface SiteVisit {
   lead_name: string;
   lead_phone: string;
   lead_created_by?: number | null;
+  lead_current_assignee_id?: number | null;
   property_name: string;
   property_location: string;
   visit_date: string;
@@ -1132,7 +1133,12 @@ export default function MoreScreen() {
   };
 
   const renderSiteVisit = ({ item }: { item: SiteVisit }) => {
-    const canView = canViewSensitiveData(user?.role, user?.id, item.lead_created_by);
+    const canView = canViewSensitiveData(
+      user?.role,
+      user?.id,
+      item.lead_created_by,
+      item.lead_current_assignee_id
+    );
     
     return (
       <View style={styles.card}>
