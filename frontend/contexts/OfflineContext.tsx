@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { isNetworkReachable } from '../services/networkState';
 import { syncService } from '../services/syncService';
 import { Alert, AppState, AppStateStatus } from 'react-native';
 
@@ -138,7 +139,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
   // Network state listener
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const online = state.isConnected === true && state.isInternetReachable === true;
+      const online = isNetworkReachable(state);
       const wasOffline = !isOnline;
       setIsOnline(online);
       
@@ -151,7 +152,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
 
     // Initial check
     NetInfo.fetch().then((state) => {
-      setIsOnline(state.isConnected === true && state.isInternetReachable === true);
+      setIsOnline(isNetworkReachable(state));
     });
 
     return () => unsubscribe();

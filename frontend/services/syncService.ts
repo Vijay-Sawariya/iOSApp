@@ -1,8 +1,8 @@
 import NetInfo from '@react-native-community/netinfo';
+import { isNetworkReachable } from './networkState';
 import * as db from './database';
 import { getAuthToken } from './api';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { API_URL } from './apiConfig';
 
 interface SyncProgress {
   stage: string;
@@ -19,7 +19,7 @@ class SyncService {
   async isOnline(): Promise<boolean> {
     try {
       const state = await NetInfo.fetch();
-      return state.isConnected === true && state.isInternetReachable === true;
+      return isNetworkReachable(state);
     } catch (error) {
       console.error('Error checking network status:', error);
       return false;
