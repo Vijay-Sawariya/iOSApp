@@ -18,6 +18,7 @@ import { api } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { CACHE_KEYS, cacheService } from '../../services/cacheService';
 import { LOCATIONS } from '../../constants/leadOptions';
+import { API_URL } from '../../constants/config';
 
 // Time options for dropdown
 const TIME_OPTIONS = [
@@ -165,7 +166,7 @@ export default function AddSiteVisitScreen() {
 
     try {
       setSavingVisit(true);
-      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/site-visits`, {
+      const response = await fetch(`${API_URL}/api/site-visits`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -26,8 +26,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { LOCATIONS, canViewSensitiveData } from '../../constants/leadOptions';
 import { colors, radii, shadows } from '../../constants/theme';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { API_URL } from '../../constants/config';
 
 interface SiteVisit {
   id: number;

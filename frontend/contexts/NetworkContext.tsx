@@ -24,7 +24,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({ children }) =>
   useEffect(() => {
     // Subscribe to network state updates
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const online = state.isConnected === true && state.isInternetReachable === true;
+      const online = state.isConnected === true && state.isInternetReachable !== false;
       setIsOnline(online);
       if (online) {
         setLastSync(new Date());
@@ -33,7 +33,7 @@ export const NetworkProvider: React.FC<NetworkProviderProps> = ({ children }) =>
 
     // Initial check
     NetInfo.fetch().then((state) => {
-      setIsOnline(state.isConnected === true && state.isInternetReachable === true);
+      setIsOnline(state.isConnected === true && state.isInternetReachable !== false);
     });
 
     return () => unsubscribe();

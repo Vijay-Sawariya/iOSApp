@@ -34,7 +34,9 @@ class CacheService {
   async isOnline(): Promise<boolean> {
     try {
       const state = await NetInfo.fetch();
-      return state.isConnected === true && state.isInternetReachable === true;
+      // iOS reports null briefly while reachability is being determined.
+      // Treat only an explicit false as offline when a network is connected.
+      return state.isConnected === true && state.isInternetReachable !== false;
     } catch (error) {
       console.error('Error checking network status:', error);
       return false;

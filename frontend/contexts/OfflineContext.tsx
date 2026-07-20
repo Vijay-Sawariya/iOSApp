@@ -138,7 +138,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
   // Network state listener
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const online = state.isConnected === true && state.isInternetReachable === true;
+      const online = state.isConnected === true && state.isInternetReachable !== false;
       const wasOffline = !isOnline;
       setIsOnline(online);
       
@@ -151,7 +151,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
 
     // Initial check
     NetInfo.fetch().then((state) => {
-      setIsOnline(state.isConnected === true && state.isInternetReachable === true);
+      setIsOnline(state.isConnected === true && state.isInternetReachable !== false);
     });
 
     return () => unsubscribe();
