@@ -10,6 +10,11 @@ type CacheFetchOptions = {
   forceNetwork?: boolean;
 };
 
+const isAuthenticationError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return message.toLowerCase().includes('authentication error');
+};
+
 export const setAuthToken = (token: string | null) => {
   console.log('setAuthToken called with:', token ? 'token present' : 'null');
   authToken = token;
@@ -107,15 +112,25 @@ const fetchWithCache = async <T>(
 
   const isOnline = await cacheService.isOnline();
 
+  const cached = await cacheGetter();
+
   if (options.forceNetwork) {
     if (!isOnline || isOfflineMode) {
+      if (cached) return cached;
       throw new Error('Live refresh requires an internet connection.');
     }
 
-    return refreshFromNetwork();
+    try {
+      return await refreshFromNetwork();
+    } catch (error) {
+      if (cached && !isAuthenticationError(error)) {
+        console.log(`Live refresh failed for ${cacheKey}, using cached data:`, error);
+        return cached;
+      }
+      throw error;
+    }
   }
 
-  const cached = await cacheGetter();
   if (cached) {
     if (!isOfflineMode) {
       void cacheService.isOnline().then((isOnline) => {
@@ -207,6 +222,17 @@ export const api = {
       'mobile_assigned_leads',
       (data) => cacheService.set('cache_mobile_assigned_leads', data),
       () => cacheService.get('cache_mobile_assigned_leads'),
+      options
+    );
+  },
+
+  getPerformancePulse: async (days: number = 30, options?: CacheFetchOptions) => {
+    const safeDays = Math.max(1, Math.min(Math.round(days) || 30, 365));
+    return fetchWithCache(
+      `${API_URL}/api/performance/pulse?days=${safeDays}`,
+      `performance_pulse_${safeDays}`,
+      (data) => cacheService.set(`cache_performance_pulse_${safeDays}`, data),
+      () => cacheService.get(`cache_performance_pulse_${safeDays}`),
       options
     );
   },

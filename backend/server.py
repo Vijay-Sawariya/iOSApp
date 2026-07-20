@@ -4288,24 +4288,56 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
         kothi_search_clause, kothi_search_params = _legacy_search_clause(search, "kothi")
         floor_search_clause, floor_search_params = _legacy_search_clause(search, "floor")
 
-        cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
-        kothi_historical = cursor.fetchone()["count"]
-        cursor.execute("SELECT COUNT(*) as count FROM enquiries")
-        floor_historical = cursor.fetchone()["count"]
+        has_kothis_table = _table_exists(cursor, "kothis_details")
+        has_enquiries_table = _table_exists(cursor, "enquiries")
 
-        cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}{kothi_search_clause}", tuple(kothi_search_params))
-        kothi_count = cursor.fetchone()["count"]
-        cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}{floor_search_clause}", tuple(floor_search_params))
-        floor_count = cursor.fetchone()["count"]
+        kothi_historical = 0
+        floor_historical = 0
+        kothi_count = 0
+        floor_count = 0
+
+        if has_kothis_table:
+            cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
+            kothi_historical = cursor.fetchone()["count"]
+            cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}{kothi_search_clause}", tuple(kothi_search_params))
+            kothi_count = cursor.fetchone()["count"]
+
+        if has_enquiries_table:
+            cursor.execute("SELECT COUNT(*) as count FROM enquiries")
+            floor_historical = cursor.fetchone()["count"]
+            cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}{floor_search_clause}", tuple(floor_search_params))
+            floor_count = cursor.fetchone()["count"]
+
+        if safe_category == "kothi" and not has_kothis_table:
+            return {
+                "items": [],
+                "table": "enquiries" if has_enquiries_table else None,
+                "category": safe_category,
+                "search": search or "",
+                "total": 0,
+                "historical_total": kothi_historical + floor_historical,
+                "counts": {"all": kothi_count + floor_count, "kothi": kothi_count, "floor": floor_count},
+            }
+
+        if safe_category == "floor" and not has_enquiries_table:
+            return {
+                "items": [],
+                "table": "kothis_details" if has_kothis_table else None,
+                "category": safe_category,
+                "search": search or "",
+                "total": 0,
+                "historical_total": kothi_historical + floor_historical,
+                "counts": {"all": kothi_count + floor_count, "kothi": kothi_count, "floor": floor_count},
+            }
 
         rows = []
-        if safe_category == "kothi":
+        if safe_category == "kothi" and has_kothis_table:
             cursor.execute(
                 f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
                 tuple(kothi_search_params + [safe_limit])
             )
             rows = cursor.fetchall()
-        elif safe_category == "floor":
+        elif safe_category == "floor" and has_enquiries_table:
             cursor.execute(
                 f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
                 tuple(floor_search_params + [safe_limit])
@@ -4314,16 +4346,18 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
         else:
             kothi_limit = max(1, safe_limit // 2)
             floor_limit = safe_limit - kothi_limit
-            cursor.execute(
-                f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
-                tuple(kothi_search_params + [kothi_limit])
-            )
-            rows.extend(cursor.fetchall())
-            cursor.execute(
-                f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
-                tuple(floor_search_params + [floor_limit])
-            )
-            rows.extend(cursor.fetchall())
+            if has_kothis_table:
+                cursor.execute(
+                    f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
+                    tuple(kothi_search_params + [kothi_limit])
+                )
+                rows.extend(cursor.fetchall())
+            if has_enquiries_table:
+                cursor.execute(
+                    f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
+                    tuple(floor_search_params + [floor_limit])
+                )
+                rows.extend(cursor.fetchall())
             rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         return {
@@ -4446,6 +4480,154 @@ def get_team_performance(current_user: dict = Depends(get_current_user)):
         """)
         performance = cursor.fetchall()
         return [dict(p) for p in performance]
+
+
+
+def _get_personal_performance(cursor, current_user: dict, days: int = 30) -> Dict[str, Any]:
+    user_id = current_user.get('id')
+    safe_days = max(1, min(int(days or 30), 365))
+    since = datetime.utcnow().date() - timedelta(days=safe_days - 1)
+    today = datetime.utcnow().date()
+
+    metrics = {
+        "days": safe_days,
+        "completed": 0,
+        "overdue": 0,
+        "connected": 0,
+        "portfolio": 0,
+        "visits": 0,
+        "new_leads": 0,
+        "won": 0,
+        "needs_attention": [],
+    }
+
+    if _table_exists(cursor, "actions"):
+        ensure_action_assignment_column(cursor)
+        cursor.execute(
+            """
+            SELECT COUNT(*) as count
+            FROM actions
+            WHERE (user_id = %s OR assigned_to = %s)
+              AND status = 'Completed'
+              AND (due_date IS NULL OR DATE(due_date) >= %s)
+            """,
+            (user_id, user_id, since),
+        )
+        metrics["completed"] = cursor.fetchone()["count"]
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) as count
+            FROM actions
+            WHERE (user_id = %s OR assigned_to = %s)
+              AND status IN ('Pending', 'Up Coming', 'Missed')
+              AND due_date < %s
+            """,
+            (user_id, user_id, today),
+        )
+        metrics["overdue"] = cursor.fetchone()["count"]
+
+        cursor.execute(
+            """
+            SELECT a.id, a.lead_id, a.title, a.due_date, a.due_time, l.name as lead_name
+            FROM actions a
+            LEFT JOIN leads l ON l.id = a.lead_id
+            WHERE (a.user_id = %s OR a.assigned_to = %s)
+              AND a.status IN ('Pending', 'Up Coming', 'Missed')
+              AND a.due_date < %s
+              AND (l.id IS NULL OR l.is_deleted IS NULL OR l.is_deleted = 0)
+            ORDER BY a.due_date ASC, a.due_time ASC
+            LIMIT 10
+            """,
+            (user_id, user_id, today),
+        )
+        metrics["needs_attention"] = [dict(row) for row in cursor.fetchall()]
+
+    if _table_exists(cursor, "leads"):
+        lead_columns = _table_columns(cursor, "leads")
+        lead_owner_clause = "(created_by = %s OR assigned_to = %s)" if "assigned_to" in lead_columns else "created_by = %s"
+        lead_owner_params = (user_id, user_id) if "assigned_to" in lead_columns else (user_id,)
+
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) as count
+            FROM leads
+            WHERE {lead_owner_clause}
+              AND lead_type IN ('seller', 'landlord', 'builder', 'agent')
+              AND (is_deleted IS NULL OR is_deleted = 0)
+              AND (lead_status IS NULL OR lead_status NOT IN ('Won', 'Closed/Lost', 'Lost', 'Sold', 'Already Rented'))
+            """,
+            lead_owner_params,
+        )
+        metrics["portfolio"] = cursor.fetchone()["count"]
+
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) as count
+            FROM leads
+            WHERE {lead_owner_clause}
+              AND DATE(created_at) >= %s
+              AND (is_deleted IS NULL OR is_deleted = 0)
+            """,
+            (*lead_owner_params, since),
+        )
+        metrics["new_leads"] = cursor.fetchone()["count"]
+
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) as count
+            FROM leads
+            WHERE {lead_owner_clause}
+              AND lead_status = 'Won'
+              AND (is_deleted IS NULL OR is_deleted = 0)
+            """,
+            lead_owner_params,
+        )
+        metrics["won"] = cursor.fetchone()["count"]
+
+    if _table_exists(cursor, "site_visits"):
+        cursor.execute(
+            """
+            SELECT COUNT(*) as count
+            FROM site_visits
+            WHERE created_by = %s
+              AND DATE(visit_date) >= %s
+              AND (status IS NULL OR status NOT IN ('Cancelled', 'Canceled'))
+            """,
+            (user_id, since),
+        )
+        metrics["visits"] = cursor.fetchone()["count"]
+
+    if _table_exists(cursor, "whatsapp_logs"):
+        cursor.execute(
+            """
+            SELECT COUNT(*) as count
+            FROM whatsapp_logs
+            WHERE created_by = %s AND DATE(created_at) >= %s
+            """,
+            (user_id, since),
+        )
+        metrics["connected"] = cursor.fetchone()["count"]
+
+    return metrics
+
+@api_router.get("/performance")
+def get_my_performance(days: int = 30, current_user: dict = Depends(get_current_user)):
+    """Return the signed-in user's Performance Pulse metrics."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        metrics = _get_personal_performance(cursor, current_user, days)
+        conn.commit()
+        return metrics
+
+@api_router.get("/performance/pulse")
+def get_performance_pulse(days: int = 30, current_user: dict = Depends(get_current_user)):
+    """Alias used by mobile Performance Pulse clients."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        metrics = _get_personal_performance(cursor, current_user, days)
+        conn.commit()
+        return metrics
 
 # ============= User Permissions =============
 
