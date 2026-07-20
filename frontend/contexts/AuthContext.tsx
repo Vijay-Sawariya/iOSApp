@@ -3,9 +3,7 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, setAuthToken, initializeAuthToken } from '../services/api';
-
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
+import { API_URL } from '../services/apiConfig';
 const REQUEST_TIMEOUT_MS = 15000;
 
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = REQUEST_TIMEOUT_MS) => {

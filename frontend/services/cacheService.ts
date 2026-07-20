@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { isNetworkReachable } from './networkState';
 
 // Cache keys
 const CACHE_KEYS = {
@@ -34,7 +35,7 @@ class CacheService {
   async isOnline(): Promise<boolean> {
     try {
       const state = await NetInfo.fetch();
-      return state.isConnected === true && state.isInternetReachable === true;
+      return isNetworkReachable(state);
     } catch (error) {
       console.error('Error checking network status:', error);
       return false;
