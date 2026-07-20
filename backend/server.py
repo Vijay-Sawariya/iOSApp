@@ -4288,24 +4288,56 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
         kothi_search_clause, kothi_search_params = _legacy_search_clause(search, "kothi")
         floor_search_clause, floor_search_params = _legacy_search_clause(search, "floor")
 
-        cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
-        kothi_historical = cursor.fetchone()["count"]
-        cursor.execute("SELECT COUNT(*) as count FROM enquiries")
-        floor_historical = cursor.fetchone()["count"]
+        has_kothis_table = _table_exists(cursor, "kothis_details")
+        has_enquiries_table = _table_exists(cursor, "enquiries")
 
-        cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}{kothi_search_clause}", tuple(kothi_search_params))
-        kothi_count = cursor.fetchone()["count"]
-        cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}{floor_search_clause}", tuple(floor_search_params))
-        floor_count = cursor.fetchone()["count"]
+        kothi_historical = 0
+        floor_historical = 0
+        kothi_count = 0
+        floor_count = 0
+
+        if has_kothis_table:
+            cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
+            kothi_historical = cursor.fetchone()["count"]
+            cursor.execute(f"SELECT COUNT(*) as count FROM kothis_details k WHERE {kothi_where}{kothi_search_clause}", tuple(kothi_search_params))
+            kothi_count = cursor.fetchone()["count"]
+
+        if has_enquiries_table:
+            cursor.execute("SELECT COUNT(*) as count FROM enquiries")
+            floor_historical = cursor.fetchone()["count"]
+            cursor.execute(f"SELECT COUNT(*) as count FROM enquiries e WHERE {floor_where}{floor_search_clause}", tuple(floor_search_params))
+            floor_count = cursor.fetchone()["count"]
+
+        if safe_category == "kothi" and not has_kothis_table:
+            return {
+                "items": [],
+                "table": "enquiries" if has_enquiries_table else None,
+                "category": safe_category,
+                "search": search or "",
+                "total": 0,
+                "historical_total": kothi_historical + floor_historical,
+                "counts": {"all": kothi_count + floor_count, "kothi": kothi_count, "floor": floor_count},
+            }
+
+        if safe_category == "floor" and not has_enquiries_table:
+            return {
+                "items": [],
+                "table": "kothis_details" if has_kothis_table else None,
+                "category": safe_category,
+                "search": search or "",
+                "total": 0,
+                "historical_total": kothi_historical + floor_historical,
+                "counts": {"all": kothi_count + floor_count, "kothi": kothi_count, "floor": floor_count},
+            }
 
         rows = []
-        if safe_category == "kothi":
+        if safe_category == "kothi" and has_kothis_table:
             cursor.execute(
                 f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
                 tuple(kothi_search_params + [safe_limit])
             )
             rows = cursor.fetchall()
-        elif safe_category == "floor":
+        elif safe_category == "floor" and has_enquiries_table:
             cursor.execute(
                 f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
                 tuple(floor_search_params + [safe_limit])
@@ -4314,16 +4346,18 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
         else:
             kothi_limit = max(1, safe_limit // 2)
             floor_limit = safe_limit - kothi_limit
-            cursor.execute(
-                f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
-                tuple(kothi_search_params + [kothi_limit])
-            )
-            rows.extend(cursor.fetchall())
-            cursor.execute(
-                f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
-                tuple(floor_search_params + [floor_limit])
-            )
-            rows.extend(cursor.fetchall())
+            if has_kothis_table:
+                cursor.execute(
+                    f"{_legacy_kothi_select()} WHERE {kothi_where}{kothi_search_clause} ORDER BY k.id DESC LIMIT %s",
+                    tuple(kothi_search_params + [kothi_limit])
+                )
+                rows.extend(cursor.fetchall())
+            if has_enquiries_table:
+                cursor.execute(
+                    f"{_legacy_floor_select()} WHERE {floor_where}{floor_search_clause} ORDER BY e.created_at DESC LIMIT %s",
+                    tuple(floor_search_params + [floor_limit])
+                )
+                rows.extend(cursor.fetchall())
             rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         return {
