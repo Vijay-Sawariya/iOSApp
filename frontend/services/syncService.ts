@@ -1,4 +1,5 @@
 import NetInfo from '@react-native-community/netinfo';
+import { isNetworkReachable } from './networkState';
 import * as db from './database';
 import { getAuthToken } from './api';
 import { API_URL } from '../constants/config';

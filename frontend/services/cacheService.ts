@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { isNetworkReachable } from './networkState';
 
 // Cache keys
 const CACHE_KEYS = {
