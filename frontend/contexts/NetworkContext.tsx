@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { isNetworkReachable } from '../services/networkState';
 
 interface NetworkContextType {
   isOnline: boolean;
