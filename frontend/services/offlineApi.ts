@@ -11,8 +11,7 @@
 import NetInfo from '@react-native-community/netinfo';
 import { syncService } from './syncService';
 import { api, getAuthToken } from './api';
-import { isNetworkReachable } from './networkState';
-import { API_URL } from './apiConfig';
+import { API_URL } from '../constants/config';
 
 type LeadFetchOptions = {
   forceNetwork?: boolean;
@@ -22,7 +21,7 @@ class OfflineApiService {
   private async isOnline(): Promise<boolean> {
     try {
       const state = await NetInfo.fetch();
-      return isNetworkReachable(state);
+      return state.isConnected === true && state.isInternetReachable !== false;
     } catch {
       return false;
     }

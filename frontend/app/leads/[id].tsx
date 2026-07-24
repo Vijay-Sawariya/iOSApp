@@ -27,6 +27,7 @@ import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
 import MatchingLeadsModal, { openWhatsApp, makeCall, composeMultipleInventoriesMessage } from '../../components/MatchingLeadsModal';
+import LeadCollaborationPanel from '../../components/LeadCollaborationPanel';
 
 // Import shared components and helpers
 import {
@@ -427,7 +428,12 @@ export default function LeadDetailScreen() {
     if (!lead) return;
     
     // Check if user can view sensitive data for this lead
-    const userCanViewData = canViewSensitiveData(user?.role, user?.id, lead?.created_by);
+    const userCanViewData = canViewSensitiveData(
+      user?.role,
+      user?.id,
+      lead?.created_by,
+      lead?.current_assignee_id || lead?.assigned_to
+    );
     
     const unit = formatUnit(lead.unit).toUpperCase();
     let details = '';
@@ -604,7 +610,12 @@ export default function LeadDetailScreen() {
   };
 
   // Check if user can view sensitive data for this lead
-  const canViewData = canViewSensitiveData(user?.role, user?.id, lead?.created_by);
+  const canViewData = canViewSensitiveData(
+    user?.role,
+    user?.id,
+    lead?.created_by,
+    lead?.current_assignee_id || lead?.assigned_to
+  );
   
   // Get display values for sensitive fields (location is visible to everyone)
   const displayPhone = canViewData ? lead?.phone : maskPhone(lead?.phone);
@@ -860,6 +871,8 @@ export default function LeadDetailScreen() {
         </View>
       </View>
 
+      <LeadCollaborationPanel leadId={String(id)} />
+
       {/* Contact Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{'Contact Information'}</Text>
@@ -990,7 +1003,12 @@ export default function LeadDetailScreen() {
           </View>
           {lead.matched_properties.map((prop: any, index: number) => {
             // Check if user can view sensitive data for this matched property
-            const canViewPropertyData = canViewSensitiveData(user?.role, user?.id, prop.property_created_by || prop.created_by);
+            const canViewPropertyData = canViewSensitiveData(
+              user?.role,
+              user?.id,
+              prop.property_created_by || prop.created_by,
+              prop.property_current_assignee_id || prop.property_assigned_to
+            );
             const displayPropertyPhone = canViewPropertyData ? prop.property_phone : (prop.property_phone ? '**********' : null);
             const displayPropertyAddress = canViewPropertyData ? prop.property_address : (prop.property_address ? '**********' : null);
             const propId = prop.property_id || prop.id || index;

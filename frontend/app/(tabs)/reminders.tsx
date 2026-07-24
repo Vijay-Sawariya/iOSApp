@@ -31,6 +31,7 @@ interface Reminder {
   lead_name?: string;
   lead_phone?: string;
   lead_created_by?: number | null;
+  lead_current_assignee_id?: number | null;
   assigned_to_name?: string | null;
   assigned_to_username?: string | null;
   created_by_name?: string | null;
@@ -326,7 +327,12 @@ export default function RemindersScreen() {
                 {item.lead_phone && (
                   <Text style={styles.clientPhone}>
                     {' • '}
-                    {canViewSensitiveData(user?.role, user?.id, item.lead_created_by)
+                    {canViewSensitiveData(
+                      user?.role,
+                      user?.id,
+                      item.lead_created_by,
+                      item.lead_current_assignee_id
+                    )
                       ? item.lead_phone
                       : maskPhone(item.lead_phone)}
                   </Text>

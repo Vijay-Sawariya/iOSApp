@@ -161,6 +161,38 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleMenuItemPress('settings')}
             />
           </View>
+
+          {/* Row 3 */}
+          <View style={styles.menuRow}>
+            <MenuItem
+              icon="chatbubbles"
+              label="Team Inbox"
+              color={colors.purple}
+              bgColor={colors.purpleSoft}
+              onPress={() => handleRoutePress('/collaboration')}
+            />
+            <MenuItem
+              icon="stats-chart"
+              label="Performance"
+              color={colors.accent}
+              bgColor={colors.accentSoft}
+              onPress={() => handleRoutePress('/performance')}
+            />
+            <MenuItem
+              icon="map"
+              label="Lead Map"
+              color={colors.primary}
+              bgColor={colors.primarySoft}
+              onPress={() => handleRoutePress('/map')}
+            />
+            <MenuItem
+              icon="calculator"
+              label="Pricing"
+              color={colors.amber}
+              bgColor={colors.amberSoft}
+              onPress={() => handleRoutePress('/pricing')}
+            />
+          </View>
         </Pressable>
       </Pressable>
     </Modal>

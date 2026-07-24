@@ -57,6 +57,7 @@ interface UrgentFollowup {
   status: string;
   is_missed: boolean;
   created_by?: number | null;
+  current_assignee_id?: number | null;
 }
 
 interface SmartMatch {
@@ -458,7 +459,7 @@ export default function DashboardScreen() {
                 <Text style={styles.nextActionTitle} numberOfLines={1}>{urgentFollowups[0].title}</Text>
               </View>
               <View style={styles.nextActionButtons}>
-                {canViewSensitiveData(user?.role, user?.id, urgentFollowups[0].created_by) && urgentFollowups[0].lead_phone && (
+                {canViewSensitiveData(user?.role, user?.id, urgentFollowups[0].created_by, urgentFollowups[0].current_assignee_id) && urgentFollowups[0].lead_phone && (
                   <>
                     <TouchableOpacity style={styles.nextActionButton} onPress={() => handleCall(urgentFollowups[0].lead_phone)}>
                       <Ionicons name="call" size={18} color="#10B981" />
@@ -500,7 +501,7 @@ export default function DashboardScreen() {
               </View>
             </View>
             {urgentFollowups.slice(0, 3).map((followup) => {
-              const canView = canViewSensitiveData(user?.role, user?.id, followup.created_by);
+              const canView = canViewSensitiveData(user?.role, user?.id, followup.created_by, followup.current_assignee_id);
               return (
                 <View key={followup.id} style={[styles.urgentItem, followup.is_missed && styles.missedItem]}>
                   <View style={styles.urgentItemContent}>

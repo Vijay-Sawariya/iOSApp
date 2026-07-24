@@ -26,7 +26,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { LOCATIONS, canViewSensitiveData } from '../../constants/leadOptions';
 import { colors, radii, shadows } from '../../constants/theme';
-import { API_URL } from '../../services/apiConfig';
+import { API_URL } from '../../constants/config';
 
 interface SiteVisit {
   id: number;
@@ -34,6 +34,7 @@ interface SiteVisit {
   lead_name: string;
   lead_phone: string;
   lead_created_by?: number | null;
+  lead_current_assignee_id?: number | null;
   property_name: string;
   property_location: string;
   visit_date: string;
@@ -1131,7 +1132,12 @@ export default function MoreScreen() {
   };
 
   const renderSiteVisit = ({ item }: { item: SiteVisit }) => {
-    const canView = canViewSensitiveData(user?.role, user?.id, item.lead_created_by);
+    const canView = canViewSensitiveData(
+      user?.role,
+      user?.id,
+      item.lead_created_by,
+      item.lead_current_assignee_id
+    );
     
     return (
       <View style={styles.card}>
@@ -1209,9 +1215,9 @@ export default function MoreScreen() {
     return (
       <View style={styles.visitPlannerHeader}>
         <View style={styles.plannerTitleRow}>
-          <View>
+          <View style={styles.plannerTitleCopy}>
             <Text style={styles.plannerTitle}>Site Visit Planner</Text>
-            <Text style={styles.plannerSubtitle}>Plan matched inventory routes and track visit outcomes</Text>
+            <Text style={styles.plannerSubtitle} numberOfLines={2}>Plan matched inventory routes and track visit outcomes</Text>
           </View>
           <TouchableOpacity style={styles.plannerPrimaryButton} onPress={openVisitPlanner}>
             <Ionicons name="add" size={18} color="#FFFFFF" />
@@ -2700,6 +2706,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 12,
   },
+  plannerTitleCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   plannerTitle: {
     fontSize: 18,
     fontWeight: '900',
@@ -2720,6 +2730,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
+    flexShrink: 0,
   },
   plannerPrimaryButtonText: {
     color: '#FFFFFF',

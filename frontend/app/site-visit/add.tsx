@@ -19,6 +19,7 @@ import { API_URL } from '../../services/apiConfig';
 import { useAuth } from '../../contexts/AuthContext';
 import { CACHE_KEYS, cacheService } from '../../services/cacheService';
 import { LOCATIONS } from '../../constants/leadOptions';
+import { API_URL } from '../../constants/config';
 
 // Time options for dropdown
 const TIME_OPTIONS = [

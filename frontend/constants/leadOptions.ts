@@ -248,6 +248,9 @@ export interface Lead {
   updated_on?: string | null;
   updated_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
+  assigned_to?: number | null;
+  current_assignee_id?: number | null;
+  can_view_sensitive?: boolean;
   created_by_name?: string | null;
   Property_locationUrl?: string | null;
   last_message_sent_on?: string | null;
@@ -292,16 +295,18 @@ export const getAgingStyles = (agingColor: string | null | undefined): { bg: str
 export const canViewSensitiveData = (
   userRole: string | undefined,
   userId: string | number | undefined,
-  leadCreatedBy: number | null | undefined
+  leadCreatedBy: number | null | undefined,
+  leadAssignedTo?: number | null | undefined
 ): boolean => {
   // Admin can see everything
   if (userRole === 'admin') return true;
   
-  // Non-admin users can only see data for leads they created
-  if (!userId || !leadCreatedBy) return false;
+  if (!userId) return false;
   
-  // Compare user ID with lead creator ID
-  return String(userId) === String(leadCreatedBy);
+  return (
+    (leadCreatedBy != null && String(userId) === String(leadCreatedBy)) ||
+    (leadAssignedTo != null && String(userId) === String(leadAssignedTo))
+  );
 };
 
 // Helper function to mask phone number

@@ -3,8 +3,10 @@ import { Alert, AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, setAuthToken, initializeAuthToken } from '../services/api';
-import { API_URL } from '../services/apiConfig';
-const REQUEST_TIMEOUT_MS = 15000;
+import { API_URL } from '../constants/config';
+
+// Render cold starts can exceed 30 seconds before the database is ready.
+const REQUEST_TIMEOUT_MS = 45000;
 
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();

@@ -55,6 +55,8 @@ interface Lead {
   updated_on?: string | null;
   updated_at?: string | null;
   created_by?: number | null;  // ID of the user who created this lead
+  assigned_to?: number | null;
+  current_assignee_id?: number | null;
   created_by_name?: string | null;
   // Action/Followup fields
   next_action_date?: string | null;
@@ -507,7 +509,12 @@ www.sagarhome.com`;
     const isHot = item.lead_temperature === 'Hot';
     
     // Check if user can view sensitive data for this lead
-    const canViewData = canViewSensitiveData(user?.role, user?.id, item.created_by);
+    const canViewData = canViewSensitiveData(
+      user?.role,
+      user?.id,
+      item.created_by,
+      item.current_assignee_id || item.assigned_to
+    );
     
     // Determine what to display for phone (location is visible to everyone)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);

@@ -36,6 +36,10 @@ const formatCr = (value?: number | string | null) => {
 };
 
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
+const hasUsablePhone = (phone?: string | null) => (phone || '').replace(/\D/g, '').length >= 10;
+const isClientLead = (item: any) => ['buyer', 'tenant'].includes(
+  String(item?.lead_type || item?.buyer_type || '').toLowerCase()
+);
 
 const dateAfterDays = (days: number) => {
   const next = new Date();
@@ -205,7 +209,7 @@ export default function WorkbenchScreen() {
   };
 
   const startContact = async (contact: PendingContact) => {
-    if (!contact.phone) {
+    if (!hasUsablePhone(contact.phone)) {
       Alert.alert('No Phone', 'This lead does not have a contact number.');
       return;
     }
@@ -352,13 +356,12 @@ export default function WorkbenchScreen() {
   }
 
   const summary = data?.summary || {};
-  const missedActions = data?.missed_actions || [];
-  const todayActions = data?.today_actions || [];
-  const whatsappDue = data?.whatsapp_due_leads || [];
-  const hotLeads = data?.hot_leads_without_action || [];
-  const legacyInventory = data?.fresh_enquiries || [];
-  const notesMissing = data?.notes_missing || [];
-  const matches = data?.smart_matches || [];
+  const missedActions = (data?.missed_actions || []).filter(isClientLead);
+  const todayActions = (data?.today_actions || []).filter(isClientLead);
+  const whatsappDue = (data?.whatsapp_due_leads || []).filter(isClientLead);
+  const hotLeads = (data?.hot_leads_without_action || []).filter(isClientLead);
+  const notesMissing = (data?.notes_missing || []).filter(isClientLead);
+  const matches = (data?.smart_matches || []).filter(isClientLead);
   const primaryQueue = [...missedActions, ...todayActions];
 
   return (
@@ -431,28 +434,6 @@ export default function WorkbenchScreen() {
               onSuggestedWhatsApp={sendSuggestedWhatsApp}
               savingKey={savingKey}
             />
-          ))}
-        </Section>
-
-        <Section title="Legacy Inventory" empty="No legacy inventory records found.">
-          {legacyInventory.map((item: any) => (
-            <View key={`enquiry-${item.id}`} style={styles.card}>
-              <View style={styles.cardTop}>
-                <View style={styles.cardCopy}>
-                  <Text style={styles.cardTitle}>{item.name || 'New enquiry'}</Text>
-                  <Text style={styles.cardMeta}>{item.location || 'Location n/a'} · {item.property_type || item.bhk || 'Type n/a'}</Text>
-                </View>
-                <Badge text={item.status || 'New'} tone="green" />
-              </View>
-              <Text style={styles.cardBody} numberOfLines={2}>{item.notes || 'No notes yet'}</Text>
-              <ActionRow
-                phone={item.phone}
-                name={item.name}
-                onOpen={() => router.push('/legacy-inventory' as any)}
-                doneLabel="Inventory"
-                onDone={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(item.phone || '')}` as any)}
-              />
-            </View>
           ))}
         </Section>
 
@@ -834,6 +815,7 @@ function MatchCard({
   const buyerBudget = [formatCr(match.buyer_budget_min), formatCr(match.buyer_budget_max)].filter(Boolean).join(' - ');
   const inventoryPrice = [formatCr(match.inventory_price_min), formatCr(match.inventory_price_max)].filter(Boolean).join(' - ');
   const reasons = Array.isArray(match.match_reasons) ? match.match_reasons : [];
+  const usableBuyerPhone = hasUsablePhone(match.buyer_phone);
 
   return (
     <View style={[styles.card, match.is_hot && styles.hotMatchCard]}>
@@ -881,9 +863,9 @@ function MatchCard({
             name: match.buyer_name,
             suggestedNextDays: 2,
           })}
-          disabled={!match.buyer_phone}
+          disabled={!usableBuyerPhone}
         >
-          <Ionicons name="call" size={17} color={match.buyer_phone ? colors.accent : colors.inkSubtle} />
+          <Ionicons name="call" size={17} color={usableBuyerPhone ? colors.accent : colors.inkSubtle} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.iconAction}
@@ -894,9 +876,9 @@ function MatchCard({
             name: match.buyer_name,
             suggestedNextDays: 2,
           })}
-          disabled={!match.buyer_phone}
+          disabled={!usableBuyerPhone}
         >
-          <Ionicons name="logo-whatsapp" size={17} color={match.buyer_phone ? '#25D366' : colors.inkSubtle} />
+          <Ionicons name="logo-whatsapp" size={17} color={usableBuyerPhone ? '#25D366' : colors.inkSubtle} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.smallButton} onPress={() => router.push(`/leads/${match.buyer_id}` as any)}>
           <Ionicons name="person-outline" size={16} color={colors.primary} />
@@ -954,6 +936,7 @@ function ActionRow({
   savingKey?: string | null;
   doneLabel?: string;
 }) {
+  const usablePhone = hasUsablePhone(phone);
   const isSaving = (outcome: string) => savingKey === `${leadId}-${actionId || 'lead'}-${outcome}`;
   const openUntrackedWhatsApp = () => {
     if (!phone) return;
@@ -964,11 +947,11 @@ function ActionRow({
 
   return (
     <View style={styles.actions}>
-      <TouchableOpacity style={styles.iconAction} onPress={onCall || (() => phone && Linking.openURL(`tel:${phone}`))} disabled={!phone}>
-        <Ionicons name="call" size={17} color={phone ? colors.accent : colors.inkSubtle} />
+      <TouchableOpacity style={styles.iconAction} onPress={onCall || (() => usablePhone && Linking.openURL(`tel:${phone}`))} disabled={!usablePhone}>
+        <Ionicons name="call" size={17} color={usablePhone ? colors.accent : colors.inkSubtle} />
       </TouchableOpacity>
-      <TouchableOpacity style={styles.iconAction} onPress={onWhatsApp || openUntrackedWhatsApp} disabled={!phone}>
-        <Ionicons name="logo-whatsapp" size={17} color={phone ? '#25D366' : colors.inkSubtle} />
+      <TouchableOpacity style={styles.iconAction} onPress={onWhatsApp || openUntrackedWhatsApp} disabled={!usablePhone}>
+        <Ionicons name="logo-whatsapp" size={17} color={usablePhone ? '#25D366' : colors.inkSubtle} />
       </TouchableOpacity>
       <TouchableOpacity style={styles.smallButton} onPress={onOpen}>
         <Ionicons name="open-outline" size={16} color={colors.primary} />
