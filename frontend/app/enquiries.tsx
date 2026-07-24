@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -70,6 +70,14 @@ export default function EnquiriesScreen() {
     loadData(true);
   };
 
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setSubmittedSearch(search.trim());
+    }, 400);
+
+    return () => clearTimeout(timeout);
+  }, [search]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -112,7 +120,7 @@ export default function EnquiriesScreen() {
           <Ionicons name="search" size={18} color={colors.inkMuted} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search name, phone, location"
+            placeholder="Search address, location, name or phone"
             placeholderTextColor={colors.inkSubtle}
             value={search}
             onChangeText={setSearch}

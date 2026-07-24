@@ -37,6 +37,9 @@ const formatCr = (value?: number | string | null) => {
 
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
 const hasUsablePhone = (phone?: string | null) => (phone || '').replace(/\D/g, '').length >= 10;
+const isClientLead = (item: any) => ['buyer', 'tenant'].includes(
+  String(item?.lead_type || item?.buyer_type || '').toLowerCase()
+);
 
 const dateAfterDays = (days: number) => {
   const next = new Date();
@@ -353,13 +356,12 @@ export default function WorkbenchScreen() {
   }
 
   const summary = data?.summary || {};
-  const missedActions = data?.missed_actions || [];
-  const todayActions = data?.today_actions || [];
-  const whatsappDue = data?.whatsapp_due_leads || [];
-  const hotLeads = data?.hot_leads_without_action || [];
-  const legacyInventory = data?.fresh_enquiries || [];
-  const notesMissing = data?.notes_missing || [];
-  const matches = data?.smart_matches || [];
+  const missedActions = (data?.missed_actions || []).filter(isClientLead);
+  const todayActions = (data?.today_actions || []).filter(isClientLead);
+  const whatsappDue = (data?.whatsapp_due_leads || []).filter(isClientLead);
+  const hotLeads = (data?.hot_leads_without_action || []).filter(isClientLead);
+  const notesMissing = (data?.notes_missing || []).filter(isClientLead);
+  const matches = (data?.smart_matches || []).filter(isClientLead);
   const primaryQueue = [...missedActions, ...todayActions];
 
   return (
@@ -432,28 +434,6 @@ export default function WorkbenchScreen() {
               onSuggestedWhatsApp={sendSuggestedWhatsApp}
               savingKey={savingKey}
             />
-          ))}
-        </Section>
-
-        <Section title="Legacy Inventory" empty="No legacy inventory records found.">
-          {legacyInventory.map((item: any) => (
-            <View key={`enquiry-${item.id}`} style={styles.card}>
-              <View style={styles.cardTop}>
-                <View style={styles.cardCopy}>
-                  <Text style={styles.cardTitle}>{item.name || 'New enquiry'}</Text>
-                  <Text style={styles.cardMeta}>{item.location || 'Location n/a'} · {item.property_type || item.bhk || 'Type n/a'}</Text>
-                </View>
-                <Badge text={item.status || 'New'} tone="green" />
-              </View>
-              <Text style={styles.cardBody} numberOfLines={2}>{item.notes || 'No notes yet'}</Text>
-              <ActionRow
-                phone={item.phone}
-                name={item.name}
-                onOpen={() => router.push('/legacy-inventory' as any)}
-                doneLabel="Inventory"
-                onDone={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(item.phone || '')}` as any)}
-              />
-            </View>
           ))}
         </Section>
 
