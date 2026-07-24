@@ -1215,9 +1215,9 @@ export default function MoreScreen() {
     return (
       <View style={styles.visitPlannerHeader}>
         <View style={styles.plannerTitleRow}>
-          <View>
+          <View style={styles.plannerTitleCopy}>
             <Text style={styles.plannerTitle}>Site Visit Planner</Text>
-            <Text style={styles.plannerSubtitle}>Plan matched inventory routes and track visit outcomes</Text>
+            <Text style={styles.plannerSubtitle} numberOfLines={2}>Plan matched inventory routes and track visit outcomes</Text>
           </View>
           <TouchableOpacity style={styles.plannerPrimaryButton} onPress={openVisitPlanner}>
             <Ionicons name="add" size={18} color="#FFFFFF" />
@@ -2706,6 +2706,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 12,
   },
+  plannerTitleCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   plannerTitle: {
     fontSize: 18,
     fontWeight: '900',
@@ -2726,6 +2730,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
+    flexShrink: 0,
   },
   plannerPrimaryButtonText: {
     color: '#FFFFFF',
