@@ -1,22 +1,64 @@
-import React from 'react';
-import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
-import { Stack } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Alert, View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+import { Stack, router, usePathname } from 'expo-router';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { OfflineProvider, useOffline } from '../contexts/OfflineContext';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { setAuthToken } from '../services/api';
-import { useEffect } from 'react';
 
 function RootLayoutContent() {
-  const { token } = useAuth();
+  const { token, hasFeature, featureFlagsLoading } = useAuth();
   const { isInitialized } = useOffline();
+  const pathname = usePathname();
+  const deniedPathRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     setAuthToken(token);
   }, [token]);
 
+  useEffect(() => {
+    if (!token || featureFlagsLoading || pathname === '/' || pathname === '/login') return;
+
+    const routeFeatures: [RegExp, string][] = [
+      [/^\/clients(?:\/|$)/, 'buyer_leads'],
+      [/^\/inventory(?:\/|$)/, 'seller_inventory'],
+      [/^\/builders(?:\/|$)/, 'builders_agents'],
+      [/^\/reminders(?:\/|$)/, 'followups'],
+      [/^\/workbench(?:\/|$)/, 'daily_workbench'],
+      [/^\/(?:legacy-inventory|enquiries)(?:\/|$)/, 'legacy_inventory'],
+      [/^\/assigned(?:\/|$)/, 'assigned_leads'],
+      [/^\/collaboration(?:\/|$)/, 'team_inbox'],
+      [/^\/performance(?:\/|$)/, 'agent_performance'],
+      [/^\/site-visit(?:\/|$)/, 'site_visits'],
+      [/^\/map(?:\/|$)/, 'lead_map'],
+      [/^\/pricing(?:\/|$)/, 'inventory_pricing'],
+    ];
+    if (
+      /^\/leads(?:\/|$)/.test(pathname) &&
+      !hasFeature('buyer_leads') &&
+      !hasFeature('seller_inventory')
+    ) {
+      if (deniedPathRef.current !== pathname) {
+        deniedPathRef.current = pathname;
+        Alert.alert('Access Disabled', 'An administrator has disabled lead and inventory access for your account.');
+      }
+      router.replace('/dashboard' as any);
+      return;
+    }
+    const match = routeFeatures.find(([pattern]) => pattern.test(pathname));
+    if (!match || hasFeature(match[1])) {
+      deniedPathRef.current = null;
+      return;
+    }
+    if (deniedPathRef.current !== pathname) {
+      deniedPathRef.current = pathname;
+      Alert.alert('Access Disabled', 'An administrator has disabled this feature for your account.');
+    }
+    router.replace('/dashboard' as any);
+  }, [featureFlagsLoading, hasFeature, pathname, token]);
+
   // Show loading screen while initializing offline database
-  if (!isInitialized) {
+  if (!isInitialized || (token && featureFlagsLoading)) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />

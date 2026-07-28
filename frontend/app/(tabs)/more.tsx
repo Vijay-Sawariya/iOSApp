@@ -250,7 +250,7 @@ const buildLeadsCsv = (rows: any[]) => {
 };
 
 export default function MoreScreen() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, hasFeature } = useAuth();
   const params = useLocalSearchParams();
   const requestedTab = (params.tab as string) || 'visits';
   const initialTab = requestedTab;
@@ -271,9 +271,18 @@ export default function MoreScreen() {
   // Update active tab when params change
   useEffect(() => {
     if (params.tab) {
-      setActiveTab(params.tab as any);
+      const requested = params.tab as typeof activeTab;
+      const requiredFeature: Partial<Record<typeof activeTab, string>> = {
+        visits: 'site_visits',
+        deals: 'revenue_intelligence',
+        team: 'team_management',
+        activity: 'activity_feed',
+        export: 'data_export',
+      };
+      const feature = requiredFeature[requested];
+      setActiveTab(!feature || hasFeature(feature) ? requested : 'settings');
     }
-  }, [params.tab]);
+  }, [hasFeature, params.tab]);
   
   // Data states
   const [siteVisits, setSiteVisits] = useState<SiteVisit[]>([]);
@@ -389,12 +398,12 @@ export default function MoreScreen() {
       
       const [permissionsResult, visitsResult, dealsResult, teamResult, activityResult] = await Promise.allSettled([
         fetch(`${API_URL}/api/user/permissions`, { headers }),
-        fetch(`${API_URL}/api/site-visits`, { headers }),
-        fetch(`${API_URL}/api/deals`, { headers }),
-        user?.role === 'admin'
+        hasFeature('site_visits') ? fetch(`${API_URL}/api/site-visits`, { headers }) : Promise.resolve(null),
+        hasFeature('revenue_intelligence') ? fetch(`${API_URL}/api/deals`, { headers }) : Promise.resolve(null),
+        user?.role === 'admin' && hasFeature('team_management')
           ? fetch(`${API_URL}/api/team/members-with-permissions`, { headers })
           : Promise.resolve(null),
-        fetch(`${API_URL}/api/activity-logs`, { headers }),
+        hasFeature('activity_feed') ? fetch(`${API_URL}/api/activity-logs`, { headers }) : Promise.resolve(null),
       ]);
 
       if (permissionsResult.status === 'fulfilled' && permissionsResult.value.ok) {
@@ -403,13 +412,13 @@ export default function MoreScreen() {
         await cacheService.cacheUserPermissions(permData);
       }
       
-      if (visitsResult.status === 'fulfilled' && visitsResult.value.ok) {
+      if (visitsResult.status === 'fulfilled' && visitsResult.value?.ok) {
         const visitsData = await visitsResult.value.json();
         setSiteVisits(visitsData);
         await cacheService.cacheSiteVisits(visitsData);
       }
       
-      if (dealsResult.status === 'fulfilled' && dealsResult.value.ok) {
+      if (dealsResult.status === 'fulfilled' && dealsResult.value?.ok) {
         const dealsData = await dealsResult.value.json();
         setDeals(dealsData);
         await cacheService.cacheDeals(dealsData);
@@ -421,7 +430,7 @@ export default function MoreScreen() {
         await cacheService.cacheTeamMembers(teamData);
       }
       
-      if (activityResult.status === 'fulfilled' && activityResult.value.ok) {
+      if (activityResult.status === 'fulfilled' && activityResult.value?.ok) {
         const activityData = await activityResult.value.json();
         setActivityLogs(activityData);
         await cacheService.cacheActivityLogs(activityData);
@@ -2103,7 +2112,7 @@ export default function MoreScreen() {
 
       {/* Feature Cards Grid */}
       <View style={styles.featureGrid}>
-        <TouchableOpacity 
+        {hasFeature('site_visits') && <TouchableOpacity
           style={[styles.featureCard, activeTab === 'visits' && styles.featureCardActive]}
           onPress={() => setActiveTab('visits')}
           activeOpacity={0.8}
@@ -2113,9 +2122,9 @@ export default function MoreScreen() {
           </View>
           <Text style={styles.featureCardTitle}>Site Visits</Text>
           <Text style={styles.featureCardCount}>{siteVisits.length}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
 
-        <TouchableOpacity
+        {hasFeature('revenue_intelligence') && <TouchableOpacity
           style={[styles.featureCard, activeTab === 'deals' && styles.featureCardActive]}
           onPress={() => setActiveTab('deals')}
           activeOpacity={0.8}
@@ -2125,9 +2134,9 @@ export default function MoreScreen() {
           </View>
           <Text style={styles.featureCardTitle}>Conversions</Text>
           <Text style={styles.featureCardCount}>{deals.length}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
 
-        <TouchableOpacity 
+        {hasFeature('activity_feed') && <TouchableOpacity
           style={[styles.featureCard, activeTab === 'activity' && styles.featureCardActive]}
           onPress={() => setActiveTab('activity')}
           activeOpacity={0.8}
@@ -2137,9 +2146,9 @@ export default function MoreScreen() {
           </View>
           <Text style={styles.featureCardTitle}>Activity</Text>
           <Text style={styles.featureCardCount}>{activityLogs.length}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
 
-        {user?.role === 'admin' && (
+        {user?.role === 'admin' && hasFeature('team_management') && (
           <TouchableOpacity 
             style={[styles.featureCard, activeTab === 'team' && styles.featureCardActive]}
             onPress={() => setActiveTab('team')}
@@ -2153,7 +2162,7 @@ export default function MoreScreen() {
           </TouchableOpacity>
         )}
 
-        {canExport && (
+        {canExport && hasFeature('data_export') && (
           <TouchableOpacity 
             style={[styles.featureCard, activeTab === 'export' && styles.featureCardActive]}
             onPress={() => setActiveTab('export')}

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -67,6 +67,10 @@ interface AuthContextType {
   register: (username: string, password: string, fullName: string, email: string) => Promise<boolean>;
   logout: () => Promise<void>;
   updateLastActivity: () => void;
+  featureFlags: Record<string, boolean>;
+  featureFlagsLoading: boolean;
+  hasFeature: (featureKey: string) => boolean;
+  refreshFeatureFlags: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
+  const [featureFlagsLoading, setFeatureFlagsLoading] = useState(true);
   const appState = useRef(AppState.currentState);
 
   // Update last activity timestamp
@@ -87,6 +93,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to update last activity:', error);
     }
   };
+
+  const refreshFeatureFlags = useCallback(async () => {
+    if (!token) {
+      setFeatureFlags({});
+      setFeatureFlagsLoading(false);
+      return;
+    }
+    setFeatureFlagsLoading(true);
+    try {
+      const result = await api.getFeatureFlags();
+      const flags = result?.flags || {};
+      setFeatureFlags(flags);
+      await storage.setItem('featureFlags', JSON.stringify(flags));
+    } catch (error) {
+      console.error('Failed to refresh feature flags:', error);
+      const cached = await storage.getItem('featureFlags');
+      setFeatureFlags(cached ? JSON.parse(cached) : {});
+    } finally {
+      setFeatureFlagsLoading(false);
+    }
+  }, [token]);
+
+  const hasFeature = useCallback((featureKey: string) => {
+    if (user?.role?.toLowerCase() === 'admin') return true;
+    return featureFlags[featureKey] !== false;
+  }, [featureFlags, user?.role]);
+
+  useEffect(() => {
+    void refreshFeatureFlags();
+  }, [refreshFeatureFlags]);
 
   // Check if user has been inactive for more than 2 days
   const checkInactivity = async (): Promise<boolean> => {
@@ -138,6 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           // User is active, update last activity
           await updateLastActivity();
+          await refreshFeatureFlags();
         }
       }
     }
@@ -234,6 +271,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storage.deleteItem('token');
       await storage.deleteItem('user');
       await storage.deleteItem('lastActivity');
+      await storage.deleteItem('featureFlags');
+      setFeatureFlags({});
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -351,7 +390,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const combinedLoading = loading || isInitializing;
 
   return (
-    <AuthContext.Provider value={{ user, token, loading: combinedLoading, login, register, logout, updateLastActivity }}>
+    <AuthContext.Provider value={{
+      user,
+      token,
+      loading: combinedLoading,
+      login,
+      register,
+      logout,
+      updateLastActivity,
+      featureFlags,
+      featureFlagsLoading,
+      hasFeature,
+      refreshFeatureFlags,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -140,6 +140,16 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
+  getFeatureFlags: async (): Promise<{ is_admin: boolean; flags: Record<string, boolean> }> => {
+    const response = await fetch(`${API_URL}/api/user/feature-flags`, {
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to load feature access'));
+    }
+    return response.json();
+  },
+
   // Check if online
   isOnline: () => cacheService.isOnline(),
   

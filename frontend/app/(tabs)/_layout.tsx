@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, gradients, radii, shadows } from '../../constants/theme';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Create context for More menu
 const MoreMenuContext = createContext<{
@@ -64,19 +65,21 @@ interface MenuItemProps {
   color: string;
   bgColor: string;
   onPress: () => void;
+  visible?: boolean;
 }
 
-const MenuItem = ({ icon, label, color, bgColor, onPress }: MenuItemProps) => (
+const MenuItem = ({ icon, label, color, bgColor, onPress, visible = true }: MenuItemProps) => visible ? (
   <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
     <View style={[styles.menuIconContainer, { backgroundColor: bgColor }]}>
       <Ionicons name={icon} size={22} color={color} />
     </View>
     <Text style={styles.menuLabel}>{label}</Text>
   </TouchableOpacity>
-);
+) : <View style={styles.menuItem} />;
 
 // More Menu Popup Component
 const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; onClose: () => void; bottomInset: number }) => {
+  const { hasFeature } = useAuth();
   const handleMenuItemPress = (tab: string) => {
     onClose();
     router.push(`/more?tab=${tab}&fromPopup=true` as any);
@@ -106,6 +109,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.primary}
               bgColor={colors.primarySoft}
               onPress={() => handleRoutePress('/workbench')}
+              visible={hasFeature('daily_workbench')}
             />
             <MenuItem
               icon="archive"
@@ -113,6 +117,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.accent}
               bgColor={colors.accentSoft}
               onPress={() => handleRoutePress('/legacy-inventory')}
+              visible={hasFeature('legacy_inventory')}
             />
             <MenuItem 
               icon="location"
@@ -120,6 +125,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.primary}
               bgColor={colors.primarySoft}
               onPress={() => handleMenuItemPress('visits')}
+              visible={hasFeature('site_visits')}
             />
             <MenuItem 
               icon="time"
@@ -127,6 +133,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.amber}
               bgColor={colors.amberSoft}
               onPress={() => handleMenuItemPress('activity')}
+              visible={hasFeature('activity_feed')}
             />
           </View>
           
@@ -138,6 +145,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.amber}
               bgColor={colors.amberSoft}
               onPress={() => handleRoutePress('/assigned')}
+              visible={hasFeature('assigned_leads')}
             />
             <MenuItem 
               icon="people"
@@ -145,6 +153,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.purple}
               bgColor={colors.purpleSoft}
               onPress={() => handleMenuItemPress('team')}
+              visible={hasFeature('team_management')}
             />
             <MenuItem 
               icon="download"
@@ -152,6 +161,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.danger}
               bgColor={colors.dangerSoft}
               onPress={() => handleMenuItemPress('export')}
+              visible={hasFeature('data_export')}
             />
             <MenuItem 
               icon="settings"
@@ -170,6 +180,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.purple}
               bgColor={colors.purpleSoft}
               onPress={() => handleRoutePress('/collaboration')}
+              visible={hasFeature('team_inbox')}
             />
             <MenuItem
               icon="stats-chart"
@@ -177,6 +188,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.accent}
               bgColor={colors.accentSoft}
               onPress={() => handleRoutePress('/performance')}
+              visible={hasFeature('agent_performance')}
             />
             <MenuItem
               icon="map"
@@ -184,6 +196,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.primary}
               bgColor={colors.primarySoft}
               onPress={() => handleRoutePress('/map')}
+              visible={hasFeature('lead_map')}
             />
             <MenuItem
               icon="calculator"
@@ -191,6 +204,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.amber}
               bgColor={colors.amberSoft}
               onPress={() => handleRoutePress('/pricing')}
+              visible={hasFeature('inventory_pricing')}
             />
           </View>
         </Pressable>
@@ -202,6 +216,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const { hasFeature } = useAuth();
   
   const tabBarHeight = Platform.OS === 'ios' ? 65 + insets.bottom : 70;
   const tabBarPaddingBottom = Platform.OS === 'ios' ? insets.bottom : 8;
@@ -257,6 +272,7 @@ export default function TabLayout() {
           options={{
             title: 'Clients',
             headerShown: false,
+            href: hasFeature('buyer_leads') ? undefined : null,
             tabBarIcon: ({ focused }) => (
               <TabIcon 
                 name="people" 
@@ -271,6 +287,7 @@ export default function TabLayout() {
           options={{
             title: 'Inventory',
             headerShown: false,
+            href: hasFeature('seller_inventory') ? undefined : null,
             tabBarIcon: ({ focused }) => (
               <TabIcon 
                 name="home" 
@@ -285,6 +302,7 @@ export default function TabLayout() {
           options={{
             title: 'Builders',
             headerShown: false,
+            href: hasFeature('builders_agents') ? undefined : null,
             tabBarIcon: ({ focused }) => (
               <TabIcon 
                 name="business" 
@@ -299,6 +317,7 @@ export default function TabLayout() {
           options={{
             title: 'Reminders',
             headerShown: false,
+            href: hasFeature('followups') ? undefined : null,
             tabBarIcon: ({ focused }) => (
               <TabIcon 
                 name="notifications" 
