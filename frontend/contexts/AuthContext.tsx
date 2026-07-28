@@ -116,9 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   const hasFeature = useCallback((featureKey: string) => {
-    if (user?.role?.toLowerCase() === 'admin') return true;
     return featureFlags[featureKey] !== false;
-  }, [featureFlags, user?.role]);
+  }, [featureFlags]);
 
   useEffect(() => {
     void refreshFeatureFlags();
