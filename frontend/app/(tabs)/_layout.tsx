@@ -68,14 +68,18 @@ interface MenuItemProps {
   visible?: boolean;
 }
 
-const MenuItem = ({ icon, label, color, bgColor, onPress, visible = true }: MenuItemProps) => visible ? (
-  <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
-    <View style={[styles.menuIconContainer, { backgroundColor: bgColor }]}>
-      <Ionicons name={icon} size={22} color={color} />
-    </View>
-    <Text style={styles.menuLabel}>{label}</Text>
-  </TouchableOpacity>
-) : <View style={styles.menuItem} />;
+const MenuItem = ({ icon, label, color, bgColor, onPress, visible = true }: MenuItemProps) => {
+  if (!visible) return null;
+
+  return (
+    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
+      <View style={[styles.menuIconContainer, { backgroundColor: bgColor }]}>
+        <Ionicons name={icon} size={22} color={color} />
+      </View>
+      <Text style={styles.menuLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+};
 
 // More Menu Popup Component
 const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; onClose: () => void; bottomInset: number }) => {
@@ -101,8 +105,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
           <View style={styles.menuHandle} />
           <Text style={styles.menuTitle}>More Features</Text>
           
-          {/* Row 1 */}
-          <View style={styles.menuRow}>
+          <View style={styles.menuGrid}>
             <MenuItem
               icon="briefcase"
               label="Workbench"
@@ -135,10 +138,6 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleMenuItemPress('activity')}
               visible={hasFeature('activity_feed')}
             />
-          </View>
-          
-          {/* Row 2 */}
-          <View style={styles.menuRow}>
             <MenuItem
               icon="person-circle"
               label="Assigned"
@@ -170,10 +169,6 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               bgColor={colors.surfaceMuted}
               onPress={() => handleMenuItemPress('settings')}
             />
-          </View>
-
-          {/* Row 3 */}
-          <View style={styles.menuRow}>
             <MenuItem
               icon="chatbubbles"
               label="Team Inbox"
@@ -416,13 +411,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingHorizontal: 8,
   },
-  menuRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 8,
-  },
   menuItem: {
-    flex: 1,
+    width: '25%',
     alignItems: 'center',
     paddingVertical: 12,
   },
