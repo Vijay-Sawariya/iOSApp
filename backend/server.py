@@ -4377,6 +4377,68 @@ def _legacy_search_clause(search: Optional[str], source: str) -> tuple[str, List
         params.append(f"%{phone_key}%")
     return f" AND ({' OR '.join(clauses)})", params
 
+def _legacy_search_criteria_clause(
+    source: str,
+    name: Optional[str] = None,
+    location: Optional[str] = None,
+    address: Optional[str] = None,
+    phone: Optional[str] = None,
+    status: Optional[str] = None,
+    message_status: Optional[str] = None,
+) -> tuple[str, List[str]]:
+    clauses: List[str] = []
+    params: List[str] = []
+
+    field_columns = {
+        "kothi": {
+            "name": "k.owner_name",
+            "location": "k.location",
+            "address": "k.address",
+        },
+        "floor": {
+            "name": "e.name",
+            "location": "e.location",
+            "address": "e.address",
+        },
+    }[source]
+
+    for value, column in (
+        (name, field_columns["name"]),
+        (location, field_columns["location"]),
+        (address, field_columns["address"]),
+    ):
+        query = (value or "").strip()
+        if query:
+            clauses.append(f"{column} LIKE %s")
+            params.append(f"%{query}%")
+
+    phone_digits = re.sub(r"[^0-9]", "", phone or "")
+    if phone_digits:
+        phone_key = phone_digits[-10:] if len(phone_digits) >= 10 else phone_digits
+        if source == "kothi":
+            phone_expression = "REGEXP_REPLACE(COALESCE(NULLIF(k.contact, ''), CONCAT_WS('', k.contact_1, k.contact_2), ''), '[^0-9]', '')"
+        else:
+            phone_expression = "REGEXP_REPLACE(COALESCE(e.phone, ''), '[^0-9]', '')"
+        clauses.append(f"{phone_expression} LIKE %s")
+        params.append(f"%{phone_key}%")
+
+    status_query = (status or "").strip()
+    if status_query:
+        status_column = "k.status" if source == "kothi" else "e.status"
+        clauses.append(f"{status_column} LIKE %s")
+        params.append(f"%{status_query}%")
+
+    if message_status == "not_sent":
+        sent_column = "k.last_message_sent_on" if source == "kothi" else "e.last_message_sent_on"
+        clauses.append(f"{sent_column} IS NULL")
+    elif message_status == "sent":
+        sent_column = "k.last_message_sent_on" if source == "kothi" else "e.last_message_sent_on"
+        clauses.append(f"{sent_column} IS NOT NULL")
+
+    if not clauses:
+        return "", []
+    return f" AND {' AND '.join(clauses)}", params
+
 def _legacy_floor_select() -> str:
     return """
         SELECT
@@ -4659,7 +4721,18 @@ def get_mobile_assigned_leads(current_user: dict = Depends(get_current_user), li
         return [_lead_summary(row, user_role, user_id) for row in rows]
 
 @api_router.get("/mobile/enquiries")
-def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: int = 100, category: Optional[str] = None, search: Optional[str] = None):
+def get_mobile_enquiries(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 100,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    name: Optional[str] = None,
+    location: Optional[str] = None,
+    address: Optional[str] = None,
+    phone: Optional[str] = None,
+    status: Optional[str] = None,
+    message_status: Optional[str] = None,
+):
     """Legacy inventory records using the same sources as kothis.php and legacy_leads.php."""
     safe_limit = max(1, min(limit, 300))
     safe_category = category if category in ("kothi", "floor") else "all"
@@ -4674,6 +4747,16 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
         floor_where = _legacy_floor_where()
         kothi_search_clause, kothi_search_params = _legacy_search_clause(search, "kothi")
         floor_search_clause, floor_search_params = _legacy_search_clause(search, "floor")
+        kothi_criteria_clause, kothi_criteria_params = _legacy_search_criteria_clause(
+            "kothi", name, location, address, phone, status, message_status
+        )
+        floor_criteria_clause, floor_criteria_params = _legacy_search_criteria_clause(
+            "floor", name, location, address, phone, status, message_status
+        )
+        kothi_search_clause += kothi_criteria_clause
+        floor_search_clause += floor_criteria_clause
+        kothi_search_params += kothi_criteria_params
+        floor_search_params += floor_criteria_params
 
         cursor.execute("SELECT COUNT(*) as count FROM kothis_details")
         kothi_historical = cursor.fetchone()["count"]
@@ -4718,6 +4801,14 @@ def get_mobile_enquiries(current_user: dict = Depends(get_current_user), limit: 
             "table": "kothis_details,enquiries",
             "category": safe_category,
             "search": search or "",
+            "criteria": {
+                "name": name or "",
+                "location": location or "",
+                "address": address or "",
+                "phone": phone or "",
+                "status": status or "",
+                "message_status": message_status or "all",
+            },
             "total": kothi_count + floor_count,
             "historical_total": kothi_historical + floor_historical,
             "counts": {

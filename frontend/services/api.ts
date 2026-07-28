@@ -300,15 +300,33 @@ export const api = {
     );
   },
 
-  getLegacyInventory: async (category: 'all' | 'kothi' | 'floor' = 'all', search: string = '', options?: CacheFetchOptions) => {
+  getLegacyInventory: async (
+    category: 'all' | 'kothi' | 'floor' = 'all',
+    criteria: {
+      name?: string;
+      location?: string;
+      address?: string;
+      phone?: string;
+      status?: string;
+      messageStatus?: 'all' | 'not_sent' | 'sent';
+    } = {},
+    options?: CacheFetchOptions
+  ) => {
     const params = new URLSearchParams();
     if (category !== 'all') params.append('category', category);
-    if (search.trim()) params.append('search', search.trim());
+    Object.entries(criteria).forEach(([key, value]) => {
+      if (value?.trim() && !(key === 'messageStatus' && value === 'all')) {
+        params.append(key === 'messageStatus' ? 'message_status' : key, value.trim());
+      }
+    });
     const query = params.toString() ? `?${params.toString()}` : '';
-    const cacheKey = `cache_legacy_inventory_${category}_${search.trim().toLowerCase() || 'all'}`;
+    const criteriaKey = ['name', 'location', 'address', 'phone', 'status', 'messageStatus']
+      .map((key) => criteria[key as keyof typeof criteria]?.trim().toLowerCase() || '')
+      .join('_');
+    const cacheKey = `cache_legacy_inventory_${category}_${criteriaKey || 'all'}`;
     return fetchWithCache(
       `${API_URL}/api/mobile/enquiries${query}`,
-      `legacy_inventory_${category}_${search.trim().toLowerCase() || 'all'}`,
+      `legacy_inventory_${category}_${criteriaKey || 'all'}`,
       (data) => cacheService.set(cacheKey, data),
       () => cacheService.get(cacheKey),
       options

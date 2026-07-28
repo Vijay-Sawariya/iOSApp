@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -35,19 +35,38 @@ const openWhatsApp = async (phone?: string, name?: string) => {
   Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
 };
 
+type LegacySearchCriteria = {
+  name: string;
+  location: string;
+  address: string;
+  phone: string;
+  status: string;
+  messageStatus: 'all' | 'not_sent' | 'sent';
+};
+
+const EMPTY_SEARCH: LegacySearchCriteria = {
+  name: '',
+  location: '',
+  address: '',
+  phone: '',
+  status: '',
+  messageStatus: 'all',
+};
+
 export default function EnquiriesScreen() {
   const [items, setItems] = useState<any[]>([]);
   const [counts, setCounts] = useState<any>({});
   const [historicalTotal, setHistoricalTotal] = useState<number | null>(null);
   const [category, setCategory] = useState<'all' | 'kothi' | 'floor'>('all');
-  const [search, setSearch] = useState('');
-  const [submittedSearch, setSubmittedSearch] = useState('');
+  const [showSearchCriteria, setShowSearchCriteria] = useState(false);
+  const [searchCriteria, setSearchCriteria] = useState<LegacySearchCriteria>(EMPTY_SEARCH);
+  const [submittedCriteria, setSubmittedCriteria] = useState<LegacySearchCriteria>(EMPTY_SEARCH);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async (force = false) => {
     try {
-      const response: any = await api.getLegacyInventory(category, submittedSearch, force ? { forceNetwork: true } : undefined);
+      const response: any = await api.getLegacyInventory(category, submittedCriteria, force ? { forceNetwork: true } : undefined);
       setItems(Array.isArray(response?.items) ? response.items : []);
       setCounts(response?.counts || { all: response?.total || 0 });
       setHistoricalTotal(typeof response?.historical_total === 'number' ? response.historical_total : null);
@@ -57,7 +76,7 @@ export default function EnquiriesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category, submittedSearch]);
+  }, [category, submittedCriteria]);
 
   useFocusEffect(
     useCallback(() => {
@@ -70,14 +89,6 @@ export default function EnquiriesScreen() {
     loadData(true);
   };
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setSubmittedSearch(search.trim());
-    }, 400);
-
-    return () => clearTimeout(timeout);
-  }, [search]);
-
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -88,8 +99,24 @@ export default function EnquiriesScreen() {
   }
 
   const applySearch = () => {
-    setSubmittedSearch(search.trim());
+    setSubmittedCriteria({
+      name: searchCriteria.name.trim(),
+      location: searchCriteria.location.trim(),
+      address: searchCriteria.address.trim(),
+      phone: searchCriteria.phone.trim(),
+      status: searchCriteria.status.trim(),
+      messageStatus: searchCriteria.messageStatus,
+    });
   };
+
+  const clearSearch = () => {
+    setSearchCriteria(EMPTY_SEARCH);
+    setSubmittedCriteria(EMPTY_SEARCH);
+  };
+
+  const hasSubmittedCriteria = Object.entries(submittedCriteria).some(
+    ([key, value]) => Boolean(value) && !(key === 'messageStatus' && value === 'all')
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -116,26 +143,110 @@ export default function EnquiriesScreen() {
           <FilterChip label="Floor" count={counts?.floor} active={category === 'floor'} onPress={() => setCategory('floor')} />
         </View>
 
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={colors.inkMuted} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search address, location, name or phone"
-            placeholderTextColor={colors.inkSubtle}
-            value={search}
-            onChangeText={setSearch}
-            returnKeyType="search"
-            onSubmitEditing={applySearch}
+        <TouchableOpacity
+          style={[styles.searchToggle, hasSubmittedCriteria && styles.searchToggleActive]}
+          onPress={() => setShowSearchCriteria((visible) => !visible)}
+        >
+          <View style={styles.searchToggleCopy}>
+            <Ionicons name="options-outline" size={19} color={hasSubmittedCriteria ? colors.primary : colors.ink} />
+            <Text style={[styles.searchToggleText, hasSubmittedCriteria && styles.searchToggleTextActive]}>
+              Search Criteria
+            </Text>
+          </View>
+          <Ionicons
+            name={showSearchCriteria ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={colors.inkMuted}
           />
-          <TouchableOpacity style={styles.searchButton} onPress={applySearch}>
-            <Text style={styles.searchButtonText}>Search</Text>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
 
-        {submittedSearch ? (
+        {showSearchCriteria ? (
+          <View style={styles.searchCriteriaCard}>
+            <SearchField
+              label="Name"
+              icon="person-outline"
+              value={searchCriteria.name}
+              onChangeText={(name) => setSearchCriteria((current) => ({ ...current, name }))}
+              onSubmitEditing={applySearch}
+            />
+            <SearchField
+              label="Location"
+              icon="location-outline"
+              value={searchCriteria.location}
+              onChangeText={(location) => setSearchCriteria((current) => ({ ...current, location }))}
+              onSubmitEditing={applySearch}
+            />
+            <SearchField
+              label="Address"
+              icon="home-outline"
+              value={searchCriteria.address}
+              onChangeText={(address) => setSearchCriteria((current) => ({ ...current, address }))}
+              onSubmitEditing={applySearch}
+            />
+            <SearchField
+              label="Phone"
+              icon="call-outline"
+              value={searchCriteria.phone}
+              onChangeText={(phone) => setSearchCriteria((current) => ({ ...current, phone }))}
+              onSubmitEditing={applySearch}
+              keyboardType="phone-pad"
+            />
+            <SearchField
+              label="Status"
+              icon="flag-outline"
+              value={searchCriteria.status}
+              onChangeText={(status) => setSearchCriteria((current) => ({ ...current, status }))}
+              onSubmitEditing={applySearch}
+            />
+            <View style={styles.searchField}>
+              <Text style={styles.searchFieldLabel}>Messaged Not Sent</Text>
+              <View style={styles.messageStatusRow}>
+                {([
+                  ['all', 'All Leads'],
+                  ['not_sent', 'Not Sent'],
+                  ['sent', 'Sent'],
+                ] as const).map(([value, label]) => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.messageStatusChip,
+                      searchCriteria.messageStatus === value && styles.messageStatusChipActive,
+                    ]}
+                    onPress={() => setSearchCriteria((current) => ({ ...current, messageStatus: value }))}
+                  >
+                    <Text
+                      style={[
+                        styles.messageStatusText,
+                        searchCriteria.messageStatus === value && styles.messageStatusTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <View style={styles.searchActions}>
+              <TouchableOpacity style={styles.clearButton} onPress={clearSearch}>
+                <Text style={styles.clearButtonText}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.searchButton} onPress={applySearch}>
+                <Ionicons name="search" size={16} color={colors.white} />
+                <Text style={styles.searchButtonText}>Search</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {hasSubmittedCriteria ? (
           <View style={styles.searchResultBar}>
-            <Text style={styles.searchResultText} numberOfLines={1}>Search: {submittedSearch}</Text>
-            <TouchableOpacity onPress={() => { setSearch(''); setSubmittedSearch(''); }}>
+            <Text style={styles.searchResultText} numberOfLines={1}>
+              {Object.entries(submittedCriteria)
+                .filter(([key, value]) => value && !(key === 'messageStatus' && value === 'all'))
+                .map(([key, value]) => `${key === 'messageStatus' ? 'message' : key}: ${String(value).replace('_', ' ')}`)
+                .join(' · ')}
+            </Text>
+            <TouchableOpacity onPress={clearSearch}>
               <Ionicons name="close-circle" size={20} color={colors.inkMuted} />
             </TouchableOpacity>
           </View>
@@ -154,6 +265,41 @@ export default function EnquiriesScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function SearchField({
+  label,
+  icon,
+  value,
+  onChangeText,
+  onSubmitEditing,
+  keyboardType = 'default',
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmitEditing: () => void;
+  keyboardType?: 'default' | 'phone-pad';
+}) {
+  return (
+    <View style={styles.searchField}>
+      <Text style={styles.searchFieldLabel}>{label}</Text>
+      <View style={styles.searchInputWrap}>
+        <Ionicons name={icon} size={17} color={colors.inkMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder={`Search by ${label.toLowerCase()}`}
+          placeholderTextColor={colors.inkSubtle}
+          value={value}
+          onChangeText={onChangeText}
+          onSubmitEditing={onSubmitEditing}
+          returnKeyType="search"
+          keyboardType={keyboardType}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -258,8 +404,8 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 12, fontWeight: '800', color: colors.ink },
   filterChipTextActive: { color: colors.white },
   filterChipCount: { fontSize: 11, color: colors.inkMuted, marginTop: 1 },
-  searchBox: {
-    minHeight: 44,
+  searchToggle: {
+    minHeight: 46,
     borderRadius: radii.md,
     backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
@@ -267,17 +413,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
-  searchInput: { flex: 1, fontSize: 14, color: colors.ink, paddingVertical: 8 },
-  searchButton: {
-    minHeight: 32,
+  searchToggleActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  searchToggleCopy: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchToggleText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
+  searchToggleTextActive: { color: colors.primary },
+  searchCriteriaCard: {
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginTop: -4,
+    marginBottom: 12,
+    gap: 10,
+  },
+  searchField: { gap: 5 },
+  searchFieldLabel: { color: colors.inkMuted, fontSize: 12, fontWeight: '700' },
+  searchInputWrap: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 11,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.ink, paddingVertical: 8 },
+  messageStatusRow: { flexDirection: 'row', gap: 7 },
+  messageStatusChip: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  messageStatusChipActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  messageStatusText: { color: colors.inkMuted, fontSize: 11, fontWeight: '800' },
+  messageStatusTextActive: { color: colors.primary },
+  searchActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 2 },
+  clearButton: {
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: 9,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearButtonText: { color: colors.inkMuted, fontSize: 12, fontWeight: '800' },
+  searchButton: {
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   searchButtonText: { color: colors.white, fontSize: 12, fontWeight: '800' },
   searchResultBar: {
