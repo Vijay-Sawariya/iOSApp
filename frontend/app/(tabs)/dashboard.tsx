@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
   Linking,
   TextInput,
 } from 'react-native';
@@ -14,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
-import { api } from '../../services/api';
+import { api, isRequestTimeout } from '../../services/api';
 import { notificationService } from '../../services/notificationService';
 import { canViewSensitiveData } from '../../constants/leadOptions';
 import { colors, radii, shadows } from '../../constants/theme';
@@ -94,27 +93,34 @@ export default function DashboardScreen() {
   const [pricingData, setPricingData] = useState<DashboardLocationPricing[]>([]);
   const [pricingSearch, setPricingSearch] = useState('');
   const [expandedPricingLocationId, setExpandedPricingLocationId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      const [statsData, followupsData, matchesData, pricingRows] = await Promise.all([
-        api.getDashboardStats(),
-        api.getUrgentFollowups(5).catch(() => []),
-        api.getSmartMatches(3).catch(() => []),
-        api.getAllPricing().catch(() => []),
-      ]);
-      setStats(statsData);
-      setUrgentFollowups(followupsData);
-      setSmartMatches(matchesData);
-      setPricingData(Array.isArray(pricingRows) ? pricingRows : []);
-    } catch (error) {
-      console.error('Dashboard fetch error:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const fetchData = (isRefresh = false) => {
+    void api.getDashboardStats()
+      .then(setStats)
+      .catch((error) => {
+        if (!isRequestTimeout(error)) console.error('Dashboard stats fetch error:', error);
+      })
+      .finally(() => {
+        if (isRefresh) setRefreshing(false);
+      });
+
+    void api.getUrgentFollowups(5)
+      .then(setUrgentFollowups)
+      .catch((error) => {
+        if (!isRequestTimeout(error)) console.warn('Urgent follow-ups fetch error:', error);
+      });
+    void api.getSmartMatches(3)
+      .then(setSmartMatches)
+      .catch((error) => {
+        if (!isRequestTimeout(error)) console.warn('Smart matches fetch error:', error);
+      });
+    void api.getAllPricing()
+      .then((rows) => setPricingData(Array.isArray(rows) ? rows : []))
+      .catch((error) => {
+        if (!isRequestTimeout(error)) console.warn('Pricing fetch error:', error);
+      });
+
   };
 
   useFocusEffect(
@@ -129,7 +135,7 @@ export default function DashboardScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchData();
+    fetchData(true);
   };
 
   const handleCall = (phone: string) => {
@@ -153,15 +159,6 @@ export default function DashboardScreen() {
       Linking.openURL(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(message)}`);
     }
   };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading Dashboard...</Text>
-      </View>
-    );
-  }
 
   const funnelTotal = (stats?.new_leads || 0) + (stats?.contacted_leads || 0) + (stats?.qualified_leads || 0) + (stats?.negotiating_leads || 0) + (stats?.won_leads || 0);
   const filteredPricingRows = pricingData

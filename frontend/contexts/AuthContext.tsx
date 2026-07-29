@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useRef, useCallb
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, setAuthToken, initializeAuthToken } from '../services/api';
+import { api, setAuthToken, initializeAuthToken, isRequestTimeout } from '../services/api';
 import { API_URL } from '../constants/config';
 
 // Render cold starts can exceed 30 seconds before the database is ready.
@@ -50,6 +50,8 @@ const storage = {
     }
   }
 };
+
+const getFeatureFlagsCacheKey = (token: string) => `featureFlags_${token.slice(-16)}`;
 
 interface User {
   id: string;
@@ -100,22 +102,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setFeatureFlagsLoading(false);
       return;
     }
-    setFeatureFlagsLoading(true);
+
+    const cacheKey = getFeatureFlagsCacheKey(token);
+    const scopedCached = await storage.getItem(cacheKey);
+    const legacyCached = scopedCached ? null : await storage.getItem('featureFlags');
+    const cached = scopedCached || legacyCached;
+    if (cached) {
+      try {
+        setFeatureFlags(JSON.parse(cached));
+        if (legacyCached) {
+          await storage.setItem(cacheKey, legacyCached);
+          await storage.deleteItem('featureFlags');
+        }
+      } catch {
+        await storage.deleteItem(cacheKey);
+      }
+      setFeatureFlagsLoading(false);
+    } else {
+      setFeatureFlagsLoading(true);
+    }
+
     try {
       const result = await api.getFeatureFlags();
       const flags = result?.flags || {};
       setFeatureFlags(flags);
-      await storage.setItem('featureFlags', JSON.stringify(flags));
+      await storage.setItem(cacheKey, JSON.stringify(flags));
     } catch (error) {
-      console.error('Failed to refresh feature flags:', error);
-      const cached = await storage.getItem('featureFlags');
-      setFeatureFlags(cached ? JSON.parse(cached) : {});
+      if (!isRequestTimeout(error)) {
+        console.error('Failed to refresh feature flags:', error);
+      }
+      if (!cached) setFeatureFlags({});
     } finally {
       setFeatureFlagsLoading(false);
     }
   }, [token]);
 
   const hasFeature = useCallback((featureKey: string) => {
+    if (Object.keys(featureFlags).length === 0) return false;
     return featureFlags[featureKey] !== false;
   }, [featureFlags]);
 
@@ -221,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await storage.deleteItem('token');
           await storage.deleteItem('user');
           await storage.deleteItem('lastActivity');
+          await storage.deleteItem(getFeatureFlagsCacheKey(storedToken));
           setAuthToken(null);
           // Show alert after a short delay so the UI is ready
           setTimeout(() => {
@@ -245,7 +269,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(storedToken);
           setUser(user);
           setAuthToken(storedToken);  // Set token for API calls
-          void api.preloadCoreData();
           // Update last activity since user is active
           await updateLastActivity();
         }
@@ -270,6 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storage.deleteItem('token');
       await storage.deleteItem('user');
       await storage.deleteItem('lastActivity');
+      if (token) await storage.deleteItem(getFeatureFlagsCacheKey(token));
       await storage.deleteItem('featureFlags');
       setFeatureFlags({});
     } catch (error) {
@@ -310,7 +334,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthToken(data.access_token);  // Set token for API calls
         await storage.setItem('token', data.access_token);
         await storage.setItem('user', JSON.stringify(data.user));
-        void api.preloadCoreData();
         // Set last activity on successful login
         await updateLastActivity();
         return true;

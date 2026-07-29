@@ -10,6 +10,23 @@ type CacheFetchOptions = {
   forceNetwork?: boolean;
 };
 
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 8000
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+export const isRequestTimeout = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'AbortError';
+
 export const setAuthToken = (token: string | null) => {
   console.log('setAuthToken called with:', token ? 'token present' : 'null');
   authToken = token;
@@ -86,7 +103,7 @@ const fetchWithCache = async <T>(
   options: CacheFetchOptions = {}
 ): Promise<T> => {
   const refreshFromNetwork = async (): Promise<T> => {
-    const response = await fetch(url, { headers: getHeaders() });
+    const response = await fetchWithTimeout(url, { headers: getHeaders() });
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         let errorMsg = 'Authentication error. Please log in again.';
@@ -121,7 +138,9 @@ const fetchWithCache = async <T>(
       void cacheService.isOnline().then((isOnline) => {
         if (!isOnline) return;
         return refreshFromNetwork().catch((error) => {
-          console.log(`Background refresh failed for ${cacheKey}:`, error);
+          if (!isRequestTimeout(error)) {
+            console.log(`Background refresh failed for ${cacheKey}:`, error);
+          }
         });
       });
     }
@@ -141,9 +160,9 @@ const fetchWithCache = async <T>(
 
 export const api = {
   getFeatureFlags: async (): Promise<{ is_admin: boolean; flags: Record<string, boolean> }> => {
-    const response = await fetch(`${API_URL}/api/user/feature-flags`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/user/feature-flags`, {
       headers: getHeaders(),
-    });
+    }, 5000);
     if (!response.ok) {
       throw new Error(await getApiErrorMessage(response, 'Failed to load feature access'));
     }
@@ -792,7 +811,7 @@ export const api = {
 
   // Tentative Pricing APIs
   getAllPricing: async () => {
-    const response = await fetch(`${API_URL}/api/pricing`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/pricing`, {
       headers: getHeaders(),
     });
     if (!response.ok) {

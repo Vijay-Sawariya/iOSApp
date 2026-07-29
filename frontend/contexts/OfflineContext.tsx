@@ -122,7 +122,8 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
           const shouldSync = !syncTime || (Date.now() - syncTime.getTime() > 30 * 60 * 1000);
           if (shouldSync) {
             console.log('Data is stale - triggering auto-sync...');
-            setTimeout(() => triggerSync(), 1000);
+            // Let navigation and the first screen settle before background sync.
+            setTimeout(() => triggerSync(), 15000);
           } else {
             console.log('Data is fresh - skipping auto-sync');
           }

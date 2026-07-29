@@ -58,7 +58,7 @@ function RootLayoutContent() {
   }, [featureFlagsLoading, hasFeature, pathname, token]);
 
   // Show loading screen while initializing offline database
-  if (!isInitialized || (token && featureFlagsLoading)) {
+  if (!isInitialized) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
