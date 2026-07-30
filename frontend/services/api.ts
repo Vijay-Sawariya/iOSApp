@@ -362,6 +362,34 @@ export const api = {
     );
   },
 
+  updateLegacyInventoryStatus: async (source: string, legacyId: number, status: string) => {
+    const response = await fetchWithTimeout(
+      `${API_URL}/api/mobile/legacy-inventory/${encodeURIComponent(source)}/${legacyId}/status`,
+      {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ status }),
+      }
+    );
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to update legacy status'));
+    }
+    await cacheService.clearLegacyInventory();
+    return response.json();
+  },
+
+  deleteLegacyInventory: async (source: string, legacyId: number) => {
+    const response = await fetchWithTimeout(
+      `${API_URL}/api/mobile/legacy-inventory/${encodeURIComponent(source)}/${legacyId}`,
+      { method: 'DELETE', headers: getHeaders() }
+    );
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to delete legacy inventory'));
+    }
+    await cacheService.clearLegacyInventory();
+    return response.json();
+  },
+
   convertEnquiry: async (enquiryId: number) => {
     const response = await fetch(`${API_URL}/api/mobile/enquiries/${enquiryId}/convert`, {
       method: 'POST',

@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -260,7 +262,22 @@ export default function EnquiriesScreen() {
           </View>
         ) : (
           items.map((item) => (
-            <LegacyInventoryCard key={`${item.legacy_source || 'legacy'}-${item.id}`} item={item} />
+            <LegacyInventoryCard
+              key={`${item.legacy_source || 'legacy'}-${item.id}`}
+              item={item}
+              onStatusChanged={(status) => {
+                setItems((current) => current.map((row) =>
+                  row.id === item.id && row.legacy_source === item.legacy_source
+                    ? { ...row, status }
+                    : row
+                ));
+              }}
+              onDeleted={() => {
+                setItems((current) => current.filter((row) =>
+                  !(row.id === item.id && row.legacy_source === item.legacy_source)
+                ));
+              }}
+            />
           ))
         )}
       </ScrollView>
@@ -303,9 +320,110 @@ function SearchField({
   );
 }
 
-function LegacyInventoryCard({ item }: { item: any }) {
+const LEGACY_ACTIONS: Array<{
+  label: string;
+  status: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+}> = [
+  { label: 'Mark Potential / Set Follow-up', status: 'Potential', icon: 'star', color: '#EAB308' },
+  { label: 'Contacted', status: 'Contacted', icon: 'headset', color: '#2563EB' },
+  { label: 'Pending', status: 'Pending', icon: 'time-outline', color: '#D97706' },
+  { label: 'Not Interested', status: 'Not Interested', icon: 'ban-outline', color: '#64748B' },
+  { label: 'Invalid Number', status: 'Invalid Number', icon: 'close-circle', color: '#DC2626' },
+  { label: 'Sold', status: 'Sold', icon: 'hand-left-outline', color: '#059669' },
+  { label: 'Not Picking Call', status: 'Not Picking Call', icon: 'call-outline', color: '#D97706' },
+];
+
+function LegacyInventoryCard({
+  item,
+  onStatusChanged,
+  onDeleted,
+}: {
+  item: any;
+  onStatusChanged: (status: string) => void;
+  onDeleted: () => void;
+}) {
   const canViewSensitive = item.can_view_sensitive !== false;
   const hasCallablePhone = canViewSensitive && !!item.phone;
+  const [showActions, setShowActions] = useState(false);
+  const [updating, setUpdating] = useState(false);
+
+  const updateStatus = (status: string) => {
+    setShowActions(false);
+    Alert.alert(
+      'Update legacy status',
+      `Change ${item.name || 'this record'} to ${status}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Update',
+          onPress: async () => {
+            setUpdating(true);
+            try {
+              await api.updateLegacyInventoryStatus(item.legacy_source, Number(item.id), status);
+              onStatusChanged(status);
+            } catch (error: any) {
+              Alert.alert('Unable to update', error?.message || 'Please try again.');
+            } finally {
+              setUpdating(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const openConvertForm = () => {
+    setShowActions(false);
+    router.push({
+      pathname: '/leads/add',
+      params: {
+        type: 'inventory',
+        legacyId: String(item.id),
+        legacySource: item.legacy_source || 'enquiries',
+        name: item.name || '',
+        phone: canViewSensitive ? item.phone || '' : '',
+        location: item.location || '',
+        address: canViewSensitive ? item.address || '' : '',
+        propertyType: item.property_type || item.flat_type || '',
+        bhk: item.bhk || '',
+        floor: item.floor || '',
+        areaSize: item.area_size || '',
+        budgetMin: item.budget_min || '',
+        budgetMax: item.budget_max || '',
+        unit: item.unit || 'CR',
+        notes: item.notes || '',
+      },
+    } as any);
+  };
+
+  const deleteRecord = () => {
+    setShowActions(false);
+    Alert.alert(
+      'Delete legacy record',
+      'This record will be removed from Legacy Inventory.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setUpdating(true);
+            try {
+              await api.deleteLegacyInventory(item.legacy_source, Number(item.id));
+              onDeleted();
+            } catch (error: any) {
+              Alert.alert('Unable to delete', error?.message || 'Please try again.');
+            } finally {
+              setUpdating(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
@@ -334,15 +452,54 @@ function LegacyInventoryCard({ item }: { item: any }) {
         <TouchableOpacity style={[styles.iconAction, !hasCallablePhone && styles.disabledAction]} onPress={() => openWhatsApp(item.phone, item.name)} disabled={!hasCallablePhone}>
           <Ionicons name="logo-whatsapp" size={17} color={hasCallablePhone ? '#25D366' : colors.inkSubtle} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.convertButton}
-          onPress={() => router.push(`/leads/add?type=inventory&name=${encodeURIComponent(item.name || '')}&phone=${encodeURIComponent(canViewSensitive ? item.phone || '' : '')}` as any)}
-        >
-          <Ionicons name="add-circle-outline" size={16} color={colors.white} />
-          <Text style={styles.convertButtonText}>Add Inventory</Text>
+        <TouchableOpacity style={styles.convertButton} onPress={() => setShowActions(true)} disabled={updating}>
+          {updating ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <Ionicons name="ellipsis-horizontal" size={17} color={colors.white} />
+          )}
+          <Text style={styles.convertButtonText}>Action</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
+        <Pressable style={styles.actionOverlay} onPress={() => setShowActions(false)}>
+          <Pressable style={styles.actionSheet} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.actionSheetHandle} />
+            <Text style={styles.actionSheetTitle}>Legacy Lead Actions</Text>
+            <Text style={styles.actionSheetSubtitle} numberOfLines={1}>{item.name || 'Legacy inventory'}</Text>
+            {LEGACY_ACTIONS.slice(0, 3).map((action) => (
+              <ActionMenuRow key={action.status} {...action} onPress={() => updateStatus(action.status)} />
+            ))}
+            <ActionMenuRow label="Convert" icon="checkmark-circle" color="#059669" onPress={openConvertForm} />
+            {LEGACY_ACTIONS.slice(3).map((action) => (
+              <ActionMenuRow key={action.status} {...action} onPress={() => updateStatus(action.status)} />
+            ))}
+            <View style={styles.actionDivider} />
+            <ActionMenuRow label="Delete record" icon="trash-outline" color="#DC2626" onPress={deleteRecord} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+function ActionMenuRow({
+  label,
+  icon,
+  color,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.actionMenuRow} onPress={onPress}>
+      <Ionicons name={icon} size={20} color={color} />
+      <Text style={[styles.actionMenuLabel, label === 'Delete record' && { color }]}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -532,6 +689,7 @@ const styles = StyleSheet.create({
   },
   disabledAction: { opacity: 0.55 },
   convertButton: {
+    marginLeft: 'auto',
     minHeight: 34,
     paddingHorizontal: 12,
     borderRadius: 9,
@@ -542,4 +700,36 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   convertButtonText: { color: colors.white, fontWeight: '800', fontSize: 12 },
+  actionOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  actionSheet: {
+    backgroundColor: colors.surfaceRaised,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  actionSheetHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  actionSheetTitle: { color: colors.ink, fontSize: 20, fontWeight: '800' },
+  actionSheetSubtitle: { color: colors.inkMuted, fontSize: 12, marginTop: 3, marginBottom: 10 },
+  actionMenuRow: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    paddingHorizontal: 4,
+  },
+  actionMenuLabel: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '600' },
+  actionDivider: { height: 1, backgroundColor: colors.border, marginVertical: 5 },
 });

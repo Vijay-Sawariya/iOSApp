@@ -58,8 +58,32 @@ interface Builder {
   company_name?: string;
 }
 
+const POSSESSION_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const toPossessionDate = (month: string, year: string): string | null => {
+  const monthIndex = POSSESSION_MONTHS.indexOf(month);
+  return monthIndex >= 0 && /^\d{4}$/.test(year)
+    ? `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`
+    : null;
+};
+
 export default function AddLeadScreen() {
-  const params = useLocalSearchParams<{ type?: string }>();
+  const params = useLocalSearchParams<{
+    type?: string;
+    legacyId?: string;
+    legacySource?: string;
+    name?: string;
+    phone?: string;
+    location?: string;
+    address?: string;
+    propertyType?: string;
+    bhk?: string;
+    floor?: string;
+    areaSize?: string;
+    budgetMin?: string;
+    budgetMax?: string;
+    unit?: string;
+    notes?: string;
+  }>();
   const { isOnline } = useOffline();
   const isClientForm = params.type === 'client';
   const isInventoryForm = params.type === 'inventory' || !params.type; // Default to inventory
@@ -70,39 +94,46 @@ export default function AddLeadScreen() {
   const [fetchingLocation, setFetchingLocation] = useState(false);
   
   // Basic Info
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [name, setName] = useState(params.name || '');
+  const [phone, setPhone] = useState(params.phone || '');
   
   // Lead Classification - default based on form type
   const [leadType, setLeadType] = useState(isClientForm ? 'buyer' : 'seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
-  const [leadStatus, setLeadStatus] = useState('Under construction');
-  const [leadSource, setLeadSource] = useState('');
+  const [leadStatus, setLeadStatus] = useState('New');
+  const [inventoryStatuses, setInventoryStatuses] = useState<string[]>(['Available']);
+  const [leadSource, setLeadSource] = useState(params.legacyId ? 'Legacy Enquiry' : '');
   const [builderId, setBuilderId] = useState('');
   
   // Property Details
-  const [location, setLocation] = useState('');
+  const [location, setLocation] = useState(params.location || '');
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For Clients multi-select
-  const [address, setAddress] = useState('');
-  const [propertyType, setPropertyType] = useState('');
-  const [bhk, setBhk] = useState('');
-  const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
-  const [areaSize, setAreaSize] = useState('');
+  const [address, setAddress] = useState(params.address || '');
+  const [propertyType, setPropertyType] = useState(params.propertyType || '');
+  const [bhk, setBhk] = useState(params.bhk || '');
+  const [selectedFloors, setSelectedFloors] = useState<string[]>(
+    (params.floor || '').split(',').map((floor) => floor.trim()).filter(Boolean)
+  );
+  const [areaSize, setAreaSize] = useState(params.areaSize || '');
   const [facing, setFacing] = useState('');
   const [selectedFacings, setSelectedFacings] = useState<string[]>([]); // For Clients multi-select
   
   // Budget (for Clients)
-  const [budgetMin, setBudgetMin] = useState('');
-  const [budgetMax, setBudgetMax] = useState('');
-  const [unit, setUnit] = useState('CR');
+  const [budgetMin, setBudgetMin] = useState(params.budgetMin || '');
+  const [budgetMax, setBudgetMax] = useState(params.budgetMax || '');
+  const [unit, setUnit] = useState((params.unit || 'CR').toUpperCase());
   
   // Floor-wise Pricing (for Inventory)
-  const [floorPrices, setFloorPrices] = useState<FloorPrice[]>([]);
+  const [floorPrices, setFloorPrices] = useState<FloorPrice[]>(() => {
+    const amount = params.budgetMax || params.budgetMin || '';
+    return (params.floor || '').split(',').map((floor) => floor.trim()).filter(Boolean)
+      .map((floor) => ({ floor, price: amount }));
+  });
   
   // Other
   const [parking, setParking] = useState('');
   const [lift, setLift] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(params.notes || '');
   const [googleMapUrl, setGoogleMapUrl] = useState('');
   
   // New Inventory fields
@@ -131,7 +162,7 @@ export default function AddLeadScreen() {
   useEffect(() => {
     // Set default status based on lead type
     if (isInventory) {
-      setLeadStatus('Under construction');
+      setInventoryStatuses((current) => current.length > 0 ? current : ['Available']);
     } else {
       setLeadStatus('New');
     }
@@ -216,18 +247,26 @@ export default function AddLeadScreen() {
   // Build comma-separated amenities string
   const getRequiredAmenities = (): string => {
     const selected: string[] = [];
-    if (amenities.park_facing) selected.push('Park Facing');
-    if (amenities.park_at_rear) selected.push('Park at Rear');
-    if (amenities.wide_road) selected.push('Wide Road');
-    if (amenities.peaceful_location) selected.push('Peaceful Location');
-    if (amenities.main_road) selected.push('Main Road');
-    if (amenities.corner) selected.push('Corner');
+    if (amenities.park_facing) selected.push('park_facing');
+    if (amenities.park_at_rear) selected.push('park_at_rear');
+    if (amenities.wide_road) selected.push('wide_road');
+    if (amenities.peaceful_location) selected.push('peaceful_location');
+    if (amenities.main_road) selected.push('main_road');
+    if (amenities.corner) selected.push('corner');
     return selected.join(', ');
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name is required');
+      return;
+    }
+    if (!phone.trim()) {
+      Alert.alert('Error', 'Phone is required');
+      return;
+    }
+    if (leadType === 'agent' && !builderId) {
+      Alert.alert('Error', 'Please select an agent or builder for Agent Inventory');
       return;
     }
 
@@ -238,7 +277,7 @@ export default function AddLeadScreen() {
         phone: phone.trim(),
         lead_type: leadType,
         lead_temperature: leadTemperature,
-        lead_status: leadStatus,
+        lead_status: isInventory ? inventoryStatuses.join(',') : leadStatus,
         property_type: propertyType,
         bhk,
         floor: selectedFloors.join(', '),
@@ -256,6 +295,8 @@ export default function AddLeadScreen() {
         peaceful_location: amenities.peaceful_location ? 1 : 0,
         main_road: amenities.main_road ? 1 : 0,
         corner: amenities.corner ? 1 : 0,
+        lead_source: leadSource || null,
+        Property_locationUrl: googleMapUrl.trim() || null,
       };
 
       if (isClient) {
@@ -270,14 +311,11 @@ export default function AddLeadScreen() {
         leadData.location = location;
         leadData.address = address.trim();
         leadData.building_facing = facing;
-        leadData.Property_locationUrl = googleMapUrl.trim();
         leadData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
         
         // Possession On - combine month and year
-        if (possessionMonth && possessionYear) {
-          leadData.possession_on = `${possessionMonth} ${possessionYear}`;
-        }
-        leadData.how_old = howOld || null;
+        leadData.possession_on = toPossessionDate(possessionMonth, possessionYear);
+        leadData.property_age = howOld || null;
         
         if (builderId) {
           leadData.builder_id = parseInt(builderId);
@@ -285,11 +323,26 @@ export default function AddLeadScreen() {
       }
 
       const created = await api.createLead(leadData);
+      let legacyStatusUpdated = false;
+      if (!created?.is_pending_sync && params.legacyId && params.legacySource) {
+        try {
+          await api.updateLegacyInventoryStatus(
+            params.legacySource,
+            Number(params.legacyId),
+            'Converted'
+          );
+          legacyStatusUpdated = true;
+        } catch (error) {
+          console.warn('Lead created but legacy conversion status could not be updated:', error);
+        }
+      }
       Alert.alert(
         created?.is_pending_sync ? 'Saved Offline' : 'Success',
         created?.is_pending_sync
           ? 'Lead saved on this device and will sync when internet is available.'
-          : 'Lead created successfully',
+          : params.legacyId && !legacyStatusUpdated
+            ? 'Lead created successfully. Legacy status will need to be updated when the server is available.'
+            : 'Lead created successfully',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -388,22 +441,34 @@ export default function AddLeadScreen() {
             options={[...LEAD_TEMPERATURES]}
             onSelect={setLeadTemperature}
           />
-          <CustomDropdown
-            label="Status"
-            value={leadStatus}
-            options={isInventory ? [...INVENTORY_STATUSES] : [...CLIENT_STATUSES]}
-            onSelect={setLeadStatus}
-          />
-          {/* Lead Source - Only for Client leads */}
-          {isClient && (
+          {isInventory ? (
+            <SearchableMultiSelect
+              label="Property Status"
+              selectedValues={inventoryStatuses}
+              options={[...INVENTORY_STATUSES]}
+              onToggle={(status) => setInventoryStatuses((current) =>
+                current.includes(status)
+                  ? current.filter((value) => value !== status)
+                  : [...current, status]
+              )}
+              placeholder="Select property status"
+              searchPlaceholder="Search status..."
+            />
+          ) : (
             <CustomDropdown
-              label="Lead Source"
-              value={leadSource}
-              options={[...LEAD_SOURCES]}
-              onSelect={setLeadSource}
-              placeholder="Select Lead Source"
+              label="Status"
+              value={leadStatus}
+              options={[...CLIENT_STATUSES]}
+              onSelect={setLeadStatus}
             />
           )}
+          <CustomDropdown
+            label="Lead Source"
+            value={leadSource}
+            options={[...LEAD_SOURCES]}
+            onSelect={setLeadSource}
+            placeholder="Select Lead Source"
+          />
         </View>
 
         {/* Property Details */}
@@ -431,39 +496,37 @@ export default function AddLeadScreen() {
             />
           )}
 
-          {/* Address & Google Map URL - Only for Inventory */}
+          {/* Inventory address */}
           {isInventory && (
-            <>
-              <FormInput
-                label="Address"
-                value={address}
-                onChangeText={setAddress}
-                placeholder="Enter property address"
-              />
-
-              <Text style={styles.label}>Google Map URL</Text>
-              <View style={styles.mapUrlRow}>
-                <TextInput
-                  style={styles.mapUrlInput}
-                  value={googleMapUrl}
-                  onChangeText={setGoogleMapUrl}
-                  placeholder="https://maps.google.com/..."
-                  placeholderTextColor="#9CA3AF"
-                />
-                <TouchableOpacity
-                  style={styles.locationButton}
-                  onPress={fetchCurrentLocation}
-                  disabled={fetchingLocation}
-                >
-                  {fetchingLocation ? (
-                    <ActivityIndicator size="small" color="#3B82F6" />
-                  ) : (
-                    <Ionicons name="location" size={22} color="#3B82F6" />
-                  )}
-                </TouchableOpacity>
-              </View>
-            </>
+            <FormInput
+              label="Address"
+              value={address}
+              onChangeText={setAddress}
+              placeholder="Enter property address"
+            />
           )}
+
+          <Text style={styles.label}>Google Map URL</Text>
+          <View style={styles.mapUrlRow}>
+            <TextInput
+              style={styles.mapUrlInput}
+              value={googleMapUrl}
+              onChangeText={setGoogleMapUrl}
+              placeholder="https://maps.google.com/..."
+              placeholderTextColor="#9CA3AF"
+            />
+            <TouchableOpacity
+              style={styles.locationButton}
+              onPress={fetchCurrentLocation}
+              disabled={fetchingLocation}
+            >
+              {fetchingLocation ? (
+                <ActivityIndicator size="small" color="#3B82F6" />
+              ) : (
+                <Ionicons name="location" size={22} color="#3B82F6" />
+              )}
+            </TouchableOpacity>
+          </View>
 
           <CustomDropdown
             label="Property Type"
@@ -630,7 +693,7 @@ export default function AddLeadScreen() {
                   <CustomDropdown
                     label=""
                     value={possessionMonth}
-                    options={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']}
+                    options={POSSESSION_MONTHS}
                     onSelect={setPossessionMonth}
                     placeholder="Month"
                   />

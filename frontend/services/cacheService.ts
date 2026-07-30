@@ -98,6 +98,16 @@ class CacheService {
     }
   }
 
+  async clearLegacyInventory(): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const legacyKeys = keys.filter(key => key.startsWith('cache_legacy_inventory_'));
+      if (legacyKeys.length > 0) await AsyncStorage.multiRemove(legacyKeys);
+    } catch (error) {
+      console.error('Error clearing legacy inventory cache:', error);
+    }
+  }
+
   // Get last sync time
   async getLastSync(): Promise<Date | null> {
     try {

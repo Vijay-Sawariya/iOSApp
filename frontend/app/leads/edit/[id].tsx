@@ -47,6 +47,7 @@ import {
   LOCATIONS,
   AMENITIES,
   HOW_OLD_OPTIONS,
+  LEAD_SOURCES,
   FloorPrice,
   isInventoryType,
   isClientType,
@@ -58,6 +59,14 @@ interface Builder {
   phone?: string;
   company_name?: string;
 }
+
+const POSSESSION_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const toPossessionDate = (month: string, year: string): string | null => {
+  const monthIndex = POSSESSION_MONTHS.indexOf(month);
+  return monthIndex >= 0 && /^\d{4}$/.test(year)
+    ? `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`
+    : null;
+};
 
 export default function EditLeadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -77,6 +86,8 @@ export default function EditLeadScreen() {
   const [leadType, setLeadType] = useState('seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('');
+  const [inventoryStatuses, setInventoryStatuses] = useState<string[]>([]);
+  const [leadSource, setLeadSource] = useState('');
   const [builderId, setBuilderId] = useState('');
   
   // Property Details
@@ -154,6 +165,12 @@ export default function EditLeadScreen() {
       setLeadType(data.lead_type || 'seller');
       setLeadTemperature(data.lead_temperature || 'Hot');
       setLeadStatus(data.lead_status || '');
+      setInventoryStatuses(
+        isInventoryType(data.lead_type)
+          ? (data.lead_status || '').split(',').map((status: string) => status.trim()).filter(Boolean)
+          : []
+      );
+      setLeadSource(data.lead_source || '');
       setBuilderId(data.builder_id?.toString() || '');
       
       // Property Details
@@ -189,25 +206,28 @@ export default function EditLeadScreen() {
       
       // Possession On and How Old (for inventory)
       if (data.possession_on) {
-        const parts = data.possession_on.split(' ');
-        if (parts.length >= 2) {
-          setPossessionMonth(parts[0]);
-          setPossessionYear(parts[1]);
-        } else if (parts.length === 1) {
-          // Might be just year
-          setPossessionYear(parts[0]);
+        const dateMatch = String(data.possession_on).match(/^(\d{4})-(\d{2})/);
+        if (dateMatch) {
+          setPossessionYear(dateMatch[1]);
+          setPossessionMonth(POSSESSION_MONTHS[Number(dateMatch[2]) - 1] || '');
+        } else {
+          const parts = String(data.possession_on).split(' ');
+          if (parts.length >= 2) {
+            setPossessionMonth(parts[0]);
+            setPossessionYear(parts[1]);
+          }
         }
       }
-      setHowOld(data.how_old?.toString() || '');
+      setHowOld((data.property_age ?? data.how_old)?.toString() || '');
       
       // Amenities - check both individual fields and required_amenities
       const requiredAmenities = (data.required_amenities || '').toLowerCase();
       setAmenities({
-        park_facing: data.park_facing === 1 || data.park_facing === true || requiredAmenities.includes('park facing'),
-        park_at_rear: data.park_at_rear === 1 || data.park_at_rear === true || requiredAmenities.includes('park at rear'),
-        wide_road: data.wide_road === 1 || data.wide_road === true || requiredAmenities.includes('wide road'),
-        peaceful_location: data.peaceful_location === 1 || data.peaceful_location === true || requiredAmenities.includes('peaceful'),
-        main_road: data.main_road === 1 || data.main_road === true || requiredAmenities.includes('main road'),
+        park_facing: data.park_facing === 1 || data.park_facing === true || requiredAmenities.includes('park_facing') || requiredAmenities.includes('park facing'),
+        park_at_rear: data.park_at_rear === 1 || data.park_at_rear === true || requiredAmenities.includes('park_at_rear') || requiredAmenities.includes('park at rear'),
+        wide_road: data.wide_road === 1 || data.wide_road === true || requiredAmenities.includes('wide_road') || requiredAmenities.includes('wide road'),
+        peaceful_location: data.peaceful_location === 1 || data.peaceful_location === true || requiredAmenities.includes('peaceful_location') || requiredAmenities.includes('peaceful'),
+        main_road: data.main_road === 1 || data.main_road === true || requiredAmenities.includes('main_road') || requiredAmenities.includes('main road'),
         corner: data.corner === 1 || data.corner === true || requiredAmenities.includes('corner'),
       });
       
@@ -298,18 +318,26 @@ export default function EditLeadScreen() {
   // Build comma-separated amenities string
   const getRequiredAmenities = (): string => {
     const selected: string[] = [];
-    if (amenities.park_facing) selected.push('Park Facing');
-    if (amenities.park_at_rear) selected.push('Park at Rear');
-    if (amenities.wide_road) selected.push('Wide Road');
-    if (amenities.peaceful_location) selected.push('Peaceful Location');
-    if (amenities.main_road) selected.push('Main Road');
-    if (amenities.corner) selected.push('Corner');
+    if (amenities.park_facing) selected.push('park_facing');
+    if (amenities.park_at_rear) selected.push('park_at_rear');
+    if (amenities.wide_road) selected.push('wide_road');
+    if (amenities.peaceful_location) selected.push('peaceful_location');
+    if (amenities.main_road) selected.push('main_road');
+    if (amenities.corner) selected.push('corner');
     return selected.join(', ');
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Name is required');
+      return;
+    }
+    if (!phone.trim()) {
+      Alert.alert('Error', 'Phone is required');
+      return;
+    }
+    if (leadType === 'agent' && !builderId) {
+      Alert.alert('Error', 'Please select an agent or builder for Agent Inventory');
       return;
     }
 
@@ -320,7 +348,8 @@ export default function EditLeadScreen() {
         phone: phone.trim(),
         lead_type: leadType,
         lead_temperature: leadTemperature,
-        lead_status: leadStatus,
+        lead_status: isInventory ? inventoryStatuses.join(',') : leadStatus,
+        lead_source: leadSource || null,
         property_type: propertyType,
         bhk,
         floor: selectedFloors.join(', '),
@@ -338,6 +367,7 @@ export default function EditLeadScreen() {
         peaceful_location: amenities.peaceful_location ? 1 : 0,
         main_road: amenities.main_road ? 1 : 0,
         corner: amenities.corner ? 1 : 0,
+        Property_locationUrl: googleMapUrl.trim() || null,
       };
 
       if (isClient) {
@@ -351,14 +381,11 @@ export default function EditLeadScreen() {
         updateData.location = location;
         updateData.address = address.trim();
         updateData.building_facing = facing;
-        updateData.Property_locationUrl = googleMapUrl.trim();
         updateData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
         
         // Possession On - combine month and year
-        if (possessionMonth && possessionYear) {
-          updateData.possession_on = `${possessionMonth} ${possessionYear}`;
-        }
-        updateData.how_old = howOld || null;
+        updateData.possession_on = toPossessionDate(possessionMonth, possessionYear);
+        updateData.property_age = howOld || null;
         
         if (builderId) {
           updateData.builder_id = parseInt(builderId);
@@ -480,11 +507,33 @@ export default function EditLeadScreen() {
             options={[...LEAD_TEMPERATURES]}
             onSelect={setLeadTemperature}
           />
+          {isInventory ? (
+            <SearchableMultiSelect
+              label="Property Status"
+              selectedValues={inventoryStatuses}
+              options={[...INVENTORY_STATUSES]}
+              onToggle={(status) => setInventoryStatuses((current) =>
+                current.includes(status)
+                  ? current.filter((value) => value !== status)
+                  : [...current, status]
+              )}
+              placeholder="Select property status"
+              searchPlaceholder="Search status..."
+            />
+          ) : (
+            <CustomDropdown
+              label="Status"
+              value={leadStatus}
+              options={[...CLIENT_STATUSES]}
+              onSelect={setLeadStatus}
+            />
+          )}
           <CustomDropdown
-            label="Status"
-            value={leadStatus}
-            options={isInventory ? [...INVENTORY_STATUSES] : [...CLIENT_STATUSES]}
-            onSelect={setLeadStatus}
+            label="Lead Source"
+            value={leadSource}
+            options={[...LEAD_SOURCES]}
+            onSelect={setLeadSource}
+            placeholder="Select Lead Source"
           />
         </View>
 
@@ -513,40 +562,39 @@ export default function EditLeadScreen() {
             />
           )}
 
-          {/* Address & Google Map URL - Only for Inventory */}
+          {/* Inventory address */}
           {isInventory && (
-            <>
-              <FormInput
-                label="Address"
-                value={displayAddress}
-                onChangeText={canViewData ? setAddress : undefined}
-                placeholder={canViewData ? "Enter property address" : "No access"}
-                editable={canViewData}
-              />
-
-              <Text style={styles.label}>Google Map URL</Text>
-              <View style={styles.mapUrlRow}>
-                <TextInput
-                  style={styles.mapUrlInput}
-                  value={googleMapUrl}
-                  onChangeText={setGoogleMapUrl}
-                  placeholder="https://maps.google.com/..."
-                  placeholderTextColor="#9CA3AF"
-                />
-                <TouchableOpacity
-                  style={styles.locationButton}
-                  onPress={fetchCurrentLocation}
-                  disabled={fetchingLocation}
-                >
-                  {fetchingLocation ? (
-                    <ActivityIndicator size="small" color="#3B82F6" />
-                  ) : (
-                    <Ionicons name="location" size={22} color="#3B82F6" />
-                  )}
-                </TouchableOpacity>
-              </View>
-            </>
+            <FormInput
+              label="Address"
+              value={displayAddress}
+              onChangeText={canViewData ? setAddress : undefined}
+              placeholder={canViewData ? "Enter property address" : "No access"}
+              editable={canViewData}
+            />
           )}
+
+          <Text style={styles.label}>Google Map URL</Text>
+          <View style={styles.mapUrlRow}>
+            <TextInput
+              style={styles.mapUrlInput}
+              value={googleMapUrl}
+              onChangeText={setGoogleMapUrl}
+              placeholder="https://maps.google.com/..."
+              placeholderTextColor="#9CA3AF"
+              editable={canViewData}
+            />
+            <TouchableOpacity
+              style={styles.locationButton}
+              onPress={fetchCurrentLocation}
+              disabled={fetchingLocation || !canViewData}
+            >
+              {fetchingLocation ? (
+                <ActivityIndicator size="small" color="#3B82F6" />
+              ) : (
+                <Ionicons name="location" size={22} color="#3B82F6" />
+              )}
+            </TouchableOpacity>
+          </View>
 
           <CustomDropdown
             label="Property Type"
@@ -704,7 +752,7 @@ export default function EditLeadScreen() {
                   <CustomDropdown
                     label=""
                     value={possessionMonth}
-                    options={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']}
+                    options={POSSESSION_MONTHS}
                     onSelect={setPossessionMonth}
                     placeholder="Month"
                   />

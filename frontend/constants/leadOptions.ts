@@ -12,27 +12,27 @@ export const INVENTORY_LEAD_TYPES = ['builder', 'seller', 'landlord', 'agent'] a
 export const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'] as const;
 export type LeadTemperature = typeof LEAD_TEMPERATURES[number];
 
-export const CLIENT_STATUSES = ['New', 'Contacted', 'Qualified', 'Negotiating', 'Won', 'Closed/Lost'] as const;
-export const INVENTORY_STATUSES = ['Under construction', 'Ready to move', 'Near Completion', 'Booking', 'Old', 'Sold', 'Available', 'Already Rented'] as const;
+export const CLIENT_STATUSES = ['New', 'Hot', 'Pending', 'Warm', 'Cold', 'Follow Up', 'Closed/Lost'] as const;
+export const INVENTORY_STATUSES = ['Available', 'Under Construction', 'Ready to Move', 'Near Completion', 'Booking', 'Old', 'Sold', 'Already Rented'] as const;
 
 // How Old options (in years)
-export const HOW_OLD_OPTIONS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '10+', '15+', '20+'] as const;
+export const HOW_OLD_OPTIONS = Array.from({ length: 50 }, (_, index) => String(index + 1));
 
-export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Vila'] as const;
+export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Villa'] as const;
 
-export const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '5+ BHK', 'Hall', 'Plot', 'Kothi', 'Farm House'] as const;
+export const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '5+ BHK', 'Farm House', 'Hall'] as const;
 
 export const UNITS = ['CR', 'L', 'K'] as const;
 
 // Added Plot and Kothi to floor options
-export const FLOORS = ['BMT', 'BMT+GF', 'GF', 'FF', 'SF', 'TF', 'TF+Terr', 'Plot', 'Kothi'] as const;
+export const FLOORS = ['BMT+GF', 'BMT', 'GF', 'UGF', 'FF', 'SF', 'TF', 'TF+Terr', 'Plot', 'Farm House'] as const;
 
 export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'] as const;
 
 export const LIFT_OPTIONS = ['Yes', 'No'] as const;
 
 // Lead Source options
-export const LEAD_SOURCES = ['Agent', 'Instagram', 'Google', 'Facebook', 'Reference', 'Magic Brick'] as const;
+export const LEAD_SOURCES = ['Agent', 'Instagram', 'Reference', 'Magic Brick', 'Meta Ad', 'Google', 'Bulk Messages'] as const;
 export type LeadSource = typeof LEAD_SOURCES[number];
 
 // Additional amenities from database schema
