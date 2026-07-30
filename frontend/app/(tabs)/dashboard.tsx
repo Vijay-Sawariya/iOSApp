@@ -96,6 +96,13 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = (isRefresh = false) => {
+    // Pricing is the first dashboard widget and receives cache hydration priority.
+    void api.getAllPricing()
+      .then((rows) => setPricingData(Array.isArray(rows) ? rows : []))
+      .catch((error) => {
+        if (!isRequestTimeout(error)) console.warn('Pricing fetch error:', error);
+      });
+
     void api.getDashboardStats()
       .then(setStats)
       .catch((error) => {
@@ -115,12 +122,6 @@ export default function DashboardScreen() {
       .catch((error) => {
         if (!isRequestTimeout(error)) console.warn('Smart matches fetch error:', error);
       });
-    void api.getAllPricing()
-      .then((rows) => setPricingData(Array.isArray(rows) ? rows : []))
-      .catch((error) => {
-        if (!isRequestTimeout(error)) console.warn('Pricing fetch error:', error);
-      });
-
   };
 
   useFocusEffect(
@@ -298,27 +299,6 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.healthWidget}>
-          <View style={styles.healthHeader}>
-            <Text style={styles.widgetTitle}>Business Health</Text>
-            <Ionicons name="pulse" size={18} color={colors.accent} />
-          </View>
-          <View style={styles.healthRows}>
-            <View style={styles.healthRow}>
-              <Text style={styles.healthLabel}>Active follow-ups</Text>
-              <Text style={styles.healthValue}>{stats?.pending_reminders || 0}</Text>
-            </View>
-            <View style={styles.healthRow}>
-              <Text style={styles.healthLabel}>Available inventory</Text>
-              <Text style={styles.healthValue}>{stats?.available_inventory || 0}</Text>
-            </View>
-            <View style={styles.healthRow}>
-              <Text style={styles.healthLabel}>Weekly conversions</Text>
-              <Text style={styles.healthValue}>{stats?.leads_converted_this_week || 0}</Text>
-            </View>
-          </View>
-        </View>
-
         <View style={styles.pricingWidget}>
           <View style={styles.pricingWidgetHeader}>
             <View>
@@ -411,6 +391,27 @@ export default function DashboardScreen() {
                 <Text style={styles.pricingEmptyText}>No pricing records found</Text>
               </View>
             )}
+          </View>
+        </View>
+
+        <View style={styles.healthWidget}>
+          <View style={styles.healthHeader}>
+            <Text style={styles.widgetTitle}>Business Health</Text>
+            <Ionicons name="pulse" size={18} color={colors.accent} />
+          </View>
+          <View style={styles.healthRows}>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Active follow-ups</Text>
+              <Text style={styles.healthValue}>{stats?.pending_reminders || 0}</Text>
+            </View>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Available inventory</Text>
+              <Text style={styles.healthValue}>{stats?.available_inventory || 0}</Text>
+            </View>
+            <View style={styles.healthRow}>
+              <Text style={styles.healthLabel}>Weekly conversions</Text>
+              <Text style={styles.healthValue}>{stats?.leads_converted_this_week || 0}</Text>
+            </View>
           </View>
         </View>
 

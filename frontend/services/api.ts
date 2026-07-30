@@ -122,9 +122,8 @@ const fetchWithCache = async <T>(
     return data;
   };
 
-  const isOnline = await cacheService.isOnline();
-
   if (options.forceNetwork) {
+    const isOnline = await cacheService.isOnline();
     if (!isOnline || isOfflineMode) {
       throw new Error('Live refresh requires an internet connection.');
     }
@@ -147,6 +146,7 @@ const fetchWithCache = async <T>(
     return cached;
   }
 
+  const isOnline = await cacheService.isOnline();
   if (!isOnline || isOfflineMode) {
     throw new Error('No cached data available. Please connect to the internet.');
   }
@@ -839,13 +839,12 @@ export const api = {
 
   // Tentative Pricing APIs
   getAllPricing: async () => {
-    const response = await fetchWithTimeout(`${API_URL}/api/pricing`, {
-      headers: getHeaders(),
-    });
-    if (!response.ok) {
-      throw new Error(await getApiErrorMessage(response, 'Failed to fetch pricing'));
-    }
-    return response.json();
+    return fetchWithCache(
+      `${API_URL}/api/pricing`,
+      'plot_floor_pricing',
+      (data) => cacheService.cachePlotFloorPricing(data),
+      () => cacheService.getPlotFloorPricing()
+    );
   },
 
   getPricingDetail: async (pricingId: number) => {
@@ -876,7 +875,9 @@ export const api = {
     if (!response.ok) {
       throw new Error(await getApiErrorMessage(response, 'Failed to create pricing'));
     }
-    return response.json();
+    const result = await response.json();
+    await cacheService.remove(CACHE_KEYS.PLOT_FLOOR_PRICING);
+    return result;
   },
 
   updatePricing: async (pricingId: number, data: any) => {
@@ -888,7 +889,9 @@ export const api = {
     if (!response.ok) {
       throw new Error(await getApiErrorMessage(response, 'Failed to update pricing'));
     }
-    return response.json();
+    const result = await response.json();
+    await cacheService.remove(CACHE_KEYS.PLOT_FLOOR_PRICING);
+    return result;
   },
 
   deletePricing: async (pricingId: number) => {
@@ -899,7 +902,9 @@ export const api = {
     if (!response.ok) {
       throw new Error(await getApiErrorMessage(response, 'Failed to delete pricing'));
     }
-    return response.json();
+    const result = await response.json();
+    await cacheService.remove(CACHE_KEYS.PLOT_FLOOR_PRICING);
+    return result;
   },
 
   getAllLocations: async () => {

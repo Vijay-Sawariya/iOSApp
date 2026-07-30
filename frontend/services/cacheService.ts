@@ -9,6 +9,7 @@ const CACHE_KEYS = {
   BUILDERS: 'cache_builders',
   REMINDERS: 'cache_reminders',
   DASHBOARD_STATS: 'cache_dashboard_stats',
+  PLOT_FLOOR_PRICING: 'cache_plot_floor_pricing',
   URGENT_FOLLOWUPS: 'cache_urgent_followups',
   SMART_MATCHES: 'cache_smart_matches',
   USER_PERMISSIONS: 'cache_user_permissions',
@@ -166,6 +167,14 @@ class CacheService {
 
   async getDashboardStats(): Promise<any | null> {
     return this.get<any>(CACHE_KEYS.DASHBOARD_STATS);
+  }
+
+  async cachePlotFloorPricing(data: any[]): Promise<void> {
+    await this.set(CACHE_KEYS.PLOT_FLOOR_PRICING, data);
+  }
+
+  async getPlotFloorPricing(): Promise<any[] | null> {
+    return this.get<any[]>(CACHE_KEYS.PLOT_FLOOR_PRICING);
   }
 
   async cacheUrgentFollowups(limit: number, data: any[]): Promise<void> {
