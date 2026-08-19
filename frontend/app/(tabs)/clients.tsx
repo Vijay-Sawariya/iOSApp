@@ -171,11 +171,20 @@ www.sagarhome.com`;
     return { total, buyers, tenants };
   }, [leads]);
 
+  const applyCurrentFiltersRef = React.useRef<(data: Lead[]) => void>(() => {});
+
   const loadLeads = async (forceNetwork = false) => {
-    try {
-      const data = await offlineApi.getClientLeads({ forceNetwork });
+    const displayClients = (data: Lead[]) => {
       setLeads(data);
-      applyFilters(data, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch);
+      applyCurrentFiltersRef.current(data);
+    };
+
+    try {
+      const data = await offlineApi.getClientLeads({
+        forceNetwork,
+        onBackgroundRefresh: displayClients,
+      });
+      displayClients(data);
     } catch (error) {
       console.error('Failed to load client leads:', error);
     }
@@ -301,6 +310,22 @@ www.sagarhome.com`;
     }
 
     setFilteredLeads(filtered);
+  };
+
+  applyCurrentFiltersRef.current = (data: Lead[]) => {
+    applyFilters(
+      data,
+      searchQuery,
+      temperatureFilter,
+      sortBy,
+      selectedLocations,
+      selectedFloors,
+      selectedStatTile,
+      phoneFilter,
+      budgetSearch,
+      leadSourceFilter,
+      showClosedLost
+    );
   };
 
   const onRefresh = async () => {

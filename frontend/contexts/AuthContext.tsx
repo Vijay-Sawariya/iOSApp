@@ -10,6 +10,7 @@ import {
   isRequestTimeout,
 } from '../services/api';
 import { API_URL } from '../constants/config';
+import { cacheService } from '../services/cacheService';
 
 // Render cold starts can exceed 30 seconds before the database is ready.
 const REQUEST_TIMEOUT_MS = 45000;
@@ -220,6 +221,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Initialize API token first, then load stored auth
     const bootstrapAuth = async () => {
       try {
+        // Parse the large lead caches during startup so opening either tab does
+        // not have to wait for AsyncStorage and JSON decoding.
+        void cacheService.warmLeadCaches();
         await initializeAuthToken();
         await loadStoredAuth();
       } finally {
@@ -360,6 +364,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await storage.setItem('user', JSON.stringify(data.user));
         // Set last activity on successful login
         await updateLastActivity();
+        void api.preloadCoreData();
         return true;
       } else if (response.ok) {
         Alert.alert('Login Failed', 'Unexpected server response. Please try again.');

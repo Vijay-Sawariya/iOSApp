@@ -32,6 +32,9 @@ interface CacheData<T> {
 }
 
 class CacheService {
+  private memoryCache = new Map<string, CacheData<any>>();
+  private pendingReads = new Map<string, Promise<any | null>>();
+
   // Check if device is online
   async isOnline(): Promise<boolean> {
     try {
@@ -47,11 +50,13 @@ class CacheService {
 
   // Save data to cache
   async set<T>(key: string, data: T): Promise<void> {
+    const cacheData: CacheData<T> = {
+      data,
+      timestamp: Date.now(),
+    };
+    this.memoryCache.set(key, cacheData);
+
     try {
-      const cacheData: CacheData<T> = {
-        data,
-        timestamp: Date.now(),
-      };
       await AsyncStorage.setItem(key, JSON.stringify(cacheData));
     } catch (error) {
       console.error('Error saving to cache:', error);
@@ -60,27 +65,45 @@ class CacheService {
 
   // Get data from cache
   async get<T>(key: string): Promise<T | null> {
-    try {
-      const cached = await AsyncStorage.getItem(key);
-      if (!cached) return null;
-
-      const cacheData: CacheData<T> = JSON.parse(cached);
-      
-      // Check if cache is expired
-      if (Date.now() - cacheData.timestamp > CACHE_EXPIRY) {
-        await AsyncStorage.removeItem(key);
-        return null;
-      }
-
-      return cacheData.data;
-    } catch (error) {
-      console.error('Error reading from cache:', error);
-      return null;
+    const inMemory = this.memoryCache.get(key) as CacheData<T> | undefined;
+    if (inMemory) {
+      if (Date.now() - inMemory.timestamp <= CACHE_EXPIRY) return inMemory.data;
+      this.memoryCache.delete(key);
     }
+
+    const pending = this.pendingReads.get(key) as Promise<T | null> | undefined;
+    if (pending) return pending;
+
+    const readPromise = (async (): Promise<T | null> => {
+      try {
+        const cached = await AsyncStorage.getItem(key);
+        if (!cached) return null;
+
+        const cacheData: CacheData<T> = JSON.parse(cached);
+      
+        // Check if cache is expired
+        if (Date.now() - cacheData.timestamp > CACHE_EXPIRY) {
+          await AsyncStorage.removeItem(key);
+          return null;
+        }
+
+        this.memoryCache.set(key, cacheData);
+        return cacheData.data;
+      } catch (error) {
+        console.error('Error reading from cache:', error);
+        return null;
+      } finally {
+        this.pendingReads.delete(key);
+      }
+    })();
+
+    this.pendingReads.set(key, readPromise);
+    return readPromise;
   }
 
   // Clear specific cache
   async remove(key: string): Promise<void> {
+    this.memoryCache.delete(key);
     try {
       await AsyncStorage.removeItem(key);
     } catch (error) {
@@ -90,6 +113,8 @@ class CacheService {
 
   // Clear all cache
   async clearAll(): Promise<void> {
+    this.memoryCache.clear();
+    this.pendingReads.clear();
     try {
       const keys = await AsyncStorage.getAllKeys();
       const cacheKeys = keys.filter(key => key.startsWith('cache_'));
@@ -143,6 +168,14 @@ class CacheService {
 
   async getInventoryLeads(): Promise<any[] | null> {
     return this.get<any[]>(CACHE_KEYS.LEADS_INVENTORY);
+  }
+
+  // Hydrate the two largest tab datasets before either screen is opened.
+  async warmLeadCaches(): Promise<void> {
+    await Promise.all([
+      this.getClientLeads(),
+      this.getInventoryLeads(),
+    ]);
   }
 
   async cacheBuilders(data: any[]): Promise<void> {
