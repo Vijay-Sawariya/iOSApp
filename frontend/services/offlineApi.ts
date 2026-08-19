@@ -15,6 +15,7 @@ import { API_URL } from '../constants/config';
 
 type LeadFetchOptions = {
   forceNetwork?: boolean;
+  onBackgroundRefresh?: (data: any[]) => void;
 };
 
 class OfflineApiService {

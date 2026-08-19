@@ -544,6 +544,15 @@ export default function LeadDetailScreen() {
     );
   }
 
+  // Older and newer server versions use slightly different names for this
+  // inventory field, so accept each known variant when rendering details.
+  const bedroomDimensions =
+    lead.bedroom_dimensions ??
+    lead.bedroom_dimension ??
+    lead.bedroom_size ??
+    lead.bed_room_dimensions ??
+    lead.bedroomDimension;
+
   const getTypeLabel = (type: any): string => {
     if (!type) return 'Unknown';
     const str = safeStr(type);
@@ -924,7 +933,8 @@ export default function LeadDetailScreen() {
         {renderDetailRow('business', 'Type', lead.property_type)}
         {renderDetailRow('bed', 'BHK', lead.bhk)}
         {renderDetailRow('layers', 'Floor', lead.floor)}
-        {renderDetailRow('resize', 'Area Size', lead.area_size ? `${safeStr(lead.area_size)} sq.yds` : null)}
+        {renderDetailRow('resize', 'Covered Area', lead.area_size ? `${safeStr(lead.area_size)} sq.yds` : null)}
+        {isInventoryLead() ? renderDetailRow('expand', 'Bedroom Dimensions', bedroomDimensions) : null}
         {renderDetailRow('car', 'Parking', lead.car_parking_number)}
         {renderDetailRow('arrow-up', 'Lift', lead.lift_available)}
         {(lead.budget_min || lead.budget_max) ? (

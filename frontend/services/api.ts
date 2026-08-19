@@ -5,15 +5,17 @@ import { API_URL } from '../constants/config';
 
 let authToken: string | null = null;
 let isOfflineMode = false;
+let authFailureHandler: (() => void | Promise<void>) | null = null;
 
 type CacheFetchOptions = {
   forceNetwork?: boolean;
+  onBackgroundRefresh?: (data: any) => void;
 };
 
 const fetchWithTimeout = async (
   url: string,
   options: RequestInit = {},
-  timeoutMs: number = 8000
+  timeoutMs: number = 45000
 ): Promise<Response> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,6 +35,18 @@ export const setAuthToken = (token: string | null) => {
 };
 
 export const getAuthToken = () => authToken;
+
+export const setAuthFailureHandler = (
+  handler: (() => void | Promise<void>) | null
+) => {
+  authFailureHandler = handler;
+};
+
+const notifyAuthFailure = (response: Response) => {
+  if (response.status === 401 && authFailureHandler) {
+    void authFailureHandler();
+  }
+};
 
 // Initialize token from storage on app start
 export const initializeAuthToken = async () => {
@@ -78,6 +92,7 @@ const getHeaders = () => {
 };
 
 const getApiErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+  notifyAuthFailure(response);
   try {
     const data = await response.json();
     if (typeof data?.detail === 'string') return data.detail;
@@ -103,9 +118,18 @@ const fetchWithCache = async <T>(
   options: CacheFetchOptions = {}
 ): Promise<T> => {
   const refreshFromNetwork = async (): Promise<T> => {
-    const response = await fetchWithTimeout(url, { headers: getHeaders() });
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(url, { headers: getHeaders() });
+    } catch (error) {
+      if (isRequestTimeout(error)) {
+        throw new Error('The server took too long to respond. Please try again.');
+      }
+      throw error;
+    }
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
+        notifyAuthFailure(response);
         let errorMsg = 'Authentication error. Please log in again.';
         try {
           const errorData = await response.json();
@@ -136,11 +160,13 @@ const fetchWithCache = async <T>(
     if (!isOfflineMode) {
       void cacheService.isOnline().then((isOnline) => {
         if (!isOnline) return;
-        return refreshFromNetwork().catch((error) => {
-          if (!isRequestTimeout(error)) {
-            console.log(`Background refresh failed for ${cacheKey}:`, error);
-          }
-        });
+        return refreshFromNetwork()
+          .then((freshData) => options.onBackgroundRefresh?.(freshData))
+          .catch((error) => {
+            if (!isRequestTimeout(error)) {
+              console.log(`Background refresh failed for ${cacheKey}:`, error);
+            }
+          });
       });
     }
     return cached;

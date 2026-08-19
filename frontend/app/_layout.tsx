@@ -7,7 +7,7 @@ import { OfflineBanner } from '../components/OfflineBanner';
 import { setAuthToken } from '../services/api';
 
 function RootLayoutContent() {
-  const { token, hasFeature, featureFlagsLoading } = useAuth();
+  const { token, loading, hasFeature, featureFlagsLoading } = useAuth();
   const { isInitialized } = useOffline();
   const pathname = usePathname();
   const deniedPathRef = React.useRef<string | null>(null);
@@ -15,6 +15,11 @@ function RootLayoutContent() {
   useEffect(() => {
     setAuthToken(token);
   }, [token]);
+
+  useEffect(() => {
+    if (loading || token || pathname === '/' || pathname === '/login') return;
+    router.replace('/login');
+  }, [loading, pathname, token]);
 
   useEffect(() => {
     if (!token || featureFlagsLoading || pathname === '/' || pathname === '/login') return;

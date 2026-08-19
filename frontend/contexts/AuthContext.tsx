@@ -2,7 +2,13 @@ import React, { createContext, useState, useContext, useEffect, useRef, useCallb
 import { Alert, AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, setAuthToken, initializeAuthToken, isRequestTimeout } from '../services/api';
+import {
+  api,
+  setAuthToken,
+  setAuthFailureHandler,
+  initializeAuthToken,
+  isRequestTimeout,
+} from '../services/api';
 import { API_URL } from '../constants/config';
 
 // Render cold starts can exceed 30 seconds before the database is ready.
@@ -85,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
   const [featureFlagsLoading, setFeatureFlagsLoading] = useState(true);
   const appState = useRef(AppState.currentState);
+  const sessionExpiryHandled = useRef(false);
 
   // Update last activity timestamp
   const updateLastActivity = async () => {
@@ -285,7 +292,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Helper function to perform logout and clear all data
-  const performLogout = async () => {
+  const performLogout = useCallback(async () => {
     try {
       setUser(null);
       setToken(null);
@@ -299,7 +306,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Logout error:', error);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    setAuthFailureHandler(async () => {
+      if (sessionExpiryHandled.current) return;
+      sessionExpiryHandled.current = true;
+      await performLogout();
+      router.replace('/login');
+      Alert.alert(
+        'Session Expired',
+        'Your session has expired. Please login again.',
+        [{ text: 'OK' }]
+      );
+    });
+
+    return () => setAuthFailureHandler(null);
+  }, [performLogout]);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     if (!API_URL) {
@@ -329,6 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (response.ok && data?.access_token && data?.user) {
+        sessionExpiryHandled.current = false;
         setToken(data.access_token);
         setUser(data.user);
         setAuthToken(data.access_token);  // Set token for API calls

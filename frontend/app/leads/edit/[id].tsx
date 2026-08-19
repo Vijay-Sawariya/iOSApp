@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { api } from '../../../services/api';
+import { offlineApi } from '../../../services/offlineApi';
 import { useAuth } from '../../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../../constants/leadOptions';
 import * as Location from 'expo-location';
@@ -70,6 +71,7 @@ const toPossessionDate = (month: string, year: string): string | null => {
 
 export default function EditLeadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const leadId = Array.isArray(id) ? id[0] : id;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fetchingLocation, setFetchingLocation] = useState(false);
@@ -137,7 +139,7 @@ export default function EditLeadScreen() {
   useEffect(() => {
     loadLead();
     loadBuilders();
-  }, [id]);
+  }, [leadId]);
 
   const loadBuilders = async () => {
     try {
@@ -149,9 +151,18 @@ export default function EditLeadScreen() {
   };
 
   const loadLead = async () => {
-    if (!id) return;
+    if (!leadId) {
+      setLoading(false);
+      Alert.alert('Error', 'Lead ID is missing');
+      return;
+    }
     try {
-      const data = await api.getLead(id);
+      // Use the same cache/SQLite fallback as the lead detail screen. Opening the
+      // editor should still work when reachability is unavailable or intermittent.
+      const data = await offlineApi.getLead(leadId);
+      if (!data) {
+        throw new Error('Lead details are not available on this device');
+      }
       
       // Store original creator for permission checks
       setOriginalCreatedBy(data.created_by || null);
@@ -240,9 +251,9 @@ export default function EditLeadScreen() {
           }))
         );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load lead:', error);
-      Alert.alert('Error', 'Failed to load lead details');
+      Alert.alert('Error', error?.message || 'Failed to load lead details');
     } finally {
       setLoading(false);
     }
@@ -392,7 +403,8 @@ export default function EditLeadScreen() {
         }
       }
 
-      const updated = await api.updateLead(id!, updateData);
+      if (!leadId) throw new Error('Lead ID is missing');
+      const updated = await api.updateLead(leadId, updateData);
       Alert.alert(
         updated?.is_pending_sync ? 'Saved Offline' : 'Success',
         updated?.is_pending_sync

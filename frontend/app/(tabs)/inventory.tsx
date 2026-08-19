@@ -54,6 +54,11 @@ const TYPE_OPTIONS = [
   { label: 'Agent', value: 'agent' },
 ];
 
+const isSoldInventory = (lead: Lead): boolean =>
+  (lead.lead_status || '')
+    .split(',')
+    .some((status) => status.trim().toLowerCase() === 'sold');
+
 const GODADDY_BASE_URL = 'https://sagarhomelms.com';
 const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
 
@@ -156,12 +161,16 @@ export default function InventoryLeadsScreen() {
   );
 
   // Stats calculations - combine seller and builder into "sell"
-  const stats = useMemo(() => ({
-    total: leads.length,
-    sell: leads.filter(l => l.lead_type === 'seller' || l.lead_type === 'builder').length,
-    landlords: leads.filter(l => l.lead_type === 'landlord').length,
-    agents: leads.filter(l => l.lead_type === 'agent').length,
-  }), [leads]);
+  const stats = useMemo(() => {
+    const activeLeads = leads.filter((lead) => !isSoldInventory(lead));
+
+    return {
+      total: activeLeads.length,
+      sell: activeLeads.filter(l => l.lead_type === 'seller' || l.lead_type === 'builder').length,
+      landlords: activeLeads.filter(l => l.lead_type === 'landlord').length,
+      agents: activeLeads.filter(l => l.lead_type === 'agent').length,
+    };
+  }, [leads]);
 
   // Load clients (buyers/tenants) for the dropdown
   const loadClients = async (forceNetwork = false) => {
@@ -173,30 +182,20 @@ export default function InventoryLeadsScreen() {
     }
   };
 
+  const applyCurrentFiltersRef = React.useRef<(data: Lead[]) => void>(() => {});
+
   const loadLeads = async (forceNetwork = false) => {
-    try {
-      const data = await offlineApi.getInventoryLeads({ forceNetwork });
+    const displayInventory = (data: Lead[]) => {
       setLeads(data);
-      // Apply filters with current state values
-      applyFilters(
-        data, 
-        searchQuery,
-        selectedLocations,
-        selectedFloors,
-        selectedStatuses,
-        selectedFacings,
-        typeFilter,
-        areaMin,
-        areaMax,
-        budgetMin,
-        budgetMax,
-        addressFilter,
-        selectedStatTile,
-        phoneFilter,
-        budgetSearch,
-        selectedClient,
-        preferredInventoryIds
-      );
+      applyCurrentFiltersRef.current(data);
+    };
+
+    try {
+      const data = await offlineApi.getInventoryLeads({
+        forceNetwork,
+        onBackgroundRefresh: displayInventory,
+      });
+      displayInventory(data);
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
     }
@@ -233,6 +232,16 @@ export default function InventoryLeadsScreen() {
     preferredIds: number[] = preferredInventoryIds,
   ) => {
     let filtered = [...data];
+
+    // Keep sold inventory out of the default list. It remains discoverable through
+    // the main search and by explicitly selecting the Sold status filter.
+    const hasSearch = normalizeSearchText(search).length > 0;
+    const isSoldStatusSelected = statuses.some(
+      (status) => status.trim().toLowerCase() === 'sold'
+    );
+    if (!hasSearch && !isSoldStatusSelected) {
+      filtered = filtered.filter((lead) => !isSoldInventory(lead));
+    }
     
     // Client/Buyer matching filter - If a client is selected, filter inventory to only show preferred/matched properties
     if (client && preferredIds.length > 0) {
@@ -260,7 +269,8 @@ export default function InventoryLeadsScreen() {
           normalizeSearchText(lead.name || '').includes(normalizedSearch) ||
           normalizeSearchText(lead.phone || '').includes(normalizedSearch) ||
           normalizeSearchText(lead.location || '').includes(normalizedSearch) ||
-          normalizeSearchText(lead.address || '').includes(normalizedSearch)
+          normalizeSearchText(lead.address || '').includes(normalizedSearch) ||
+          normalizeSearchText(lead.lead_status || '').includes(normalizedSearch)
       );
     }
 
@@ -414,6 +424,28 @@ export default function InventoryLeadsScreen() {
     }
 
     setFilteredLeads(filtered);
+  };
+
+  applyCurrentFiltersRef.current = (data: Lead[]) => {
+    applyFilters(
+      data,
+      searchQuery,
+      selectedLocations,
+      selectedFloors,
+      selectedStatuses,
+      selectedFacings,
+      typeFilter,
+      areaMin,
+      areaMax,
+      budgetMin,
+      budgetMax,
+      addressFilter,
+      selectedStatTile,
+      phoneFilter,
+      budgetSearch,
+      selectedClient,
+      preferredInventoryIds
+    );
   };
 
   const onRefresh = async () => {

@@ -72,6 +72,7 @@ type PendingActionOutcome = {
 export default function WorkbenchScreen() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savingMatchKey, setSavingMatchKey] = useState<string | null>(null);
@@ -87,6 +88,7 @@ export default function WorkbenchScreen() {
   const [showActionDatePicker, setShowActionDatePicker] = useState(false);
   const appLeftForContact = useRef(false);
   const pendingContactRef = useRef<PendingContact | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -107,25 +109,57 @@ export default function WorkbenchScreen() {
     return () => subscription.remove();
   }, []);
 
-  const loadData = async (force = false) => {
+  useEffect(() => () => {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+  }, []);
+
+  const loadData = async (force = false, attempt = 0) => {
+    if (attempt === 0) {
+      setLoadError(null);
+      if (!data) setLoading(true);
+    }
+
     try {
       const result = await api.getMobileWorkbench(force ? { forceNetwork: true } : undefined);
       setData(result || {});
+      setLoadError(null);
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to load workbench');
+      const message = error?.message || 'Failed to load workbench';
+      const isTimeout = message.toLowerCase().includes('too long') || error?.name === 'AbortError';
+
+      // A sleeping server can need extra time to wake up. Keep the screen usable and
+      // retry quietly instead of interrupting the user with an "Aborted" alert.
+      if (isTimeout && attempt < 2) {
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          void loadData(force, attempt + 1);
+        }, 1500 * (attempt + 1));
+        return;
+      }
+
+      setLoadError(message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (attempt >= 2 || !retryTimerRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
+
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      void loadDataRef.current();
     }, [])
   );
 
   const onRefresh = () => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     setRefreshing(true);
     loadData(true);
   };
@@ -346,15 +380,6 @@ export default function WorkbenchScreen() {
     });
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.muted}>Loading workbench...</Text>
-      </SafeAreaView>
-    );
-  }
-
   const summary = data?.summary || {};
   const missedActions = (data?.missed_actions || []).filter(isClientLead);
   const todayActions = (data?.today_actions || []).filter(isClientLead);
@@ -383,6 +408,31 @@ export default function WorkbenchScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {loading ? (
+          <View style={styles.loadingPanel}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <View style={styles.loadingCopy}>
+              <Text style={styles.loadingTitle}>Loading your workbench</Text>
+              <Text style={styles.loadingHint}>You can stay on this screen while data loads in the background.</Text>
+            </View>
+          </View>
+        ) : null}
+
+        {loadError && !data ? (
+          <View style={styles.errorPanel}>
+            <Ionicons name="cloud-offline-outline" size={22} color={colors.danger} />
+            <View style={styles.loadingCopy}>
+              <Text style={styles.loadingTitle}>Could not load workbench</Text>
+              <Text style={styles.loadingHint}>{loadError}</Text>
+            </View>
+            <TouchableOpacity style={styles.retryButton} onPress={() => void loadData(true)}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {data ? (
+          <>
         <View style={styles.summaryGrid}>
           <SummaryCard label="Missed" value={summary.missed_actions || 0} color={colors.danger} />
           <SummaryCard label="Today" value={summary.today_actions || 0} color={colors.primary} />
@@ -460,6 +510,8 @@ export default function WorkbenchScreen() {
             <LeadCard key={`notes-${lead.id}`} lead={lead} onOutcome={recordOutcome} savingKey={savingKey} />
           ))}
         </Section>
+          </>
+        ) : null}
       </ScrollView>
 
       <Modal
@@ -1003,8 +1055,6 @@ function Badge({ text, tone }: { text: string; tone: 'amber' | 'green' | 'blue' 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  muted: { marginTop: 10, color: colors.inkMuted },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1026,6 +1076,36 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '800', color: colors.ink },
   subtitle: { fontSize: 12, color: colors.inkMuted, marginTop: 2 },
   content: { padding: 16, paddingBottom: 32 },
+  loadingPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderRadius: radii.md,
+    backgroundColor: colors.primarySoft,
+  },
+  errorPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderRadius: radii.md,
+    backgroundColor: colors.dangerSoft,
+  },
+  loadingCopy: { flex: 1 },
+  loadingTitle: { fontSize: 13, fontWeight: '800', color: colors.ink },
+  loadingHint: { fontSize: 12, lineHeight: 17, color: colors.inkMuted, marginTop: 2 },
+  retryButton: {
+    minHeight: 34,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  retryButtonText: { color: colors.white, fontSize: 12, fontWeight: '800' },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   summaryCard: {
     width: '48%',

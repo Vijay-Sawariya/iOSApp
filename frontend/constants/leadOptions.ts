@@ -237,6 +237,11 @@ export interface Lead {
   property_type: string | null;
   unit: string | null;
   area_size: string | null;
+  bedroom_dimensions?: string | null;
+  bedroom_dimension?: string | null;
+  bedroom_size?: string | null;
+  bed_room_dimensions?: string | null;
+  bedroomDimension?: string | null;
   budget_min: number | null;
   budget_max: number | null;
   floor: string | null;
