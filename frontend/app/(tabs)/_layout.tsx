@@ -83,7 +83,8 @@ const MenuItem = ({ icon, label, color, bgColor, onPress, visible = true }: Menu
 
 // More Menu Popup Component
 const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; onClose: () => void; bottomInset: number }) => {
-  const { hasFeature } = useAuth();
+  const { hasFeature, user } = useAuth();
+  const isAdmin = user?.role?.trim().toLowerCase() === 'admin';
   const handleMenuItemPress = (tab: string) => {
     onClose();
     router.push(`/more?tab=${tab}&fromPopup=true` as any);
@@ -178,12 +179,20 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               visible={hasFeature('team_inbox')}
             />
             <MenuItem
+              icon="call"
+              label="Cold Calling"
+              color={colors.primary}
+              bgColor={colors.primarySoft}
+              onPress={() => handleRoutePress('/cold-calling')}
+              visible={hasFeature('cold_calling_inventory')}
+            />
+            <MenuItem
               icon="stats-chart"
               label="Performance"
               color={colors.accent}
               bgColor={colors.accentSoft}
               onPress={() => handleRoutePress('/performance')}
-              visible={hasFeature('agent_performance')}
+              visible={isAdmin && hasFeature('agent_performance')}
             />
             <MenuItem
               icon="map"

@@ -32,7 +32,7 @@ export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwes
 export const LIFT_OPTIONS = ['Yes', 'No'] as const;
 
 // Lead Source options
-export const LEAD_SOURCES = ['Agent', 'Instagram', 'Reference', 'Magic Brick', 'Meta Ad', 'Google', 'Bulk Messages'] as const;
+export const LEAD_SOURCES = ['Agent', 'Instagram', 'Reference', 'Magic Brick', 'Meta Ad', 'Google', 'Bulk Messages', 'Cold_Calling'] as const;
 export type LeadSource = typeof LEAD_SOURCES[number];
 
 // Additional amenities from database schema
@@ -261,6 +261,8 @@ export interface Lead {
   Property_locationUrl?: string | null;
   last_message_sent_on?: string | null;
   last_sent_message?: string | null;
+  lead_source?: string | null;
+  source_type?: string | null;
   whatsapp_sent_flag?: number | boolean | null;
   // Lead Scoring fields
   lead_score?: number | null;

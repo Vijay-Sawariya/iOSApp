@@ -98,6 +98,7 @@ export default function ClientLeadsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState<string | null>(null);
   const [leadSourceFilter, setLeadSourceFilter] = useState<string | null>(null);
+  const [createdByFilter, setCreatedByFilter] = useState<string | null>(null);
   const [showClosedLost, setShowClosedLost] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -115,6 +116,17 @@ export default function ClientLeadsScreen() {
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
   const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
+
+  const creatorOptions = useMemo(() => {
+    const creators = new Map<string, string>();
+    leads.forEach((lead) => {
+      if (lead.created_by == null) return;
+      const id = String(lead.created_by);
+      creators.set(id, lead.created_by_name?.trim() || `User #${id}`);
+    });
+    return Array.from(creators, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [leads]);
 
   // Get time-based greeting
   const getGreeting = () => {
@@ -321,8 +333,16 @@ www.sagarhome.com`;
       filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
     }
 
+    if (createdByFilter) {
+      filtered = filtered.filter((lead) => String(lead.created_by) === createdByFilter);
+    }
+
     setFilteredLeads(filtered);
   };
+
+  React.useEffect(() => {
+    applyCurrentFiltersRef.current(leads);
+  }, [createdByFilter]);
 
   applyCurrentFiltersRef.current = (data: Lead[]) => {
     applyFilters(
@@ -401,12 +421,13 @@ www.sagarhome.com`;
   };
 
   const hasActiveFilters = () => {
-    return temperatureFilter !== null || leadSourceFilter !== null || showClosedLost || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
+    return temperatureFilter !== null || leadSourceFilter !== null || createdByFilter !== null || showClosedLost || sortBy !== null || selectedLocations.length > 0 || selectedFloors.length > 0 || selectedStatTile !== 'total';
   };
 
   const clearAllFilters = () => {
     setTemperatureFilter(null);
     setLeadSourceFilter(null);
+    setCreatedByFilter(null);
     setShowClosedLost(false);
     setSortBy(null);
     setSelectedLocations([]);
@@ -838,6 +859,28 @@ www.sagarhome.com`;
         {/* Filter Panel */}
         {showFilters && (
           <View style={styles.filterContainer}>
+            {/* Phone and Budget in same row */}
+            <View style={styles.filterSection}>
+              <Text style={styles.filterLabel}>Created by:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.filterChip, createdByFilter === null && styles.filterChipActive]}
+                  onPress={() => setCreatedByFilter(null)}
+                >
+                  <Text style={[styles.filterChipText, createdByFilter === null && styles.filterChipTextActive]}>All</Text>
+                </TouchableOpacity>
+                {creatorOptions.map((creator) => (
+                  <TouchableOpacity
+                    key={creator.id}
+                    style={[styles.filterChip, createdByFilter === creator.id && styles.filterChipActive]}
+                    onPress={() => setCreatedByFilter(createdByFilter === creator.id ? null : creator.id)}
+                  >
+                    <Text style={[styles.filterChipText, createdByFilter === creator.id && styles.filterChipTextActive]}>{creator.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
             {/* Phone and Budget in same row */}
             <View style={styles.filterRow}>
               <View style={styles.filterHalf}>

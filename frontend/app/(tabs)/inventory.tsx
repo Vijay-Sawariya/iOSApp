@@ -21,7 +21,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { offlineApi } from '../../services/offlineApi';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, usePathname } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
@@ -81,6 +81,8 @@ const formatLeadDate = (value?: string | null) => {
 };
 
 export default function InventoryLeadsScreen() {
+  const pathname = usePathname();
+  const isColdCalling = pathname.startsWith('/cold-calling');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -99,6 +101,7 @@ export default function InventoryLeadsScreen() {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedFacings, setSelectedFacings] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState('');
+  const [createdByFilter, setCreatedByFilter] = useState<string | null>(null);
   const [areaMin, setAreaMin] = useState('');
   const [areaMax, setAreaMax] = useState('');
   const [budgetMin, setBudgetMin] = useState('');
@@ -115,6 +118,17 @@ export default function InventoryLeadsScreen() {
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [preferredInventoryIds, setPreferredInventoryIds] = useState<number[]>([]);
+
+  const creatorOptions = useMemo(() => {
+    const creators = new Map<string, string>();
+    leads.forEach((lead) => {
+      if (lead.created_by == null) return;
+      const id = String(lead.created_by);
+      creators.set(id, lead.created_by_name?.trim() || `User #${id}`);
+    });
+    return Array.from(creators, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [leads]);
   
   // Modal states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -188,8 +202,14 @@ export default function InventoryLeadsScreen() {
   const displayInventoryRef = React.useRef<(data: Lead[]) => void>(() => {});
   displayInventoryRef.current = (data: Lead[]) => {
     setLoadError(null);
-    setLeads(data);
-    applyCurrentFiltersRef.current(data);
+    const visibleData = isColdCalling
+      ? data.filter((lead) =>
+          String(lead.source_type || lead.lead_source || '')
+            .trim()
+            .toLowerCase() === 'cold_calling')
+      : data;
+    setLeads(visibleData);
+    applyCurrentFiltersRef.current(visibleData);
   };
 
   const loadLeads = async (forceNetwork = false) => {
@@ -434,8 +454,16 @@ export default function InventoryLeadsScreen() {
       });
     }
 
+    if (createdByFilter) {
+      filtered = filtered.filter((lead) => String(lead.created_by) === createdByFilter);
+    }
+
     setFilteredLeads(filtered);
   };
+
+  React.useEffect(() => {
+    applyCurrentFiltersRef.current(leads);
+  }, [createdByFilter]);
 
   applyCurrentFiltersRef.current = (data: Lead[]) => {
     applyFilters(
@@ -519,7 +547,7 @@ export default function InventoryLeadsScreen() {
            typeFilter !== '' || areaMin !== '' || areaMax !== '' ||
            budgetMin !== '' || budgetMax !== '' || addressFilter !== '' ||
            phoneFilter !== '' || budgetSearch !== '' ||
-           selectedStatTile !== 'total' || selectedClient !== null;
+           selectedStatTile !== 'total' || selectedClient !== null || createdByFilter !== null;
   };
 
   const clearAllFilters = () => {
@@ -528,6 +556,7 @@ export default function InventoryLeadsScreen() {
     setSelectedStatuses([]);
     setSelectedFacings([]);
     setTypeFilter('');
+    setCreatedByFilter(null);
     setAreaMin('');
     setAreaMax('');
     setBudgetMin('');
@@ -1207,7 +1236,7 @@ export default function InventoryLeadsScreen() {
       {/* Blue Header */}
       <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
         <View style={styles.blueHeader}>
-          <Text style={styles.headerTitle}>Inventories</Text>
+          <Text style={styles.headerTitle}>{isColdCalling ? 'Cold Calling' : 'Inventories'}</Text>
           <View style={styles.headerActions}>
             {/* Map View Button */}
             <TouchableOpacity 
@@ -1310,6 +1339,27 @@ export default function InventoryLeadsScreen() {
               {/* Filter Panel */}
               {showFilters && (
                 <View style={styles.filterContainer}>
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Created by:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.filterChip, createdByFilter === null && styles.filterChipActive]}
+                        onPress={() => setCreatedByFilter(null)}
+                      >
+                        <Text style={[styles.filterChipText, createdByFilter === null && styles.filterChipTextActive]}>All</Text>
+                      </TouchableOpacity>
+                      {creatorOptions.map((creator) => (
+                        <TouchableOpacity
+                          key={creator.id}
+                          style={[styles.filterChip, createdByFilter === creator.id && styles.filterChipActive]}
+                          onPress={() => setCreatedByFilter(createdByFilter === creator.id ? null : creator.id)}
+                        >
+                          <Text style={[styles.filterChipText, createdByFilter === creator.id && styles.filterChipTextActive]}>{creator.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
                   {/* Match with Buyer/Tenant Dropdown */}
                   <View style={[styles.filterSection, { zIndex: 600 }]}>
                     <Text style={styles.filterLabel}>{'Match with Buyer/Tenant:'}</Text>
@@ -1962,7 +2012,9 @@ export default function InventoryLeadsScreen() {
       {/* FAB - Add Button */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/leads/add?type=inventory' as any)}
+        onPress={() => router.push((isColdCalling
+          ? '/leads/add?type=inventory&source=Cold_Calling'
+          : '/leads/add?type=inventory') as any)}
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>

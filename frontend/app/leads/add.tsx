@@ -83,6 +83,7 @@ export default function AddLeadScreen() {
     budgetMax?: string;
     unit?: string;
     notes?: string;
+    source?: string;
   }>();
   const { isOnline } = useOffline();
   const isClientForm = params.type === 'client';
@@ -102,7 +103,7 @@ export default function AddLeadScreen() {
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('New');
   const [inventoryStatuses, setInventoryStatuses] = useState<string[]>(['Available']);
-  const [leadSource, setLeadSource] = useState(params.legacyId ? 'Legacy Enquiry' : '');
+  const [leadSource, setLeadSource] = useState(params.source || (params.legacyId ? 'Legacy Enquiry' : ''));
   const [builderId, setBuilderId] = useState('');
   
   // Property Details
@@ -296,6 +297,7 @@ export default function AddLeadScreen() {
         main_road: amenities.main_road ? 1 : 0,
         corner: amenities.corner ? 1 : 0,
         lead_source: leadSource || null,
+        source_type: leadSource || null,
         Property_locationUrl: googleMapUrl.trim() || null,
       };
 

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 interface Lead {
   id: string;
@@ -21,9 +21,12 @@ interface Lead {
   lead_temperature: string | null;
   lead_status: string | null;
   location: string | null;
+  created_by?: number | null;
+  created_at?: string | null;
 }
 
 export default function LeadsScreen() {
+  const params = useLocalSearchParams<{ createdBy?: string; from?: string; to?: string; title?: string }>();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,8 +35,21 @@ export default function LeadsScreen() {
   const loadLeads = async () => {
     try {
       const data = await api.getLeads();
-      setLeads(data);
-      setFilteredLeads(data);
+      const createdBy = params.createdBy ? Number(params.createdBy) : null;
+      const from = params.from ? new Date(`${params.from}T00:00:00`).getTime() : null;
+      const to = params.to ? new Date(`${params.to}T23:59:59`).getTime() : null;
+      const scoped = data.filter((lead: Lead) => {
+        if (createdBy && Number(lead.created_by) !== createdBy) return false;
+        if (from || to) {
+          const createdAt = lead.created_at ? new Date(lead.created_at.replace(' ', 'T')).getTime() : NaN;
+          if (Number.isNaN(createdAt)) return false;
+          if (from && createdAt < from) return false;
+          if (to && createdAt > to) return false;
+        }
+        return true;
+      });
+      setLeads(scoped);
+      setFilteredLeads(scoped);
     } catch (error) {
       console.error('Failed to load leads:', error);
     }
@@ -41,7 +57,7 @@ export default function LeadsScreen() {
 
   useEffect(() => {
     loadLeads();
-  }, []);
+  }, [params.createdBy, params.from, params.to]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -123,6 +139,7 @@ export default function LeadsScreen() {
 
   return (
     <View style={styles.container}>
+      {params.title ? <Text style={styles.scopeTitle}>{params.title}</Text> : null}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#6B7280" />
         <TextInput
@@ -176,6 +193,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  scopeTitle: { marginHorizontal: 16, marginTop: 14, fontSize: 16, fontWeight: '800', color: '#111827' },
   searchInput: {
     flex: 1,
     height: 44,

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { api } from '../services/api';
 import { colors, radii, shadows } from '../constants/theme';
+import { useAuth } from '../contexts/AuthContext';
 
 const dateLabel = (value?: string) => {
   if (!value) return '';
@@ -24,6 +25,7 @@ const dateLabel = (value?: string) => {
 };
 
 export default function PerformanceScreen() {
+  const { user } = useAuth();
   const [days, setDays] = useState(30);
   const [agentId, setAgentId] = useState<number | undefined>();
   const [data, setData] = useState<any>(null);
@@ -61,6 +63,21 @@ export default function PerformanceScreen() {
     loadPerformance(days, id);
   };
 
+  const openNewLeads = () => {
+    if (!data?.agent?.id || !data?.from || !data?.to) return;
+    router.push({
+      pathname: '/leads',
+      params: {
+        createdBy: String(data.agent.id),
+        from: String(data.from),
+        to: String(data.to),
+        title: `New leads · ${data.agent.full_name || data.agent.username || 'Agent'}`,
+      },
+    } as any);
+  };
+
+  if (user?.role?.trim().toLowerCase() !== 'admin') return null;
+
   if (loading && !data) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -72,14 +89,14 @@ export default function PerformanceScreen() {
 
   const summary = data?.summary || {};
   const metrics = [
-    { label: 'Completed', value: summary.actions_completed || 0, icon: 'checkmark-circle', color: colors.accent, bg: colors.accentSoft },
-    { label: 'Overdue', value: summary.overdue_actions || 0, icon: 'alert-circle', color: colors.danger, bg: colors.dangerSoft },
+    { label: 'Due completed', value: summary.actions_completed || 0, icon: 'checkmark-circle', color: colors.accent, bg: colors.accentSoft },
+    { label: 'Current overdue', value: summary.overdue_actions || 0, icon: 'alert-circle', color: colors.danger, bg: colors.dangerSoft },
     { label: 'Completion', value: `${summary.completion_rate || 0}%`, icon: 'stats-chart', color: colors.primary, bg: colors.primarySoft },
     { label: 'On time', value: `${summary.on_time_rate || 0}%`, icon: 'time', color: colors.amber, bg: colors.amberSoft },
     { label: 'Portfolio', value: summary.open_portfolio || 0, icon: 'briefcase', color: colors.purple, bg: colors.purpleSoft },
-    { label: 'Visits', value: summary.site_visits || 0, icon: 'walk', color: '#0F766E', bg: '#E6F7F4' },
-    { label: 'New leads', value: summary.leads_created || 0, icon: 'person-add', color: '#2563EB', bg: '#EAF2FF' },
-    { label: 'Won', value: summary.won_leads || 0, icon: 'trophy', color: '#A16207', bg: '#FFF8E1' },
+    { label: 'Visits scheduled', value: summary.site_visits || 0, icon: 'walk', color: '#0F766E', bg: '#E6F7F4' },
+    { label: 'New leads', value: summary.leads_created || 0, icon: 'person-add', color: '#2563EB', bg: '#EAF2FF', onPress: openNewLeads },
+    { label: 'Cohort won', value: summary.won_leads || 0, icon: 'trophy', color: '#A16207', bg: '#FFF8E1' },
   ];
 
   return (
@@ -143,13 +160,22 @@ export default function PerformanceScreen() {
 
         <View style={styles.metricGrid}>
           {metrics.map((metric) => (
-            <View key={metric.label} style={styles.metricCard}>
+            <TouchableOpacity
+              key={metric.label}
+              style={styles.metricCard}
+              activeOpacity={metric.onPress ? 0.7 : 1}
+              onPress={metric.onPress}
+              disabled={!metric.onPress}
+              accessibilityRole={metric.onPress ? 'button' : undefined}
+              accessibilityLabel={metric.onPress ? `View ${metric.value} ${metric.label}` : undefined}
+            >
               <View style={[styles.metricIcon, { backgroundColor: metric.bg }]}>
                 <Ionicons name={metric.icon as any} size={18} color={metric.color} />
               </View>
               <Text style={[styles.metricValue, { color: metric.color }]}>{metric.value}</Text>
               <Text style={styles.metricLabel}>{metric.label}</Text>
-            </View>
+              {metric.onPress ? <Ionicons name="chevron-forward" size={15} color={colors.inkSubtle} style={styles.metricDrillIcon} /> : null}
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -267,6 +293,7 @@ const styles = StyleSheet.create({
   },
   metricValue: { fontSize: 25, fontWeight: '900', marginTop: 10 },
   metricLabel: { fontSize: 12, color: colors.inkMuted, fontWeight: '700', marginTop: 2 },
+  metricDrillIcon: { position: 'absolute', right: 12, bottom: 12 },
   focusCard: {
     marginTop: 16,
     borderRadius: radii.lg,
