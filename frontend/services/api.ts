@@ -120,7 +120,16 @@ const fetchWithCache = async <T>(
   const refreshFromNetwork = async (): Promise<T> => {
     let response: Response;
     try {
-      response = await fetchWithTimeout(url, { headers: getHeaders() });
+      const separator = url.includes('?') ? '&' : '?';
+      const freshUrl = `${url}${separator}_refresh=${Date.now()}`;
+      response = await fetchWithTimeout(freshUrl, {
+        headers: {
+          ...getHeaders(),
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+        cache: 'no-store',
+      });
     } catch (error) {
       if (isRequestTimeout(error)) {
         throw new Error('The server took too long to respond. Please try again.');
@@ -141,6 +150,9 @@ const fetchWithCache = async <T>(
     }
 
     const data = await response.json();
+    // Update mounted screens before serializing a potentially large dataset to
+    // AsyncStorage. Disk persistence must not delay visible fresh records.
+    options.onBackgroundRefresh?.(data);
     await cacheSetter(data);
     await cacheService.updateLastSync();
     return data;
@@ -161,7 +173,6 @@ const fetchWithCache = async <T>(
       void cacheService.isOnline().then((isOnline) => {
         if (!isOnline) return;
         return refreshFromNetwork()
-          .then((freshData) => options.onBackgroundRefresh?.(freshData))
           .catch((error) => {
             if (!isRequestTimeout(error)) {
               console.log(`Background refresh failed for ${cacheKey}:`, error);
