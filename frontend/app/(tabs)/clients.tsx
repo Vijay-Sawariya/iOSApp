@@ -13,6 +13,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { offlineApi } from '../../services/offlineApi';
@@ -92,6 +93,8 @@ export default function ClientLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingLeads, setLoadingLeads] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [temperatureFilter, setTemperatureFilter] = useState<string | null>(null);
   const [leadSourceFilter, setLeadSourceFilter] = useState<string | null>(null);
@@ -174,11 +177,13 @@ www.sagarhome.com`;
   const applyCurrentFiltersRef = React.useRef<(data: Lead[]) => void>(() => {});
   const displayClientsRef = React.useRef<(data: Lead[]) => void>(() => {});
   displayClientsRef.current = (data: Lead[]) => {
+    setLoadError(null);
     setLeads(data);
     applyCurrentFiltersRef.current(data);
   };
 
   const loadLeads = async (forceNetwork = false) => {
+    if (!forceNetwork && leads.length === 0) setLoadingLeads(true);
     try {
       const data = await offlineApi.getClientLeads({
         forceNetwork,
@@ -187,6 +192,9 @@ www.sagarhome.com`;
       displayClientsRef.current(data);
     } catch (error) {
       console.error('Failed to load client leads:', error);
+      setLoadError(error instanceof Error ? error.message : 'Failed to load clients');
+    } finally {
+      setLoadingLeads(false);
     }
   };
 
@@ -1100,11 +1108,25 @@ www.sagarhome.com`;
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={64} color="#D1D5DB" />
-              <Text style={styles.emptyText}>No clients found</Text>
-              <Text style={styles.emptySubtext}>
-                {hasActiveFilters() ? 'Try adjusting your filters' : 'Add your first client to get started'}
-              </Text>
+              {loadingLeads ? (
+                <>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.emptyText}>Loading cached clients…</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name={loadError ? 'cloud-offline-outline' : 'people-outline'} size={64} color="#D1D5DB" />
+                  <Text style={styles.emptyText}>{loadError ? 'Clients could not be loaded' : 'No clients found'}</Text>
+                  <Text style={styles.emptySubtext}>
+                    {loadError || (hasActiveFilters() ? 'Try adjusting your filters' : 'No client records were returned by the API')}
+                  </Text>
+                  {loadError ? (
+                    <TouchableOpacity style={styles.emptyRetryButton} onPress={() => void loadLeadsRef.current(true)}>
+                      <Text style={styles.emptyRetryText}>Retry live data</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </>
+              )}
             </View>
           }
           showsVerticalScrollIndicator={false}
@@ -1602,6 +1624,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  emptyRetryButton: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+  },
+  emptyRetryText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   filterContainer: {
     backgroundColor: colors.surfaceRaised,
     marginHorizontal: 16,

@@ -124,12 +124,7 @@ const fetchWithCache = async <T>(
       const separator = url.includes('?') ? '&' : '?';
       const freshUrl = `${url}${separator}_refresh=${Date.now()}`;
       response = await fetchWithTimeout(freshUrl, {
-        headers: {
-          ...getHeaders(),
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-        },
-        cache: 'no-store',
+        headers: getHeaders(),
       });
     } catch (error) {
       if (isRequestTimeout(error)) {
@@ -160,8 +155,7 @@ const fetchWithCache = async <T>(
   };
 
   if (options.forceNetwork) {
-    const isOnline = await cacheService.isOnline();
-    if (!isOnline || isOfflineMode) {
+    if (isOfflineMode) {
       throw new Error('Live refresh requires an internet connection.');
     }
 
@@ -171,21 +165,16 @@ const fetchWithCache = async <T>(
   const cached = await cacheGetter();
   if (cached) {
     if (!isOfflineMode) {
-      void cacheService.isOnline().then((isOnline) => {
-        if (!isOnline) return;
-        return refreshFromNetwork()
-          .catch((error) => {
-            if (!isRequestTimeout(error)) {
-              console.log(`Background refresh failed for ${cacheKey}:`, error);
-            }
-          });
+      void refreshFromNetwork().catch((error) => {
+        if (!isRequestTimeout(error)) {
+          console.log(`Background refresh failed for ${cacheKey}:`, error);
+        }
       });
     }
     return cached;
   }
 
-  const isOnline = await cacheService.isOnline();
-  if (!isOnline || isOfflineMode) {
+  if (isOfflineMode) {
     throw new Error('No cached data available. Please connect to the internet.');
   }
 

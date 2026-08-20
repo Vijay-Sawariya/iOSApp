@@ -84,6 +84,8 @@ export default function InventoryLeadsScreen() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingLeads, setLoadingLeads] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [imageAction, setImageAction] = useState<{ leadId: number; type: 'download' | 'share' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -185,11 +187,13 @@ export default function InventoryLeadsScreen() {
   const applyCurrentFiltersRef = React.useRef<(data: Lead[]) => void>(() => {});
   const displayInventoryRef = React.useRef<(data: Lead[]) => void>(() => {});
   displayInventoryRef.current = (data: Lead[]) => {
+    setLoadError(null);
     setLeads(data);
     applyCurrentFiltersRef.current(data);
   };
 
   const loadLeads = async (forceNetwork = false) => {
+    if (!forceNetwork && leads.length === 0) setLoadingLeads(true);
     try {
       const data = await offlineApi.getInventoryLeads({
         forceNetwork,
@@ -198,6 +202,9 @@ export default function InventoryLeadsScreen() {
       displayInventoryRef.current(data);
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
+      setLoadError(error instanceof Error ? error.message : 'Failed to load inventory');
+    } finally {
+      setLoadingLeads(false);
     }
   };
 
@@ -1835,11 +1842,25 @@ export default function InventoryLeadsScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="home-outline" size={64} color="#D1D5DB" />
-              <Text style={styles.emptyText}>No inventory found</Text>
-              <Text style={styles.emptySubtext}>
-                {hasActiveFilters() ? 'Try adjusting your filters' : 'Add your first inventory to get started'}
-              </Text>
+              {loadingLeads ? (
+                <>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                  <Text style={styles.emptyText}>Loading cached inventory…</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name={loadError ? 'cloud-offline-outline' : 'home-outline'} size={64} color="#D1D5DB" />
+                  <Text style={styles.emptyText}>{loadError ? 'Inventory could not be loaded' : 'No inventory found'}</Text>
+                  <Text style={styles.emptySubtext}>
+                    {loadError || (hasActiveFilters() ? 'Try adjusting your filters' : 'No inventory records were returned by the API')}
+                  </Text>
+                  {loadError ? (
+                    <TouchableOpacity style={styles.emptyRetryButton} onPress={() => void loadLeadsRef.current(true)}>
+                      <Text style={styles.emptyRetryText}>Retry live data</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </>
+              )}
             </View>
           }
           showsVerticalScrollIndicator={false}
@@ -2536,6 +2557,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  emptyRetryButton: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+  },
+  emptyRetryText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
