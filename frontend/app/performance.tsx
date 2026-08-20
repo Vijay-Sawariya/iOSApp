@@ -63,15 +63,16 @@ export default function PerformanceScreen() {
     loadPerformance(days, id);
   };
 
-  const openNewLeads = () => {
+  const openMetric = (metric: string, title: string) => {
     if (!data?.agent?.id || !data?.from || !data?.to) return;
     router.push({
-      pathname: '/leads',
+      pathname: '/performance-details',
       params: {
-        createdBy: String(data.agent.id),
-        from: String(data.from),
-        to: String(data.to),
-        title: `New leads · ${data.agent.full_name || data.agent.username || 'Agent'}`,
+        metric,
+        title,
+        days: String(days),
+        agentId: String(data.agent.id),
+        agentName: data.agent.full_name || data.agent.username || 'Agent',
       },
     } as any);
   };
@@ -89,14 +90,14 @@ export default function PerformanceScreen() {
 
   const summary = data?.summary || {};
   const metrics = [
-    { label: 'Due completed', value: summary.actions_completed || 0, icon: 'checkmark-circle', color: colors.accent, bg: colors.accentSoft },
-    { label: 'Current overdue', value: summary.overdue_actions || 0, icon: 'alert-circle', color: colors.danger, bg: colors.dangerSoft },
-    { label: 'Completion', value: `${summary.completion_rate || 0}%`, icon: 'stats-chart', color: colors.primary, bg: colors.primarySoft },
-    { label: 'On time', value: `${summary.on_time_rate || 0}%`, icon: 'time', color: colors.amber, bg: colors.amberSoft },
-    { label: 'Portfolio', value: summary.open_portfolio || 0, icon: 'briefcase', color: colors.purple, bg: colors.purpleSoft },
-    { label: 'Visits scheduled', value: summary.site_visits || 0, icon: 'walk', color: '#0F766E', bg: '#E6F7F4' },
-    { label: 'New leads', value: summary.leads_created || 0, icon: 'person-add', color: '#2563EB', bg: '#EAF2FF', onPress: openNewLeads },
-    { label: 'Cohort won', value: summary.won_leads || 0, icon: 'trophy', color: '#A16207', bg: '#FFF8E1' },
+    { key: 'due_completed', label: 'Due completed', value: summary.actions_completed || 0, icon: 'checkmark-circle', color: colors.accent, bg: colors.accentSoft },
+    { key: 'current_overdue', label: 'Current overdue', value: summary.overdue_actions || 0, icon: 'alert-circle', color: colors.danger, bg: colors.dangerSoft },
+    { key: 'completion', label: 'Completion', value: `${summary.completion_rate || 0}%`, icon: 'stats-chart', color: colors.primary, bg: colors.primarySoft },
+    { key: 'on_time', label: 'On time', value: `${summary.on_time_rate || 0}%`, icon: 'time', color: colors.amber, bg: colors.amberSoft },
+    { key: 'portfolio', label: 'Portfolio', value: summary.open_portfolio || 0, icon: 'briefcase', color: colors.purple, bg: colors.purpleSoft },
+    { key: 'visits', label: 'Visits scheduled', value: summary.site_visits || 0, icon: 'walk', color: '#0F766E', bg: '#E6F7F4' },
+    { key: 'new_leads', label: 'New leads', value: summary.leads_created || 0, icon: 'person-add', color: '#2563EB', bg: '#EAF2FF' },
+    { key: 'won', label: 'Cohort won', value: summary.won_leads || 0, icon: 'trophy', color: '#A16207', bg: '#FFF8E1' },
   ];
 
   return (
@@ -163,18 +164,17 @@ export default function PerformanceScreen() {
             <TouchableOpacity
               key={metric.label}
               style={styles.metricCard}
-              activeOpacity={metric.onPress ? 0.7 : 1}
-              onPress={metric.onPress}
-              disabled={!metric.onPress}
-              accessibilityRole={metric.onPress ? 'button' : undefined}
-              accessibilityLabel={metric.onPress ? `View ${metric.value} ${metric.label}` : undefined}
+              activeOpacity={0.7}
+              onPress={() => openMetric(metric.key, metric.label)}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${metric.value} ${metric.label}`}
             >
               <View style={[styles.metricIcon, { backgroundColor: metric.bg }]}>
                 <Ionicons name={metric.icon as any} size={18} color={metric.color} />
               </View>
               <Text style={[styles.metricValue, { color: metric.color }]}>{metric.value}</Text>
               <Text style={styles.metricLabel}>{metric.label}</Text>
-              {metric.onPress ? <Ionicons name="chevron-forward" size={15} color={colors.inkSubtle} style={styles.metricDrillIcon} /> : null}
+              <Ionicons name="chevron-forward" size={15} color={colors.inkSubtle} style={styles.metricDrillIcon} />
             </TouchableOpacity>
           ))}
         </View>

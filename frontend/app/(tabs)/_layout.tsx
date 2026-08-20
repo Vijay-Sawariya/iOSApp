@@ -357,6 +357,10 @@ export default function TabLayout() {
           name="leads"
           options={{ href: null }}
         />
+        <Tabs.Screen
+          name="cold-calling"
+          options={{ href: null, headerShown: false }}
+        />
       </Tabs>
       
       <MoreMenuPopup 

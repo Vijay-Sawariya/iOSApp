@@ -24,7 +24,7 @@ function RootLayoutContent() {
   useEffect(() => {
     if (!token || featureFlagsLoading || pathname === '/' || pathname === '/login') return;
 
-    if (/^\/performance(?:\/|$)/.test(pathname) && user?.role?.trim().toLowerCase() !== 'admin') {
+    if (/^\/performance(?:-details)?(?:\/|$)/.test(pathname) && user?.role?.trim().toLowerCase() !== 'admin') {
       if (deniedPathRef.current !== pathname) {
         deniedPathRef.current = pathname;
         Alert.alert('Admin Only', 'Performance Pulse is available to administrators only.');
@@ -42,7 +42,7 @@ function RootLayoutContent() {
       [/^\/(?:legacy-inventory|enquiries)(?:\/|$)/, 'legacy_inventory'],
       [/^\/assigned(?:\/|$)/, 'assigned_leads'],
       [/^\/collaboration(?:\/|$)/, 'team_inbox'],
-      [/^\/performance(?:\/|$)/, 'agent_performance'],
+      [/^\/performance(?:-details)?(?:\/|$)/, 'agent_performance'],
       [/^\/cold-calling(?:\/|$)/, 'cold_calling_inventory'],
       [/^\/site-visit(?:\/|$)/, 'site_visits'],
       [/^\/map(?:\/|$)/, 'lead_map'],
@@ -98,7 +98,7 @@ function RootLayoutContent() {
         <Stack.Screen name="assigned" />
         <Stack.Screen name="collaboration" />
         <Stack.Screen name="performance" />
-        <Stack.Screen name="cold-calling" />
+        <Stack.Screen name="performance-details" />
         <Stack.Screen name="builders/add" />
         <Stack.Screen name="builders/[id]" />
         <Stack.Screen name="builders/edit/[id]" />
