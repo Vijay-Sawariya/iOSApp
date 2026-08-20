@@ -597,7 +597,7 @@ export default function LeadDetailScreen() {
 
   const isInventoryLead = (): boolean => {
     const type = safeStr(lead.lead_type).toLowerCase();
-    return ['seller', 'landlord', 'builder', 'agent'].includes(type);
+    return ['seller', 'owner', 'landlord', 'builder', 'agent'].includes(type);
   };
 
   const isClientLead = (): boolean => {

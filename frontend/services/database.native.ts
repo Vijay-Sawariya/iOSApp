@@ -44,7 +44,8 @@ export const initDatabase = async (): Promise<void> => {
         whatsapp_sent_flag INTEGER DEFAULT 0,
         created_at TEXT,
         updated_at TEXT,
-        synced_at TEXT
+        synced_at TEXT,
+        payload_json TEXT
       );
 
       -- Builders table
@@ -109,6 +110,9 @@ export const initDatabase = async (): Promise<void> => {
     if (!hasLeadColumn('whatsapp_sent_flag')) {
       await db.execAsync('ALTER TABLE leads ADD COLUMN whatsapp_sent_flag INTEGER DEFAULT 0');
     }
+    if (!hasLeadColumn('payload_json')) {
+      await db.execAsync('ALTER TABLE leads ADD COLUMN payload_json TEXT');
+    }
     
     isInitialized = true;
     console.log('Database initialized successfully');
@@ -159,8 +163,9 @@ export const saveLeads = async (leads: any[]): Promise<void> => {
         location, address, property_type, bhk, floor, area_size,
         budget_min, budget_max, unit, car_parking_number, lift_available,
         building_facing, notes, Property_locationUrl, last_message_sent_on,
-        last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at,
+        payload_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         lead.id, lead.name, lead.phone, lead.email, lead.lead_type,
         lead.lead_temperature, lead.lead_status, lead.location, lead.address,
@@ -168,7 +173,8 @@ export const saveLeads = async (leads: any[]): Promise<void> => {
         lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
         lead.lift_available, lead.building_facing, lead.notes,
         lead.Property_locationUrl, lead.last_message_sent_on, lead.last_sent_message,
-        lead.whatsapp_sent_flag ? 1 : 0, lead.created_at, lead.updated_at, syncedAt
+        lead.whatsapp_sent_flag ? 1 : 0, lead.created_at, lead.updated_at, syncedAt,
+        JSON.stringify(lead)
       ]
     );
   }
@@ -236,6 +242,15 @@ export const saveFollowups = async (leadId: number, followups: any[]): Promise<v
   }
 };
 
+const hydrateLeadRow = (row: any): any => {
+  if (!row?.payload_json) return row;
+  try {
+    return { ...row, ...JSON.parse(row.payload_json) };
+  } catch {
+    return row;
+  }
+};
+
 // Get all client leads from local database
 export const getLocalClientLeads = async (): Promise<any[]> => {
   if (!isSQLiteAvailable()) return [];
@@ -244,8 +259,8 @@ export const getLocalClientLeads = async (): Promise<any[]> => {
   
   const result = await database.getAllAsync(
     `SELECT * FROM leads WHERE lead_type IN ('buyer', 'tenant') ORDER BY created_at DESC`
-  );
-  return result;
+  ) as any[];
+  return result.map(hydrateLeadRow);
 };
 
 // Get all inventory leads from local database
@@ -254,17 +269,24 @@ export const getLocalInventoryLeads = async (): Promise<any[]> => {
   const database = getDatabase();
   if (!database) return [];
   
-  const leads = await database.getAllAsync(
-    `SELECT * FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent') ORDER BY created_at DESC`
-  );
-  
-  // Get floor pricing for each lead
+  const rows = await database.getAllAsync(
+    `SELECT * FROM leads WHERE lead_type IN ('seller', 'owner', 'landlord', 'builder', 'agent') ORDER BY created_at DESC`
+  ) as any[];
+  const leads = rows.map(hydrateLeadRow);
+
+  // Load all floor prices in one query. The previous N+1 query loop made a
+  // cached inventory screen perform hundreds/thousands of SQLite round trips.
+  const allPricing = await database.getAllAsync(
+    'SELECT lead_id, floor_label, floor_amount FROM floor_pricing ORDER BY lead_id, id'
+  ) as any[];
+  const pricingByLead = new Map<number, any[]>();
+  for (const row of allPricing) {
+    const rows = pricingByLead.get(row.lead_id) || [];
+    rows.push({ floor_label: row.floor_label, floor_amount: row.floor_amount });
+    pricingByLead.set(row.lead_id, rows);
+  }
   for (const lead of leads as any[]) {
-    const pricing = await database.getAllAsync(
-      'SELECT floor_label, floor_amount FROM floor_pricing WHERE lead_id = ?',
-      [lead.id]
-    );
-    lead.floor_pricing = pricing;
+    lead.floor_pricing = pricingByLead.get(lead.id) || [];
   }
   
   return leads;
@@ -282,12 +304,14 @@ export const getLocalLead = async (id: number): Promise<any | null> => {
   );
   
   if (result) {
+    const hydrated = hydrateLeadRow(result as any);
     // Get floor pricing
     const pricing = await database.getAllAsync(
       'SELECT floor_label, floor_amount FROM floor_pricing WHERE lead_id = ?',
       [id]
     );
-    (result as any).floor_pricing = pricing;
+    hydrated.floor_pricing = pricing;
+    return hydrated;
   }
   
   return result;
@@ -388,8 +412,9 @@ export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
       location, address, property_type, bhk, floor, area_size,
       budget_min, budget_max, unit, car_parking_number, lift_available,
       building_facing, notes, Property_locationUrl, last_message_sent_on,
-      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at,
+      payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       localId, lead.name, lead.phone, lead.email || null, lead.lead_type,
       lead.lead_temperature, lead.lead_status, lead.location, lead.address,
@@ -397,7 +422,8 @@ export const queuePendingLeadCreate = async (lead: any): Promise<any> => {
       lead.budget_min, lead.budget_max, lead.unit, lead.car_parking_number,
       lead.lift_available, lead.building_facing, lead.notes,
       lead.Property_locationUrl, lead.last_message_sent_on || null,
-      lead.last_sent_message || null, lead.whatsapp_sent_flag ? 1 : 0, now, now, null
+      lead.last_sent_message || null, lead.whatsapp_sent_flag ? 1 : 0, now, now, null,
+      JSON.stringify(localLead)
     ]
   );
 
@@ -460,8 +486,9 @@ export const queuePendingLeadUpdate = async (id: number, data: any): Promise<any
       location, address, property_type, bhk, floor, area_size,
       budget_min, budget_max, unit, car_parking_number, lift_available,
       building_facing, notes, Property_locationUrl, last_message_sent_on,
-      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      last_sent_message, whatsapp_sent_flag, created_at, updated_at, synced_at,
+      payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, merged.name, merged.phone, merged.email || null, merged.lead_type,
       merged.lead_temperature, merged.lead_status, merged.location, merged.address,
@@ -470,7 +497,7 @@ export const queuePendingLeadUpdate = async (id: number, data: any): Promise<any
       merged.lift_available, merged.building_facing, merged.notes,
       merged.Property_locationUrl, merged.last_message_sent_on || null,
       merged.last_sent_message || null, merged.whatsapp_sent_flag ? 1 : 0,
-      merged.created_at || now, now, null
+      merged.created_at || now, now, null, JSON.stringify(merged)
     ]
   );
 
@@ -590,7 +617,7 @@ export const getLeadCount = async (): Promise<{ clients: number; inventory: numb
     `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('buyer', 'tenant')`
   ) as { count: number } | null;
   const inventoryResult = await database.getFirstAsync(
-    `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'landlord', 'builder', 'agent')`
+    `SELECT COUNT(*) as count FROM leads WHERE lead_type IN ('seller', 'owner', 'landlord', 'builder', 'agent')`
   ) as { count: number } | null;
   return {
     clients: clientResult?.count || 0,

@@ -183,19 +183,19 @@ export default function InventoryLeadsScreen() {
   };
 
   const applyCurrentFiltersRef = React.useRef<(data: Lead[]) => void>(() => {});
+  const displayInventoryRef = React.useRef<(data: Lead[]) => void>(() => {});
+  displayInventoryRef.current = (data: Lead[]) => {
+    setLeads(data);
+    applyCurrentFiltersRef.current(data);
+  };
 
   const loadLeads = async (forceNetwork = false) => {
-    const displayInventory = (data: Lead[]) => {
-      setLeads(data);
-      applyCurrentFiltersRef.current(data);
-    };
-
     try {
       const data = await offlineApi.getInventoryLeads({
         forceNetwork,
-        onBackgroundRefresh: displayInventory,
+        onBackgroundRefresh: (fresh) => displayInventoryRef.current(fresh),
       });
-      displayInventory(data);
+      displayInventoryRef.current(data);
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
     }
@@ -207,8 +207,12 @@ export default function InventoryLeadsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadLeadsRef.current();
+      const unsubscribe = offlineApi.subscribeToInventoryUpdates((fresh) => {
+        displayInventoryRef.current(fresh);
+      });
+      void loadLeadsRef.current();
       loadClients(); // Load clients when screen focuses
+      return unsubscribe;
     }, [])
   );
 

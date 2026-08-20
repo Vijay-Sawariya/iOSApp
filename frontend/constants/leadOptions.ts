@@ -146,7 +146,7 @@ export const isClientType = (type: string | null): boolean => {
 };
 
 export const isInventoryType = (type: string | null): boolean => {
-  return type === 'seller' || type === 'landlord' || type === 'builder' || type === 'agent';
+  return type === 'seller' || type === 'owner' || type === 'landlord' || type === 'builder' || type === 'agent';
 };
 
 // Color mappings
@@ -156,6 +156,7 @@ export const getTypeColor = (type: string | null): { bg: string; text: string } 
     case 'tenant': return { bg: '#FEF3C7', text: '#92400E' };
     case 'agent': return { bg: '#FCE7F3', text: '#9D174D' };
     case 'seller': return { bg: '#DCFCE7', text: '#166534' };
+    case 'owner': return { bg: '#DCFCE7', text: '#166534' };
     case 'landlord': return { bg: '#FEF3C7', text: '#92400E' };
     case 'builder': return { bg: '#E0E7FF', text: '#3730A3' };
     default: return { bg: '#F3F4F6', text: '#374151' };

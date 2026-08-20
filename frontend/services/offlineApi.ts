@@ -19,6 +19,9 @@ type LeadFetchOptions = {
 };
 
 class OfflineApiService {
+  private clientRefresh: Promise<any[]> | null = null;
+  private inventoryRefresh: Promise<any[]> | null = null;
+
   private async isOnline(): Promise<boolean> {
     try {
       const state = await NetInfo.fetch();
@@ -48,22 +51,72 @@ class OfflineApiService {
 
   // ============ CLIENT LEADS ============
   async getClientLeads(options?: LeadFetchOptions): Promise<any[]> {
-    try {
-      return await api.getClientLeads(options);
-    } catch (error) {
-      console.log('Cached API fetch failed, falling back to SQLite');
-      return syncService.getClientLeads();
+    const refresh = () => {
+      if (!this.clientRefresh) {
+        this.clientRefresh = api.getClientLeads({
+          forceNetwork: true,
+          skipCacheWrite: true,
+        }).then((fresh) => {
+          options?.onBackgroundRefresh?.(fresh);
+          void syncService.storeClientSnapshot(fresh).catch((error) => {
+            console.error('Failed to persist client snapshot:', error);
+          });
+          return fresh;
+        }).finally(() => {
+          this.clientRefresh = null;
+        });
+      }
+      return this.clientRefresh;
+    };
+
+    if (options?.forceNetwork) return refresh();
+
+    const cached = await syncService.getClientLeads();
+    const liveRefresh = refresh();
+    if (cached.length > 0) {
+      void liveRefresh.catch((error) => console.log('Client background refresh failed:', error));
+      return cached;
     }
+    return liveRefresh;
   }
 
   // ============ INVENTORY LEADS ============
   async getInventoryLeads(options?: LeadFetchOptions): Promise<any[]> {
-    try {
-      return await api.getInventoryLeads(options);
-    } catch (error) {
-      console.log('Cached API fetch failed, falling back to SQLite');
-      return syncService.getInventoryLeads();
+    const refresh = () => {
+      if (!this.inventoryRefresh) {
+        this.inventoryRefresh = api.getInventoryLeads({
+          forceNetwork: true,
+          skipCacheWrite: true,
+        }).then((fresh) => {
+          options?.onBackgroundRefresh?.(fresh);
+          void syncService.storeInventorySnapshot(fresh).catch((error) => {
+            console.error('Failed to persist inventory snapshot:', error);
+          });
+          return fresh;
+        }).finally(() => {
+          this.inventoryRefresh = null;
+        });
+      }
+      return this.inventoryRefresh;
+    };
+
+    if (options?.forceNetwork) return refresh();
+
+    const cached = await syncService.getInventoryLeads();
+    const liveRefresh = refresh();
+    if (cached.length > 0) {
+      void liveRefresh.catch((error) => console.log('Inventory background refresh failed:', error));
+      return cached;
     }
+    return liveRefresh;
+  }
+
+  subscribeToClientUpdates(listener: (data: any[]) => void): () => void {
+    return syncService.subscribeToClients(listener);
+  }
+
+  subscribeToInventoryUpdates(listener: (data: any[]) => void): () => void {
+    return syncService.subscribeToInventory(listener);
   }
 
   // ============ SINGLE LEAD ============

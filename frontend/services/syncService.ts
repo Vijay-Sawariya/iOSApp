@@ -14,6 +14,33 @@ type ProgressCallback = (progress: SyncProgress) => void;
 
 class SyncService {
   private isSyncing: boolean = false;
+  private clientListeners = new Set<(leads: any[]) => void>();
+  private inventoryListeners = new Set<(leads: any[]) => void>();
+
+  subscribeToClients(listener: (leads: any[]) => void): () => void {
+    this.clientListeners.add(listener);
+    return () => this.clientListeners.delete(listener);
+  }
+
+  subscribeToInventory(listener: (leads: any[]) => void): () => void {
+    this.inventoryListeners.add(listener);
+    return () => this.inventoryListeners.delete(listener);
+  }
+
+  async storeClientSnapshot(leads: any[]): Promise<void> {
+    await db.saveLeads(leads);
+    this.clientListeners.forEach((listener) => listener(leads));
+  }
+
+  async storeInventorySnapshot(leads: any[]): Promise<void> {
+    await db.saveLeads(leads);
+    for (const lead of leads) {
+      if (Array.isArray(lead.floor_pricing)) {
+        await db.saveFloorPricing(lead.id, lead.floor_pricing);
+      }
+    }
+    this.inventoryListeners.forEach((listener) => listener(leads));
+  }
 
   // Check if device is online
   async isOnline(): Promise<boolean> {
@@ -202,19 +229,12 @@ class SyncService {
       // Step 1: Fetch client leads
       onProgress?.({ stage: 'Syncing client leads...', progress: 0, total: totalSteps });
       const clientLeads = await this.fetchFromApi('/api/leads/clients');
-      await db.saveLeads(clientLeads);
+      await this.storeClientSnapshot(clientLeads);
 
       // Step 2: Fetch inventory leads
       onProgress?.({ stage: 'Syncing inventory...', progress: 1, total: totalSteps });
       const inventoryLeads = await this.fetchFromApi('/api/leads/inventory');
-      await db.saveLeads(inventoryLeads);
-
-      // Save floor pricing for inventory leads
-      for (const lead of inventoryLeads) {
-        if (lead.floor_pricing && Array.isArray(lead.floor_pricing)) {
-          await db.saveFloorPricing(lead.id, lead.floor_pricing);
-        }
-      }
+      await this.storeInventorySnapshot(inventoryLeads);
 
       // Step 3: Fetch builders
       onProgress?.({ stage: 'Syncing builders...', progress: 2, total: totalSteps });

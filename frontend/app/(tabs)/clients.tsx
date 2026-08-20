@@ -172,19 +172,19 @@ www.sagarhome.com`;
   }, [leads]);
 
   const applyCurrentFiltersRef = React.useRef<(data: Lead[]) => void>(() => {});
+  const displayClientsRef = React.useRef<(data: Lead[]) => void>(() => {});
+  displayClientsRef.current = (data: Lead[]) => {
+    setLeads(data);
+    applyCurrentFiltersRef.current(data);
+  };
 
   const loadLeads = async (forceNetwork = false) => {
-    const displayClients = (data: Lead[]) => {
-      setLeads(data);
-      applyCurrentFiltersRef.current(data);
-    };
-
     try {
       const data = await offlineApi.getClientLeads({
         forceNetwork,
-        onBackgroundRefresh: displayClients,
+        onBackgroundRefresh: (fresh) => displayClientsRef.current(fresh),
       });
-      displayClients(data);
+      displayClientsRef.current(data);
     } catch (error) {
       console.error('Failed to load client leads:', error);
     }
@@ -196,7 +196,11 @@ www.sagarhome.com`;
 
   useFocusEffect(
     useCallback(() => {
-      loadLeadsRef.current();
+      const unsubscribe = offlineApi.subscribeToClientUpdates((fresh) => {
+        displayClientsRef.current(fresh);
+      });
+      void loadLeadsRef.current();
+      return unsubscribe;
     }, [])
   );
 

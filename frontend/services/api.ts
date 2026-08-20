@@ -10,6 +10,7 @@ let authFailureHandler: (() => void | Promise<void>) | null = null;
 type CacheFetchOptions = {
   forceNetwork?: boolean;
   onBackgroundRefresh?: (data: any) => void;
+  skipCacheWrite?: boolean;
 };
 
 const fetchWithTimeout = async (
@@ -153,7 +154,7 @@ const fetchWithCache = async <T>(
     // Update mounted screens before serializing a potentially large dataset to
     // AsyncStorage. Disk persistence must not delay visible fresh records.
     options.onBackgroundRefresh?.(data);
-    await cacheSetter(data);
+    if (!options.skipCacheWrite) await cacheSetter(data);
     await cacheService.updateLastSync();
     return data;
   };
@@ -219,8 +220,6 @@ export const api = {
   preloadCoreData: async () => {
     await Promise.allSettled([
       api.getDashboardStats(),
-      api.getClientLeads(),
-      api.getInventoryLeads(),
       api.getBuilders(),
       api.getReminders(),
       api.getUrgentFollowups(5),
