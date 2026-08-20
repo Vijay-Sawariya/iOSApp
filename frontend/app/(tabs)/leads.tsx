@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   TextInput,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
@@ -23,6 +25,8 @@ interface Lead {
   location: string | null;
   created_by?: number | null;
   created_at?: string | null;
+  can_view_sensitive?: boolean;
+  detail_access_status?: 'pending' | 'approved' | 'declined' | null;
 }
 
 export default function LeadsScreen() {
@@ -31,6 +35,23 @@ export default function LeadsScreen() {
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [requestingId, setRequestingId] = useState<string | null>(null);
+
+  const requestAccess = async (lead: Lead) => {
+    if (requestingId || lead.detail_access_status === 'pending') return;
+    setRequestingId(lead.id);
+    try {
+      const result = await api.requestLeadDetailAccess(lead.id);
+      const update = (item: Lead) => item.id === lead.id ? { ...item, detail_access_status: result?.status || 'pending' } : item;
+      setLeads((current) => current.map(update));
+      setFilteredLeads((current) => current.map(update));
+      Alert.alert('Request Sent', result?.message || 'The lead creator has been notified.');
+    } catch (error: any) {
+      Alert.alert('Request Failed', error?.message || 'Could not request access.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   const loadLeads = async () => {
     try {
@@ -134,6 +155,18 @@ export default function LeadsScreen() {
           <Text style={styles.statusBadgeText}>{item.lead_status || 'New'}</Text>
         </View>
       </View>
+      {item.can_view_sensitive === false ? (
+        <TouchableOpacity
+          style={styles.accessButton}
+          disabled={requestingId === item.id || item.detail_access_status === 'pending'}
+          onPress={(event) => { event.stopPropagation(); requestAccess(item); }}
+        >
+          {requestingId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
+            <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={16} color="#2563EB" />
+          )}
+          <Text style={styles.accessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
+        </TouchableOpacity>
+      ) : null}
     </TouchableOpacity>
   );
 
@@ -216,6 +249,8 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  accessButton: { marginTop: 12, minHeight: 38, borderRadius: 9, backgroundColor: '#EFF6FF', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  accessText: { color: '#2563EB', fontSize: 12, fontWeight: '700' },
   leadHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -84,6 +84,16 @@ const invalidateReminderCaches = async () => {
   ]);
 };
 
+const invalidateLeadAccessCaches = async (leadId?: string | number) => {
+  await Promise.all([
+    ...(leadId ? [cacheService.remove(`${CACHE_KEYS.LEAD_DETAIL_PREFIX}${leadId}`)] : []),
+    cacheService.remove(CACHE_KEYS.LEADS_CLIENTS),
+    cacheService.remove(CACHE_KEYS.LEADS_INVENTORY),
+    cacheService.remove('cache_mobile_workbench'),
+    cacheService.remove('cache_mobile_assigned_leads'),
+  ]);
+};
+
 const getHeaders = () => {
   console.log('getHeaders - authToken present:', !!authToken);
   return {
@@ -273,6 +283,39 @@ export const api = {
       throw new Error(await getApiErrorMessage(response, 'Failed to load team inbox'));
     }
     return response.json();
+  },
+
+  requestLeadDetailAccess: async (leadId: string | number) => {
+    if (!(await cacheService.isOnline()) || isOfflineMode) {
+      throw new Error('An internet connection is required to request private lead details.');
+    }
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/detail-access-request`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to request lead access'));
+    }
+    const result = await response.json();
+    await invalidateLeadAccessCaches(leadId);
+    return result;
+  },
+
+  respondToLeadDetailAccess: async (requestId: number, decision: 'approved' | 'declined') => {
+    if (!(await cacheService.isOnline()) || isOfflineMode) {
+      throw new Error('An internet connection is required to change private-detail access.');
+    }
+    const response = await fetch(`${API_URL}/api/collaboration/detail-access/${requestId}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ decision }),
+    });
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response, 'Failed to update lead access'));
+    }
+    const result = await response.json();
+    await invalidateLeadAccessCaches(result?.lead_id);
+    return result;
   },
 
   markCollaborationInboxRead: async () => {
@@ -489,12 +532,13 @@ export const api = {
     );
   },
 
-  getLead: async (id: string) => {
+  getLead: async (id: string, options?: CacheFetchOptions) => {
     return fetchWithCache(
       `${API_URL}/api/leads/${id}`,
       `lead_${id}`,
       (data) => cacheService.cacheLead(id, data),
-      () => cacheService.getLead(id)
+      () => cacheService.getLead(id),
+      options
     );
   },
 

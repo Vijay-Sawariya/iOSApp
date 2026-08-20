@@ -31,6 +31,22 @@ interface CacheData<T> {
   timestamp: number;
 }
 
+// Access can be revoked on another device. Never persist private lead values;
+// online requests rehydrate them only after the server re-authorizes the user.
+const sanitizeLeadForCache = (lead: any) => {
+  if (!lead || typeof lead !== 'object') return lead;
+  return {
+    ...lead,
+    phone: null,
+    email: null,
+    address: null,
+    Property_locationUrl: null,
+    property_location_url: null,
+    location_url: null,
+    can_view_sensitive: false,
+  };
+};
+
 class CacheService {
   private memoryCache = new Map<string, CacheData<any>>();
   private pendingReads = new Map<string, Promise<any | null>>();
@@ -155,7 +171,7 @@ class CacheService {
 
   // Cache specific data types
   async cacheClientLeads(data: any[]): Promise<void> {
-    await this.set(CACHE_KEYS.LEADS_CLIENTS, data);
+    await this.set(CACHE_KEYS.LEADS_CLIENTS, data.map(sanitizeLeadForCache));
   }
 
   async getClientLeads(): Promise<any[] | null> {
@@ -163,7 +179,7 @@ class CacheService {
   }
 
   async cacheInventoryLeads(data: any[]): Promise<void> {
-    await this.set(CACHE_KEYS.LEADS_INVENTORY, data);
+    await this.set(CACHE_KEYS.LEADS_INVENTORY, data.map(sanitizeLeadForCache));
   }
 
   async getInventoryLeads(): Promise<any[] | null> {
@@ -267,7 +283,7 @@ class CacheService {
   }
 
   async cacheLead(id: string, data: any): Promise<void> {
-    await this.set(`${CACHE_KEYS.LEAD_DETAIL_PREFIX}${id}`, data);
+    await this.set(`${CACHE_KEYS.LEAD_DETAIL_PREFIX}${id}`, sanitizeLeadForCache(data));
   }
 
   async getLead(id: string): Promise<any | null> {

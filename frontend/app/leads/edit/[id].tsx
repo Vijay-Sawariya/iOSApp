@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { api } from '../../../services/api';
-import { offlineApi } from '../../../services/offlineApi';
 import { useAuth } from '../../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../../constants/leadOptions';
 import * as Location from 'expo-location';
@@ -157,9 +156,9 @@ export default function EditLeadScreen() {
       return;
     }
     try {
-      // Use the same cache/SQLite fallback as the lead detail screen. Opening the
-      // editor should still work when reachability is unavailable or intermittent.
-      const data = await offlineApi.getLead(leadId);
+      // Editing requires a live authorization check so revoked private data can
+      // never be restored from an old local snapshot.
+      const data = await api.getLead(leadId, { forceNetwork: true });
       if (!data) {
         throw new Error('Lead details are not available on this device');
       }

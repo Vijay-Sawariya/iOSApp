@@ -257,6 +257,7 @@ export interface Lead {
   assigned_to?: number | null;
   current_assignee_id?: number | null;
   can_view_sensitive?: boolean;
+  detail_access_status?: 'pending' | 'approved' | 'declined' | null;
   created_by_name?: string | null;
   Property_locationUrl?: string | null;
   last_message_sent_on?: string | null;

@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Linking,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -13,8 +15,11 @@ import {
   getTypeColor,
   getTemperatureColor,
   formatFloorPricing,
+  canViewSensitiveData,
 } from '../../constants/leadOptions';
 import { colors, radii, shadows } from '../../constants/theme';
+import { api } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface LeadCardProps {
   lead: Lead;
@@ -34,6 +39,25 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   const floorPricing = formatFloorPricing(lead.floor_pricing, lead.unit);
   const hasMapUrl = lead.Property_locationUrl && lead.Property_locationUrl.trim() !== '';
   const addressLocation = [lead.address, lead.location].filter(Boolean).join(', ');
+  const [accessStatus, setAccessStatus] = useState(lead.detail_access_status);
+  const [requestingAccess, setRequestingAccess] = useState(false);
+  const canViewSensitive = lead.can_view_sensitive !== false;
+  const { user } = useAuth();
+  const canManageLead = canViewSensitiveData(user?.role, user?.id, lead.created_by, lead.current_assignee_id || lead.assigned_to);
+
+  const requestAccess = async () => {
+    if (requestingAccess || accessStatus === 'pending') return;
+    setRequestingAccess(true);
+    try {
+      const result = await api.requestLeadDetailAccess(lead.id);
+      setAccessStatus(result?.status || 'pending');
+      Alert.alert('Request Sent', result?.message || 'The lead creator has been notified.');
+    } catch (error: any) {
+      Alert.alert('Request Failed', error?.message || 'Could not request access.');
+    } finally {
+      setRequestingAccess(false);
+    }
+  };
 
   const openMapUrl = () => {
     if (lead.Property_locationUrl) {
@@ -87,7 +111,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         {addressLocation && (
           <View style={styles.infoRow}>
             <Ionicons name="location-outline" size={14} color="#6B7280" />
-            {hasMapUrl ? (
+            {hasMapUrl && canViewSensitive ? (
               <TouchableOpacity onPress={openMapUrl}>
                 <Text style={[styles.infoText, styles.mapLink]}>{addressLocation}</Text>
               </TouchableOpacity>
@@ -116,7 +140,25 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         )}
       </TouchableOpacity>
 
-      {showActions && (
+      {!canViewSensitive ? (
+        <TouchableOpacity
+          style={[styles.accessButton, accessStatus === 'pending' && styles.accessButtonDisabled]}
+          onPress={(event) => {
+            event.stopPropagation();
+            requestAccess();
+          }}
+          disabled={requestingAccess || accessStatus === 'pending'}
+        >
+          {requestingAccess ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons name={accessStatus === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color={colors.primary} />
+          )}
+          <Text style={styles.accessButtonText}>{accessStatus === 'pending' ? 'Pending' : 'Request Access'}</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {showActions && canManageLead && (
         <View style={styles.actionsRow}>
           {onAddReminder && (
             <TouchableOpacity style={styles.actionButton} onPress={() => onAddReminder(lead)}>
@@ -278,6 +320,21 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
     marginLeft: 4,
   },
+  accessButton: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    minHeight: 40,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  accessButtonDisabled: { opacity: 0.65 },
+  accessButtonText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
 });
 
 export default LeadCard;

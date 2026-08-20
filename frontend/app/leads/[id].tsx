@@ -25,7 +25,7 @@ import { offlineApi } from '../../services/offlineApi';
 import { api } from '../../services/api';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { canViewSensitiveData, maskPhone, maskAddress } from '../../constants/leadOptions';
+import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
 import MatchingLeadsModal, { openWhatsApp, makeCall, composeMultipleInventoriesMessage } from '../../components/MatchingLeadsModal';
 import LeadCollaborationPanel from '../../components/LeadCollaborationPanel';
 
@@ -74,7 +74,7 @@ export default function LeadDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { isOnline } = useOffline();
-  const { user } = useAuth();  // Get current user for permission checks
+  const { user } = useAuth();
   
   // Followup/Conversation state
   const [followups, setFollowups] = useState<any[]>([]);
@@ -100,6 +100,7 @@ export default function LeadDetailScreen() {
   // Selected matched properties state (for sharing)
   const [selectedMatchedIds, setSelectedMatchedIds] = useState<number[]>([]);
   const [sharingMatched, setSharingMatched] = useState(false);
+  const [requestingAccess, setRequestingAccess] = useState(false);
 
   // Refresh data when screen comes into focus (e.g., returning from edit)
   useFocusEffect(
@@ -114,7 +115,12 @@ export default function LeadDetailScreen() {
   const loadLead = async () => {
     try {
       setError(null);
-      const data = await offlineApi.getLead(String(id));
+      let data;
+      try {
+        data = await api.getLead(String(id), { forceNetwork: true });
+      } catch {
+        data = await offlineApi.getLead(String(id));
+      }
       console.log('Lead data loaded:', JSON.stringify(data, null, 2));
       setLead(data);
     } catch (err: any) {
@@ -428,12 +434,7 @@ export default function LeadDetailScreen() {
     if (!lead) return;
     
     // Check if user can view sensitive data for this lead
-    const userCanViewData = canViewSensitiveData(
-      user?.role,
-      user?.id,
-      lead?.created_by,
-      lead?.current_assignee_id || lead?.assigned_to
-    );
+    const userCanViewData = lead?.can_view_sensitive === true;
     
     const unit = formatUnit(lead.unit).toUpperCase();
     let details = '';
@@ -619,12 +620,8 @@ export default function LeadDetailScreen() {
   };
 
   // Check if user can view sensitive data for this lead
-  const canViewData = canViewSensitiveData(
-    user?.role,
-    user?.id,
-    lead?.created_by,
-    lead?.current_assignee_id || lead?.assigned_to
-  );
+  const canViewData = lead?.can_view_sensitive === true;
+  const canManageLead = canViewSensitiveData(user?.role, user?.id, lead?.created_by, lead?.current_assignee_id || lead?.assigned_to);
   
   // Get display values for sensitive fields (location is visible to everyone)
   const displayPhone = canViewData ? lead?.phone : maskPhone(lead?.phone);
@@ -636,6 +633,20 @@ export default function LeadDetailScreen() {
     { label: 'Temp', value: safeStr(lead.lead_temperature) || 'N/A', color: '#EF4444' },
     { label: isClientLead() ? 'Matches' : 'Files', value: isClientLead() ? String(matchedPropertyCount) : String(images.length + floorplans.length), color: '#059669' },
   ];
+
+  const requestDetailAccess = async () => {
+    if (requestingAccess || lead.detail_access_status === 'pending') return;
+    setRequestingAccess(true);
+    try {
+      const result = await api.requestLeadDetailAccess(lead.id);
+      setLead((current: any) => current ? { ...current, detail_access_status: result?.status || 'pending' } : current);
+      Alert.alert('Request Sent', result?.message || 'The lead creator has been notified.');
+    } catch (requestError: any) {
+      Alert.alert('Request Failed', requestError?.message || 'Could not request access.');
+    } finally {
+      setRequestingAccess(false);
+    }
+  };
 
   // Toggle selection of matched property
   const toggleMatchedSelection = (propId: number) => {
@@ -745,7 +756,7 @@ export default function LeadDetailScreen() {
           
           {/* Header Action Icons - Only show edit/delete if user can view data */}
           <View style={styles.headerActions}>
-            {canViewData ? (
+            {canManageLead ? (
               <TouchableOpacity style={styles.headerIconButton} onPress={handleEdit}>
                 <Ionicons name="create-outline" size={22} color="#3B82F6" />
               </TouchableOpacity>
@@ -755,13 +766,26 @@ export default function LeadDetailScreen() {
                 <Ionicons name="copy-outline" size={22} color="#10B981" />
               </TouchableOpacity>
             ) : null}
-            {canViewData ? (
+            {canManageLead ? (
               <TouchableOpacity style={styles.headerIconButton} onPress={handleDelete}>
                 <Ionicons name="trash-outline" size={22} color="#EF4444" />
               </TouchableOpacity>
             ) : null}
           </View>
         </View>
+
+        {!canViewData ? (
+          <TouchableOpacity
+            style={[styles.actionButton, { marginTop: 12 }]}
+            onPress={requestDetailAccess}
+            disabled={requestingAccess || lead.detail_access_status === 'pending'}
+          >
+            {requestingAccess ? <ActivityIndicator size="small" color="#3B82F6" /> : (
+              <Ionicons name={lead.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={22} color="#3B82F6" />
+            )}
+            <Text style={styles.actionButtonText}>{lead.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Quick Action Buttons - Only show Call/WhatsApp if user can view data */}
         <View style={styles.actionButtons}>
@@ -1013,12 +1037,7 @@ export default function LeadDetailScreen() {
           </View>
           {lead.matched_properties.map((prop: any, index: number) => {
             // Check if user can view sensitive data for this matched property
-            const canViewPropertyData = canViewSensitiveData(
-              user?.role,
-              user?.id,
-              prop.property_created_by || prop.created_by,
-              prop.property_current_assignee_id || prop.property_assigned_to
-            );
+            const canViewPropertyData = prop.can_view_sensitive === true;
             const displayPropertyPhone = canViewPropertyData ? prop.property_phone : (prop.property_phone ? '**********' : null);
             const displayPropertyAddress = canViewPropertyData ? prop.property_address : (prop.property_address ? '**********' : null);
             const propId = prop.property_id || prop.id || index;

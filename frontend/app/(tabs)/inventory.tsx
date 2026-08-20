@@ -91,7 +91,8 @@ export default function InventoryLeadsScreen() {
   const [imageAction, setImageAction] = useState<{ leadId: number; type: 'download' | 'share' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const { user } = useAuth();  // Get current user for permission checks
+  const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
+  const { user } = useAuth();
   const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
   const [inventoryFileCounts, setInventoryFileCounts] = useState<Record<number, { images: number; pdfs: number }>>({});
   
@@ -118,6 +119,22 @@ export default function InventoryLeadsScreen() {
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [preferredInventoryIds, setPreferredInventoryIds] = useState<number[]>([]);
+
+  const requestDetailAccess = async (lead: Lead) => {
+    if (requestingAccessId || lead.detail_access_status === 'pending') return;
+    setRequestingAccessId(lead.id);
+    try {
+      const result = await api.requestLeadDetailAccess(lead.id);
+      const update = (item: Lead) => item.id === lead.id ? { ...item, detail_access_status: result?.status || 'pending' } as Lead : item;
+      setLeads((current) => current.map(update));
+      setFilteredLeads((current) => current.map(update));
+      Alert.alert('Request Sent', result?.message || 'The lead creator has been notified.');
+    } catch (error: any) {
+      Alert.alert('Request Failed', error?.message || 'Could not request access.');
+    } finally {
+      setRequestingAccessId(null);
+    }
+  };
 
   const creatorOptions = useMemo(() => {
     const creators = new Map<string, string>();
@@ -839,12 +856,8 @@ export default function InventoryLeadsScreen() {
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
     // Check if user can view sensitive data for this lead
-    const canViewData = canViewSensitiveData(
-      user?.role,
-      user?.id,
-      item.created_by,
-      item.current_assignee_id || item.assigned_to
-    );
+    const canViewData = item.can_view_sensitive === true;
+    const canManageLead = canViewSensitiveData(user?.role, user?.id, item.created_by, item.current_assignee_id || item.assigned_to);
     
     // Determine what to display for phone and address (location is always visible)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
@@ -1058,7 +1071,7 @@ export default function InventoryLeadsScreen() {
         </TouchableOpacity>
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
-        <View style={styles.actionsRow}>
+        {canViewData ? <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
@@ -1112,7 +1125,7 @@ export default function InventoryLeadsScreen() {
             <Ionicons name="copy-outline" size={15} color="#6D28D9" />
             <Text style={[styles.actionText, { color: '#6D28D9' }]}>Copy</Text>
           </TouchableOpacity>
-          {canViewData && (
+          {canManageLead && (
             <>
               <View style={styles.actionDivider} />
               <TouchableOpacity
@@ -1132,16 +1145,27 @@ export default function InventoryLeadsScreen() {
               </TouchableOpacity>
             </>
           )}
-        </View>
+        </View> : (
+          <TouchableOpacity
+            style={styles.requestAccessButton}
+            disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}
+            onPress={() => requestDetailAccess(item)}
+          >
+            {requestingAccessId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
+              <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color="#2563EB" />
+            )}
+            <Text style={styles.requestAccessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
+          </TouchableOpacity>
+        )}
 
         {/* File Upload Row */}
-        <View style={styles.fileUploadRow}>
+        {canViewData ? <View style={styles.fileUploadRow}>
           <InventoryFileUpload
             leadId={item.id}
             compact
             onFilesChange={(count) => updateInventoryFileCounts(item.id, count)}
           />
-        </View>
+        </View> : null}
       </View>
     );
   };
@@ -2570,6 +2594,20 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
   },
+  requestAccessButton: {
+    minHeight: 42,
+    marginHorizontal: 14,
+    marginVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    flexDirection: 'row',
+    gap: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestAccessText: { color: '#2563EB', fontSize: 13, fontWeight: '700' },
   actionButton: {
     flex: 1,
     minWidth: 0,

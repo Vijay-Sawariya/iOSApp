@@ -59,6 +59,8 @@ interface Lead {
   assigned_to?: number | null;
   current_assignee_id?: number | null;
   created_by_name?: string | null;
+  can_view_sensitive?: boolean;
+  detail_access_status?: 'pending' | 'approved' | 'declined' | null;
   // Action/Followup fields
   next_action_date?: string | null;
   next_action_time?: string | null;
@@ -116,6 +118,23 @@ export default function ClientLeadsScreen() {
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
   const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
+  const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
+
+  const requestDetailAccess = async (lead: Lead) => {
+    if (requestingAccessId || lead.detail_access_status === 'pending') return;
+    setRequestingAccessId(lead.id);
+    try {
+      const result = await api.requestLeadDetailAccess(lead.id);
+      const update = (item: Lead) => item.id === lead.id ? { ...item, detail_access_status: result?.status || 'pending' } as Lead : item;
+      setLeads((current) => current.map(update));
+      setFilteredLeads((current) => current.map(update));
+      Alert.alert('Request Sent', result?.message || 'The lead creator has been notified.');
+    } catch (error: any) {
+      Alert.alert('Request Failed', error?.message || 'Could not request access.');
+    } finally {
+      setRequestingAccessId(null);
+    }
+  };
 
   const creatorOptions = useMemo(() => {
     const creators = new Map<string, string>();
@@ -567,12 +586,13 @@ www.sagarhome.com`;
     const isHot = item.lead_temperature === 'Hot';
     
     // Check if user can view sensitive data for this lead
-    const canViewData = canViewSensitiveData(
+    const canManageLead = canViewSensitiveData(
       user?.role,
       user?.id,
       item.created_by,
       item.current_assignee_id || item.assigned_to
     );
+    const canViewData = item.can_view_sensitive === true;
     
     // Determine what to display for phone (location is visible to everyone)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
@@ -736,7 +756,7 @@ www.sagarhome.com`;
         </TouchableOpacity>
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
-        <View style={styles.actionsRow}>
+        {canViewData ? <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
@@ -752,7 +772,7 @@ www.sagarhome.com`;
             <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
             <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
           </TouchableOpacity>
-          {canViewData && (
+          {canManageLead && (
             <>
               <View style={styles.actionDivider} />
               <TouchableOpacity
@@ -772,7 +792,18 @@ www.sagarhome.com`;
               </TouchableOpacity>
             </>
           )}
-        </View>
+        </View> : (
+          <TouchableOpacity
+            style={styles.requestAccessButton}
+            disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}
+            onPress={() => requestDetailAccess(item)}
+          >
+            {requestingAccessId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
+              <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color="#2563EB" />
+            )}
+            <Text style={styles.requestAccessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -1634,6 +1665,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
   },
+  requestAccessButton: { minHeight: 42, marginHorizontal: 14, marginVertical: 10, borderRadius: 10, backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  requestAccessText: { color: '#2563EB', fontSize: 13, fontWeight: '700' },
   actionButton: {
     flex: 1,
     flexDirection: 'row',

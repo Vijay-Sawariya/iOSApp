@@ -81,6 +81,22 @@ export default function CollaborationInboxScreen() {
     }
   };
 
+  const respondToDetailAccess = async (item: any, decision: 'approved' | 'declined') => {
+    setRespondingId(item.reference_id);
+    try {
+      const result = await api.respondToLeadDetailAccess(item.reference_id, decision);
+      setItems((current) => current.map((entry) => entry.reference_id === item.reference_id
+        && entry.notification_type === 'detail_access_request'
+        ? { ...entry, detail_access_status: result.status, is_read: 1 }
+        : entry));
+      await loadInbox();
+    } catch (error: any) {
+      Alert.alert('Access Update Failed', error?.message || 'Could not update private-detail access.');
+    } finally {
+      setRespondingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -125,6 +141,7 @@ export default function CollaborationInboxScreen() {
       >
         {items.length ? items.map((item) => {
           const isHandoff = item.notification_type === 'handoff';
+          const isDetailAccess = item.notification_type === 'detail_access_request';
           const isPendingHandoff = isHandoff && item.handoff_status === 'pending';
           const isResponding = respondingId === item.reference_id;
           return (
@@ -136,12 +153,12 @@ export default function CollaborationInboxScreen() {
             >
               <View style={[
                 styles.iconWrap,
-                { backgroundColor: isHandoff ? colors.purpleSoft : colors.amberSoft },
+                { backgroundColor: isDetailAccess ? colors.primarySoft : isHandoff ? colors.purpleSoft : colors.amberSoft },
               ]}>
                 <Ionicons
-                  name={isHandoff ? 'people-outline' : 'at-outline'}
+                  name={isDetailAccess ? 'shield-checkmark-outline' : isHandoff ? 'people-outline' : 'at-outline'}
                   size={20}
-                  color={isHandoff ? colors.purple : colors.amber}
+                  color={isDetailAccess ? colors.primary : isHandoff ? colors.purple : colors.amber}
                 />
               </View>
               <View style={styles.cardCopy}>
@@ -176,6 +193,41 @@ export default function CollaborationInboxScreen() {
                         <ActivityIndicator size="small" color={colors.white} />
                       ) : (
                         <Text style={styles.acceptText}>Accept handoff</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {isDetailAccess ? (
+                  <View style={styles.handoffActions}>
+                    {item.detail_access_status === 'approved' ? (
+                      <View style={[styles.handoffButton, { backgroundColor: colors.accentSoft }]}>
+                        <Text style={{ color: colors.accent, fontWeight: '800', fontSize: 12 }}>Approved</Text>
+                      </View>
+                    ) : item.detail_access_status === 'declined' ? (
+                      <View style={[styles.handoffButton, { backgroundColor: colors.surfaceMuted }]}>
+                        <Text style={{ color: colors.inkMuted, fontWeight: '800', fontSize: 12 }}>Disapproved</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.handoffButton, styles.declineButton]}
+                        disabled={isResponding}
+                        onPress={(event) => { event.stopPropagation(); respondToDetailAccess(item, 'declined'); }}
+                      >
+                        <Text style={styles.declineText}>Decline</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.handoffButton, item.detail_access_status === 'approved' ? styles.declineButton : styles.acceptButton]}
+                      disabled={isResponding}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        respondToDetailAccess(item, item.detail_access_status === 'approved' ? 'declined' : 'approved');
+                      }}
+                    >
+                      {isResponding ? <ActivityIndicator size="small" color={item.detail_access_status === 'approved' ? colors.danger : colors.white} /> : (
+                        <Text style={item.detail_access_status === 'approved' ? styles.declineText : styles.acceptText}>
+                          {item.detail_access_status === 'approved' ? 'Revoke Access' : 'Allow Access'}
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
