@@ -21,7 +21,7 @@ export default function PerformanceDetailsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const result = await api.getMobilePerformance(Number(params.days || 30), Number(params.agentId || 0) || undefined);
+      const result = await api.getMobilePerformance(Number(params.days || 30), Number(params.agentId || 0) || undefined, metric);
       setItems(Array.isArray(result?.details?.[metric]) ? result.details[metric] : []);
     } finally {
       setLoading(false);

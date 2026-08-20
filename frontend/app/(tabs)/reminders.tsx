@@ -246,6 +246,30 @@ export default function RemindersScreen() {
     }
   };
 
+  const handleSnoozeOneHour = async (item: Reminder) => {
+    try {
+      const current = new Date(item.reminder_date.replace(' ', 'T'));
+      const snoozeFrom = Math.max(Date.now(), current.getTime());
+      const snoozed = new Date(snoozeFrom + 60 * 60 * 1000);
+      const date = `${snoozed.getFullYear()}-${String(snoozed.getMonth() + 1).padStart(2, '0')}-${String(snoozed.getDate()).padStart(2, '0')}`;
+      const time = `${String(snoozed.getHours()).padStart(2, '0')}:${String(snoozed.getMinutes()).padStart(2, '0')}:00`;
+      await api.updateReminder(item.id.toString(), { reminder_date: `${date}T${time}`, status: 'pending' });
+      await notificationService.scheduleReminderNotificationIST(
+        item.id.toString(), item.title, item.notes || item.reminder_type,
+        snoozed.getFullYear(), snoozed.getMonth() + 1, snoozed.getDate(), snoozed.getHours(), snoozed.getMinutes(), item.lead_name
+      );
+      await loadReminders();
+      Alert.alert('Snoozed', 'The reminder and hourly alerts will resume in one hour.');
+    } catch (error) {
+      Alert.alert('Error', 'Unable to snooze this reminder.');
+    }
+  };
+
+  const handleStopAlerts = async (item: Reminder) => {
+    await notificationService.cancelReminderNotification(item.id.toString());
+    Alert.alert('Alerts stopped', 'Hourly notifications for this reminder have been stopped.');
+  };
+
   const getReminderIcon = (type: string) => {
     switch (type) {
       case 'Call': return 'call';
@@ -395,12 +419,17 @@ export default function RemindersScreen() {
             </View>
             
             {statusLower === 'pending' && (
-              <TouchableOpacity
-                style={styles.completeButton}
-                onPress={() => handleMarkComplete(item.id)}
-              >
-                <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={styles.completeButton} onPress={() => handleSnoozeOneHour(item)}>
+                  <Ionicons name="time-outline" size={21} color="#3B82F6" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.completeButton} onPress={() => handleStopAlerts(item)}>
+                  <Ionicons name="notifications-off-outline" size={21} color="#F59E0B" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.completeButton} onPress={() => handleMarkComplete(item.id)}>
+                  <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                </TouchableOpacity>
+              </>
             )}
             
             <TouchableOpacity

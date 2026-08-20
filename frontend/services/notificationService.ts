@@ -22,7 +22,8 @@ Notifications.setNotificationHandler({
 
 export interface ScheduledNotification {
   reminderId: string;
-  notificationId: string;
+  notificationId?: string;
+  notificationIds?: string[];
   scheduledTime: string;
 }
 
@@ -220,86 +221,55 @@ export const notificationService = {
         return null;
       }
 
-      // Calculate notification time (10 minutes before the reminder) in IST
-      let notifMinute = minute - 10;
-      let notifHour = hour;
-      let notifDay = day;
-      let notifMonth = month;
-      let notifYear = year;
-
-      if (notifMinute < 0) {
-        notifMinute += 60;
-        notifHour -= 1;
-      }
-
-      if (notifHour < 0) {
-        notifHour += 24;
-        notifDay -= 1;
-      }
-
-      // Handle month/year rollback (simplified - for edge cases)
-      if (notifDay < 1) {
-        notifMonth -= 1;
-        if (notifMonth < 1) {
-          notifMonth = 12;
-          notifYear -= 1;
-        }
-        // Get last day of previous month
-        const lastDay = new Date(notifYear, notifMonth, 0).getDate();
-        notifDay = lastDay;
-      }
-
-      // Calculate seconds from now until the notification time
-      const secondsUntil = getSecondsUntilIST(notifYear, notifMonth, notifDay, notifHour, notifMinute);
-
-      // Don't schedule if the notification time is in the past
-      if (secondsUntil <= 0) {
-        console.log(`[Notification] Time is in the past (${secondsUntil}s), skipping`);
-        return null;
-      }
+      const secondsUntilDue = getSecondsUntilIST(year, month, day, hour, minute);
+      const firstDelay = secondsUntilDue > 0
+        ? secondsUntilDue
+        : Math.max(60, 3600 - ((-secondsUntilDue) % 3600));
 
       // Cancel any existing notification for this reminder
       await notificationService.cancelReminderNotification(reminderId);
 
       const notificationTitle = `🔔 Reminder: ${title}`;
-      const notificationBody = leadName 
-        ? `Follow-up with ${leadName} in 10 minutes`
-        : body || 'You have a reminder in 10 minutes';
+      const notificationBody = leadName
+        ? `Follow-up with ${leadName}. This reminder will repeat every hour until stopped or snoozed.`
+        : body || 'This reminder will repeat every hour until stopped or snoozed.';
+      const notificationIds: string[] = [];
+      // iOS limits pending local notifications. Keep a rolling 24-hour window;
+      // editing/snoozing the reminder replaces the entire sequence.
+      for (let index = 0; index < 24; index += 1) {
+        try {
+          const notificationId = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: notificationTitle,
+              body: notificationBody,
+              sound: 'default',
+              priority: Notifications.AndroidNotificationPriority.MAX,
+              data: { reminderId, type: 'reminder', repeatIndex: index },
+              vibrate: [0, 250, 250, 250],
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: firstDelay + (index * 3600),
+              channelId: Platform.OS === 'android' ? 'reminders' : undefined,
+            },
+          });
+          notificationIds.push(notificationId);
+        } catch (scheduleError) {
+          console.warn(`[Notification] Hourly schedule stopped after ${notificationIds.length} alerts:`, scheduleError);
+          break;
+        }
+      }
 
-      // Format IST time for logging
-      const hour12 = notifHour % 12 || 12;
-      const ampm = notifHour < 12 ? 'AM' : 'PM';
-      const timeStr = `${hour12}:${notifMinute.toString().padStart(2, '0')} ${ampm}`;
+      if (notificationIds.length === 0) return null;
 
-      console.log(`[Notification] Scheduling for ${timeStr} IST (in ${secondsUntil} seconds)`);
-
-      // Use seconds trigger - this is more reliable than date trigger
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: notificationTitle,
-          body: notificationBody,
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          data: { reminderId, type: 'reminder' },
-          vibrate: [0, 250, 250, 250],
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: secondsUntil,
-          channelId: Platform.OS === 'android' ? 'reminders' : undefined,
-        },
-      });
-
-      // Store the notification mapping with IST time
-      const istTimeStr = `${notifYear}-${notifMonth.toString().padStart(2, '0')}-${notifDay.toString().padStart(2, '0')}T${notifHour.toString().padStart(2, '0')}:${notifMinute.toString().padStart(2, '0')}:00`;
+      const istTimeStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
       await notificationService.storeNotificationMapping(
-        reminderId, 
-        notificationId, 
+        reminderId,
+        notificationIds,
         istTimeStr
       );
-
-      console.log(`[Notification] Scheduled ${notificationId} for reminder ${reminderId} at ${timeStr} IST (in ${Math.round(secondsUntil/60)} mins)`);
-      return notificationId;
+      console.log(`[Notification] Scheduled ${notificationIds.length} hourly alerts for reminder ${reminderId}`);
+      return notificationIds[0] || null;
     } catch (error) {
       console.error('Error scheduling notification:', error);
       return null;
@@ -317,7 +287,8 @@ export const notificationService = {
         const existing = notifications.find(n => n.reminderId === reminderId);
         
         if (existing) {
-          await Notifications.cancelScheduledNotificationAsync(existing.notificationId);
+          const ids = existing.notificationIds || (existing.notificationId ? [existing.notificationId] : []);
+          await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id)));
           
           // Remove from storage
           const updated = notifications.filter(n => n.reminderId !== reminderId);
@@ -334,7 +305,7 @@ export const notificationService = {
   // Store notification mapping
   storeNotificationMapping: async (
     reminderId: string,
-    notificationId: string,
+    notificationId: string | string[],
     scheduledTime: string
   ): Promise<void> => {
     try {
@@ -345,7 +316,8 @@ export const notificationService = {
       notifications = notifications.filter(n => n.reminderId !== reminderId);
       
       // Add new entry
-      notifications.push({ reminderId, notificationId, scheduledTime });
+      const notificationIds = Array.isArray(notificationId) ? notificationId : [notificationId];
+      notifications.push({ reminderId, notificationId: notificationIds[0], notificationIds, scheduledTime });
       
       await AsyncStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(notifications));
     } catch (error) {

@@ -273,7 +273,7 @@ export default function AddReminderScreen() {
         created?.is_pending_sync
           ? 'Follow-up saved on this device and will sync when internet is available.'
           : notificationScheduled
-          ? 'Follow-up created! You will be notified 10 minutes before.'
+          ? 'Follow-up created! Notifications will begin at the due time and repeat hourly until stopped or snoozed.'
           : 'Follow-up created. Enable notifications to receive reminder alerts.',
         [
           { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }

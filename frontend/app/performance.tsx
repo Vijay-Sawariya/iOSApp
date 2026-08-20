@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -31,14 +30,16 @@ export default function PerformanceScreen() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadPerformance = useCallback(async (selectedDays = days, selectedAgentId = agentId) => {
     try {
+      setError(null);
       const result = await api.getMobilePerformance(selectedDays, selectedAgentId);
       setData(result);
       if (!selectedAgentId && result?.agent?.id) setAgentId(result.agent.id);
     } catch (error: any) {
-      Alert.alert('Performance', error?.message || 'Unable to load performance data.');
+      setError(error?.message || 'Unable to load performance data.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -88,6 +89,19 @@ export default function PerformanceScreen() {
     );
   }
 
+  if (!data && error) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <Ionicons name="cloud-offline-outline" size={42} color={colors.danger} />
+        <Text style={styles.errorTitle}>Performance is temporarily unavailable</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => { setLoading(true); void loadPerformance(); }}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
   const summary = data?.summary || {};
   const metrics = [
     { key: 'due_completed', label: 'Due completed', value: summary.actions_completed || 0, icon: 'checkmark-circle', color: colors.accent, bg: colors.accentSoft },
@@ -129,6 +143,7 @@ export default function PerformanceScreen() {
           />
         }
       >
+        {error ? <View style={styles.staleBanner}><Ionicons name="cloud-offline-outline" size={16} color={colors.amber} /><Text style={styles.staleText}>Showing the last loaded data. Pull to retry.</Text></View> : null}
         <View style={styles.rangeRow}>
           {[7, 30, 90].map((value) => (
             <TouchableOpacity
@@ -224,6 +239,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   muted: { marginTop: 10, color: colors.inkMuted },
+  errorTitle: { marginTop: 14, fontSize: 18, fontWeight: '800', color: colors.ink },
+  errorText: { marginTop: 6, marginHorizontal: 28, textAlign: 'center', color: colors.inkMuted },
+  retryButton: { marginTop: 18, paddingHorizontal: 24, paddingVertical: 12, borderRadius: radii.md, backgroundColor: colors.primary },
+  retryText: { color: colors.white, fontWeight: '800' },
+  staleBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, marginBottom: 12, borderRadius: radii.md, backgroundColor: colors.amberSoft },
+  staleText: { flex: 1, fontSize: 12, fontWeight: '700', color: colors.amber },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

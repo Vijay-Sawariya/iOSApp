@@ -332,12 +332,25 @@ export const api = {
     return response.json();
   },
 
-  getMobilePerformance: async (days = 30, agentId?: number) => {
+  getMobilePerformance: async (days = 30, agentId?: number, detailMetric?: string) => {
     const params = new URLSearchParams({ days: String(days) });
     if (agentId) params.set('agent_id', String(agentId));
-    const response = await fetch(`${API_URL}/api/mobile/performance?${params.toString()}`, {
-      headers: getHeaders(),
-    });
+    if (detailMetric) params.set('detail_metric', detailMetric);
+    let response: Response | null = null;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        response = await fetchWithTimeout(`${API_URL}/api/mobile/performance?${params.toString()}`, {
+          headers: getHeaders(),
+        }, 60000);
+        if (response.ok || response.status < 500) break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!response) {
+      throw lastError instanceof Error ? lastError : new Error('Performance service is temporarily unavailable.');
+    }
     if (!response.ok) {
       throw new Error(await getApiErrorMessage(response, 'Failed to load performance'));
     }

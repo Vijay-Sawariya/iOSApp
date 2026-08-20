@@ -69,12 +69,10 @@ export default function MapViewScreen() {
     loadMapData();
   };
 
-  // Filter leads - only show those with Property_locationUrl
   const filteredLeads = leads.filter(l => {
-    const hasMapUrl = l.Property_locationUrl && l.Property_locationUrl.trim() !== '';
     const matchesLocation = !locationFilter || 
       l.location?.toLowerCase().includes(locationFilter.toLowerCase());
-    return hasMapUrl && matchesLocation;
+    return Boolean(l.location?.trim()) && matchesLocation;
   });
 
   // Leads without map URL (for stats)
@@ -83,6 +81,9 @@ export default function MapViewScreen() {
   const openInMaps = (url: string) => {
     Linking.openURL(url).catch(err => console.error('Failed to open map:', err));
   };
+
+  const getMapUrl = (lead: MapLead) => lead.Property_locationUrl?.trim()
+    || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([lead.address, lead.location].filter(Boolean).join(', '))}`;
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -151,7 +152,7 @@ export default function MapViewScreen() {
         {/* Map Button */}
         <TouchableOpacity
           style={styles.mapButton}
-          onPress={() => openInMaps(item.Property_locationUrl!)}
+          onPress={() => openInMaps(getMapUrl(item))}
         >
           <Ionicons name="navigate" size={20} color="#FFFFFF" />
           <Text style={styles.mapButtonText}>Open in Maps</Text>
@@ -186,12 +187,12 @@ export default function MapViewScreen() {
         <View style={styles.statItem}>
           <Ionicons name="location" size={18} color="#10B981" />
           <Text style={styles.statsText}>
-            {filteredLeads.length} properties with map location
+            {filteredLeads.length} properties with location
           </Text>
         </View>
         {leadsWithoutMapUrl.length > 0 && (
           <Text style={styles.statsSubtext}>
-            {leadsWithoutMapUrl.length} without location
+            {leadsWithoutMapUrl.length} using searchable address
           </Text>
         )}
       </View>
