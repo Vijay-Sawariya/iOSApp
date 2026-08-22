@@ -400,6 +400,17 @@ export default function LeadDetailScreen() {
     }
   };
 
+  const handleOpenMap = async () => {
+    const mapUrl = safeStr(lead?.Property_locationUrl);
+    if (!mapUrl) return;
+    try {
+      await Linking.openURL(mapUrl);
+    } catch (mapError) {
+      console.error('Failed to open Google Maps:', mapError);
+      Alert.alert('Map Unavailable', 'Unable to open this location in Google Maps.');
+    }
+  };
+
   const handleDelete = () => {
     Alert.alert(
       'Delete Lead',
@@ -805,6 +816,17 @@ export default function LeadDetailScreen() {
             <TouchableOpacity style={styles.actionButton} onPress={handleEmail}>
               <Ionicons name="mail" size={24} color="#6B7280" />
               <Text style={styles.actionButtonText}>{'Email'}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {isInventoryLead() && canViewData && lead.Property_locationUrl ? (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.mapActionButton]}
+              onPress={handleOpenMap}
+              accessibilityRole="button"
+              accessibilityLabel="Open location in Google Maps"
+            >
+              <Ionicons name="map" size={26} color="#FFFFFF" />
+              <Text style={styles.mapActionButtonText}>Google Maps</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -1625,6 +1647,8 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginTop: 4,
   },
+  mapActionButton: { backgroundColor: '#2563EB' },
+  mapActionButtonText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF', marginTop: 4 },
   commandCenter: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,

@@ -155,7 +155,9 @@ export default function RemindersScreen() {
   const loadReminders = useCallback(async () => {
     try {
       const data = await api.getReminders();
-      setReminders(Array.isArray(data) ? data : []);
+      const reminderItems = Array.isArray(data) ? data : [];
+      setReminders(reminderItems);
+      await notificationService.syncAssignedReminderNotifications(reminderItems);
 
       try {
         const users = await api.getAssignableUsers();
@@ -266,8 +268,14 @@ export default function RemindersScreen() {
   };
 
   const handleStopAlerts = async (item: Reminder) => {
-    await notificationService.cancelReminderNotification(item.id.toString());
-    Alert.alert('Alerts stopped', 'Hourly notifications for this reminder have been stopped.');
+    try {
+      await notificationService.cancelReminderNotification(item.id.toString());
+      await api.updateReminder(item.id.toString(), { status: 'Dismissed' });
+      await loadReminders();
+      Alert.alert('Alerts stopped', 'Hourly notifications for this reminder have been stopped for everyone assigned.');
+    } catch (error) {
+      Alert.alert('Error', 'Unable to stop this reminder.');
+    }
   };
 
   const getReminderIcon = (type: string) => {

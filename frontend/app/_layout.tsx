@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
-import { Alert, View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+import { Alert, View, StyleSheet, ActivityIndicator, Text, AppState } from 'react-native';
 import { Stack, router, usePathname } from 'expo-router';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { OfflineProvider, useOffline } from '../contexts/OfflineContext';
 import { OfflineBanner } from '../components/OfflineBanner';
-import { setAuthToken } from '../services/api';
+import { api, setAuthToken } from '../services/api';
+import { notificationService } from '../services/notificationService';
 
 function RootLayoutContent() {
   const { token, user, loading, hasFeature, featureFlagsLoading } = useAuth();
@@ -14,6 +15,36 @@ function RootLayoutContent() {
 
   useEffect(() => {
     setAuthToken(token);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void notificationService.configureReminderActions();
+    const syncAssignedReminders = async () => {
+      try {
+        const reminders = await api.getReminders({ forceNetwork: true });
+        await notificationService.syncAssignedReminderNotifications(Array.isArray(reminders) ? reminders : []);
+      } catch (error) {
+        console.warn('Assigned reminder notification sync skipped:', error);
+      }
+    };
+    void syncAssignedReminders();
+    const responseSubscription = notificationService.addNotificationResponseReceivedListener(async (response) => {
+      try {
+        const result = await notificationService.handleReminderNotificationResponse(response);
+        if (result === 'opened') router.push('/(tabs)/reminders' as any);
+      } catch (error) {
+        console.error('Failed to process reminder notification action:', error);
+        Alert.alert('Reminder Update Failed', 'Open Follow-ups and try the action again.');
+      }
+    });
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void syncAssignedReminders();
+    });
+    return () => {
+      responseSubscription.remove();
+      appStateSubscription.remove();
+    };
   }, [token]);
 
   useEffect(() => {

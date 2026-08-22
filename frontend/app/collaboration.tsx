@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -33,6 +33,39 @@ export default function CollaborationInboxScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [respondingId, setRespondingId] = useState<number | null>(null);
+  const [expandedLeadIds, setExpandedLeadIds] = useState<Set<number>>(new Set());
+
+  const groupedItems = useMemo(() => {
+    const requestsByLead = new Map<number, any[]>();
+    items.forEach((item) => {
+      if (item.notification_type !== 'detail_access_request' || !item.lead_id) return;
+      const requests = requestsByLead.get(Number(item.lead_id)) || [];
+      // A declined requester can request again using the same database row.
+      // Keep only the newest notification for each actual request record.
+      const duplicateIndex = requests.findIndex((request) => request.reference_id === item.reference_id);
+      if (duplicateIndex === -1) {
+        requests.push(item);
+      } else if (!item.is_read) {
+        requests[duplicateIndex] = { ...requests[duplicateIndex], is_read: 0 };
+      }
+      requestsByLead.set(Number(item.lead_id), requests);
+    });
+
+    const emittedLeads = new Set<number>();
+    return items.flatMap((item) => {
+      if (item.notification_type !== 'detail_access_request' || !item.lead_id) return [item];
+      const leadId = Number(item.lead_id);
+      if (emittedLeads.has(leadId)) return [];
+      emittedLeads.add(leadId);
+      const requests = requestsByLead.get(leadId) || [item];
+      return [{
+        ...item,
+        id: `detail-access-${leadId}`,
+        is_read: requests.every((request) => Boolean(request.is_read)) ? 1 : 0,
+        groupedRequests: requests,
+      }];
+    });
+  }, [items]);
 
   const loadInbox = async () => {
     try {
@@ -97,6 +130,48 @@ export default function CollaborationInboxScreen() {
     }
   };
 
+  const renderDetailAccessActions = (item: any) => {
+    const isResponding = respondingId === item.reference_id;
+    return (
+      <View style={styles.handoffActions}>
+        {item.detail_access_status === 'approved' ? (
+          <View style={[styles.handoffButton, { backgroundColor: colors.accentSoft }]}>
+            <Text style={{ color: colors.accent, fontWeight: '800', fontSize: 12 }}>Approved</Text>
+          </View>
+        ) : item.detail_access_status === 'declined' ? (
+          <View style={[styles.handoffButton, { backgroundColor: colors.surfaceMuted }]}>
+            <Text style={{ color: colors.inkMuted, fontWeight: '800', fontSize: 12 }}>Disapproved</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.handoffButton, styles.declineButton]}
+            disabled={isResponding}
+            onPress={(event) => {
+              event.stopPropagation();
+              respondToDetailAccess(item, 'declined');
+            }}
+          >
+            <Text style={styles.declineText}>Decline</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.handoffButton, item.detail_access_status === 'approved' ? styles.declineButton : styles.acceptButton]}
+          disabled={isResponding}
+          onPress={(event) => {
+            event.stopPropagation();
+            respondToDetailAccess(item, item.detail_access_status === 'approved' ? 'declined' : 'approved');
+          }}
+        >
+          {isResponding ? <ActivityIndicator size="small" color={item.detail_access_status === 'approved' ? colors.danger : colors.white} /> : (
+            <Text style={item.detail_access_status === 'approved' ? styles.declineText : styles.acceptText}>
+              {item.detail_access_status === 'approved' ? 'Revoke Access' : 'Allow Access'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -139,11 +214,59 @@ export default function CollaborationInboxScreen() {
           />
         }
       >
-        {items.length ? items.map((item) => {
+        {groupedItems.length ? groupedItems.map((item) => {
           const isHandoff = item.notification_type === 'handoff';
           const isDetailAccess = item.notification_type === 'detail_access_request';
           const isPendingHandoff = isHandoff && item.handoff_status === 'pending';
           const isResponding = respondingId === item.reference_id;
+          const groupedRequests = item.groupedRequests as any[] | undefined;
+          const hasMultipleRequests = Boolean(groupedRequests && groupedRequests.length > 1);
+          const isExpanded = expandedLeadIds.has(Number(item.lead_id));
+
+          if (isDetailAccess && hasMultipleRequests) {
+            const pendingCount = groupedRequests!.filter((request) => request.detail_access_status === 'pending').length;
+            return (
+              <View key={item.id} style={[styles.card, styles.groupedCard, !item.is_read && styles.unreadCard]}>
+                <TouchableOpacity
+                  style={styles.groupHeader}
+                  activeOpacity={0.78}
+                  onPress={() => setExpandedLeadIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(Number(item.lead_id))) next.delete(Number(item.lead_id));
+                    else next.add(Number(item.lead_id));
+                    return next;
+                  })}
+                >
+                  <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
+                    <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
+                  </View>
+                  <View style={styles.cardCopy}>
+                    <View style={styles.cardTop}>
+                      <Text style={styles.leadName} numberOfLines={1}>{item.lead_name || `Lead #${item.lead_id}`}</Text>
+                      {!item.is_read ? <View style={styles.unreadDot} /> : null}
+                    </View>
+                    <Text style={styles.message}>
+                      {groupedRequests!.length} access requests{pendingCount ? ` • ${pendingCount} pending` : ''}
+                    </Text>
+                  </View>
+                  <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.inkMuted} />
+                </TouchableOpacity>
+                {isExpanded ? (
+                  <View style={styles.groupRequests}>
+                    {groupedRequests!.map((request, index) => (
+                      <View key={request.id} style={[styles.requestItem, index > 0 && styles.requestItemBorder]}>
+                        <TouchableOpacity onPress={() => request.lead_id && router.push(`/leads/${request.lead_id}` as any)}>
+                          <Text style={styles.message}>{request.message}</Text>
+                          <Text style={styles.time}>{formatDate(request.created_at)}</Text>
+                        </TouchableOpacity>
+                        {renderDetailAccessActions(request)}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            );
+          }
           return (
             <TouchableOpacity
               key={item.id}
@@ -197,41 +320,7 @@ export default function CollaborationInboxScreen() {
                     </TouchableOpacity>
                   </View>
                 ) : null}
-                {isDetailAccess ? (
-                  <View style={styles.handoffActions}>
-                    {item.detail_access_status === 'approved' ? (
-                      <View style={[styles.handoffButton, { backgroundColor: colors.accentSoft }]}>
-                        <Text style={{ color: colors.accent, fontWeight: '800', fontSize: 12 }}>Approved</Text>
-                      </View>
-                    ) : item.detail_access_status === 'declined' ? (
-                      <View style={[styles.handoffButton, { backgroundColor: colors.surfaceMuted }]}>
-                        <Text style={{ color: colors.inkMuted, fontWeight: '800', fontSize: 12 }}>Disapproved</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={[styles.handoffButton, styles.declineButton]}
-                        disabled={isResponding}
-                        onPress={(event) => { event.stopPropagation(); respondToDetailAccess(item, 'declined'); }}
-                      >
-                        <Text style={styles.declineText}>Decline</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      style={[styles.handoffButton, item.detail_access_status === 'approved' ? styles.declineButton : styles.acceptButton]}
-                      disabled={isResponding}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        respondToDetailAccess(item, item.detail_access_status === 'approved' ? 'declined' : 'approved');
-                      }}
-                    >
-                      {isResponding ? <ActivityIndicator size="small" color={item.detail_access_status === 'approved' ? colors.danger : colors.white} /> : (
-                        <Text style={item.detail_access_status === 'approved' ? styles.declineText : styles.acceptText}>
-                          {item.detail_access_status === 'approved' ? 'Revoke Access' : 'Allow Access'}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
+                {isDetailAccess ? renderDetailAccessActions(item) : null}
               </View>
             </TouchableOpacity>
           );
@@ -294,6 +383,11 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   unreadCard: { borderColor: '#E6C879', backgroundColor: '#FFFCF3' },
+  groupedCard: { flexDirection: 'column', gap: 0, padding: 0, overflow: 'hidden' },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  groupRequests: { borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 14 },
+  requestItem: { paddingVertical: 14 },
+  requestItemBorder: { borderTopWidth: 1, borderTopColor: colors.border },
   iconWrap: {
     width: 42,
     height: 42,

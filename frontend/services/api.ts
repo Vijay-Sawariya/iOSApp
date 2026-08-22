@@ -741,13 +741,14 @@ export const api = {
   },
 
   // Reminders
-  getReminders: async () => {
+  getReminders: async (options?: CacheFetchOptions) => {
     const cacheKey = getUserScopedCacheKey(CACHE_KEYS.REMINDERS);
     return fetchWithCache(
       `${API_URL}/api/reminders`,
       'reminders',
       (data) => cacheService.set(cacheKey, data),
-      () => cacheService.get(cacheKey)
+      () => cacheService.get(cacheKey),
+      options
     );
   },
 

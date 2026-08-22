@@ -2,8 +2,12 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from './api';
 
 const NOTIFICATION_STORAGE_KEY = 'scheduled_notifications';
+export const REMINDER_CATEGORY = 'reminder-actions';
+export const REMINDER_SNOOZE_ACTION = 'reminder-snooze-1h';
+export const REMINDER_STOP_ACTION = 'reminder-stop';
 
 // IST offset in minutes (5 hours 30 minutes = 330 minutes)
 const IST_OFFSET_MINUTES = 330;
@@ -70,6 +74,22 @@ const getSecondsUntilIST = (
 };
 
 export const notificationService = {
+  configureReminderActions: async (): Promise<void> => {
+    if (Platform.OS === 'web') return;
+    await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY, [
+      {
+        identifier: REMINDER_SNOOZE_ACTION,
+        buttonTitle: 'Snooze 1 Hour',
+        options: { opensAppToForeground: true },
+      },
+      {
+        identifier: REMINDER_STOP_ACTION,
+        buttonTitle: 'Stop Reminders',
+        options: { isDestructive: true, opensAppToForeground: true },
+      },
+    ]);
+  },
+
   // Request permission for notifications
   requestPermissions: async (): Promise<boolean> => {
     try {
@@ -116,6 +136,8 @@ export const notificationService = {
           bypassDnd: true,
         });
       }
+
+      await notificationService.configureReminderActions();
 
       console.log('Notification permissions granted');
       return true;
@@ -170,6 +192,7 @@ export const notificationService = {
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority.MAX,
           data: { reminderId, type: 'reminder' },
+          categoryIdentifier: REMINDER_CATEGORY,
           vibrate: [0, 250, 250, 250],
         },
         trigger: {
@@ -244,7 +267,15 @@ export const notificationService = {
               body: notificationBody,
               sound: 'default',
               priority: Notifications.AndroidNotificationPriority.MAX,
-              data: { reminderId, type: 'reminder', repeatIndex: index },
+              data: {
+                reminderId,
+                type: 'reminder',
+                repeatIndex: index,
+                title,
+                body,
+                leadName: leadName || '',
+              },
+              categoryIdentifier: REMINDER_CATEGORY,
               vibrate: [0, 250, 250, 250],
             },
             trigger: {
@@ -336,6 +367,74 @@ export const notificationService = {
     }
   },
 
+  syncAssignedReminderNotifications: async (reminders: any[]): Promise<void> => {
+    if (Platform.OS === 'web' || !Device.isDevice) return;
+    const existing = await notificationService.getScheduledNotifications();
+    const existingById = new Map(existing.map((item) => [item.reminderId, item]));
+    const serverIds = new Set((reminders || []).map((item) => String(item.id)));
+
+    // Cancel local alerts when another participant completed, dismissed, or
+    // deleted the shared reminder.
+    for (const item of existing) {
+      const reminder = (reminders || []).find((row) => String(row.id) === item.reminderId);
+      const status = String(reminder?.status || '').toLowerCase();
+      if (!serverIds.has(item.reminderId) || !['pending', 'up coming', 'snoozed'].includes(status)) {
+        await notificationService.cancelReminderNotification(item.reminderId);
+      }
+    }
+
+    for (const reminder of reminders || []) {
+      const status = String(reminder.status || '').toLowerCase();
+      if (!['pending', 'up coming', 'snoozed'].includes(status)) continue;
+      const value = String(reminder.reminder_date || '').replace(' ', 'T');
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+      if (!match) continue;
+      const existingReminder = existingById.get(String(reminder.id));
+      const targetMinute = value.slice(0, 16);
+      const existingMinute = String(existingReminder?.scheduledTime || '').replace(' ', 'T').slice(0, 16);
+      if (existingReminder && existingMinute === targetMinute) continue;
+      if (existingReminder) await notificationService.cancelReminderNotification(String(reminder.id));
+      await notificationService.scheduleReminderNotificationIST(
+        String(reminder.id),
+        reminder.title,
+        reminder.notes || reminder.reminder_type || 'Follow-up reminder',
+        Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]),
+        reminder.lead_name
+      );
+    }
+  },
+
+  handleReminderNotificationResponse: async (
+    response: Notifications.NotificationResponse
+  ): Promise<'snoozed' | 'stopped' | 'opened' | null> => {
+    const data = response.notification.request.content.data as Record<string, any>;
+    if (data?.type !== 'reminder' || !data?.reminderId) return null;
+    const reminderId = String(data.reminderId);
+
+    if (response.actionIdentifier === REMINDER_STOP_ACTION) {
+      await notificationService.cancelReminderNotification(reminderId);
+      await api.updateReminder(reminderId, { status: 'Dismissed' });
+      return 'stopped';
+    }
+
+    if (response.actionIdentifier === REMINDER_SNOOZE_ACTION) {
+      const snoozed = new Date(Date.now() + 60 * 60 * 1000);
+      const date = `${snoozed.getFullYear()}-${String(snoozed.getMonth() + 1).padStart(2, '0')}-${String(snoozed.getDate()).padStart(2, '0')}`;
+      const time = `${String(snoozed.getHours()).padStart(2, '0')}:${String(snoozed.getMinutes()).padStart(2, '0')}:00`;
+      await api.updateReminder(reminderId, { reminder_date: `${date}T${time}`, status: 'Pending' });
+      await notificationService.scheduleReminderNotificationIST(
+        reminderId,
+        String(data.title || 'Follow-up'),
+        String(data.body || 'Follow-up reminder'),
+        snoozed.getFullYear(), snoozed.getMonth() + 1, snoozed.getDate(), snoozed.getHours(), snoozed.getMinutes(),
+        String(data.leadName || '') || undefined
+      );
+      return 'snoozed';
+    }
+
+    return 'opened';
+  },
+
   // Cancel all scheduled notifications
   cancelAllNotifications: async (): Promise<void> => {
     try {
@@ -366,7 +465,7 @@ export const notificationService = {
       }
 
       const { data: token } = await Notifications.getExpoPushTokenAsync({
-        projectId: 'your-project-id',
+        projectId: 'a0d442af-30a8-4e41-8033-d84dc2d3dbb8',
       });
       
       return token;

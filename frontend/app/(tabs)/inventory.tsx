@@ -982,7 +982,10 @@ export default function InventoryLeadsScreen() {
               {canViewData && hasMapUrl ? (
                 <TouchableOpacity
                   style={styles.locationLink}
-                  onPress={() => openMapUrl(item.Property_locationUrl!)}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    openMapUrl(item.Property_locationUrl!);
+                  }}
                   activeOpacity={0.7}
                 >
                   <Text
@@ -1001,8 +1004,17 @@ export default function InventoryLeadsScreen() {
                 </Text>
               )}
               {canViewData && hasMapUrl && (
-                <TouchableOpacity onPress={() => openMapUrl(item.Property_locationUrl!)}>
-                  <Ionicons name="open-outline" size={14} color="#3B82F6" style={{ marginLeft: 4 }} />
+                <TouchableOpacity
+                  style={styles.mapIconButton}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${item.name} location in Google Maps`}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    openMapUrl(item.Property_locationUrl!);
+                  }}
+                >
+                  <Ionicons name="map" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               )}
             </View>
@@ -2503,8 +2515,13 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   mapIconButton: {
-    marginLeft: 8,
-    padding: 4,
+    marginLeft: 10,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
   },
   tagsRow: {
     flexDirection: 'row',
