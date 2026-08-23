@@ -6,6 +6,7 @@ import { api } from './api';
 
 const NOTIFICATION_STORAGE_KEY = 'scheduled_notifications';
 const STOPPED_REMINDER_STORAGE_KEY = 'stopped_reminder_notifications';
+let stoppedReminderMutation: Promise<void> = Promise.resolve();
 export const REMINDER_CATEGORY = 'reminder-actions';
 export const REMINDER_SNOOZE_ACTION = 'reminder-snooze-1h';
 export const REMINDER_STOP_ACTION = 'reminder-stop';
@@ -321,21 +322,26 @@ export const notificationService = {
       if (Platform.OS === 'web') return;
 
       const stored = await AsyncStorage.getItem(NOTIFICATION_STORAGE_KEY);
-      if (stored) {
-        const notifications: ScheduledNotification[] = JSON.parse(stored);
-        const existing = notifications.find(n => n.reminderId === reminderId);
-        
-        if (existing) {
-          const ids = existing.notificationIds || (existing.notificationId ? [existing.notificationId] : []);
-          await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id)));
-          
-          // Remove from storage
-          const updated = notifications.filter(n => n.reminderId !== reminderId);
-          await AsyncStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(updated));
-          
-          console.log(`Cancelled notification for reminder ${reminderId}`);
+      const notifications: ScheduledNotification[] = stored ? JSON.parse(stored) : [];
+      const existing = notifications.find(n => n.reminderId === reminderId);
+      const ids = new Set(existing?.notificationIds || (existing?.notificationId ? [existing.notificationId] : []));
+
+      // Recover notifications created by older builds or missing from
+      // AsyncStorage by inspecting Notification Center's pending requests.
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      for (const notification of scheduled) {
+        const data = notification.content.data as Record<string, unknown>;
+        if (String(data?.reminderId || '') === String(reminderId)) {
+          ids.add(notification.identifier);
         }
       }
+
+      await Promise.all([...ids].map((id) => Notifications.cancelScheduledNotificationAsync(id)));
+
+      // Always remove the mapping, including stale/partial mappings.
+      const updated = notifications.filter(n => n.reminderId !== reminderId);
+      await AsyncStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(updated));
+      console.log(`Cancelled ${ids.size} notification(s) for reminder ${reminderId}`);
     } catch (error) {
       console.error('Error cancelling notification:', error);
     }
@@ -387,15 +393,21 @@ export const notificationService = {
   },
 
   markReminderStopped: async (reminderId: string): Promise<void> => {
-    const ids = await notificationService.getStoppedReminderIds();
-    ids.add(String(reminderId));
-    await AsyncStorage.setItem(STOPPED_REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+    stoppedReminderMutation = stoppedReminderMutation.catch(() => undefined).then(async () => {
+      const ids = await notificationService.getStoppedReminderIds();
+      ids.add(String(reminderId));
+      await AsyncStorage.setItem(STOPPED_REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+    });
+    await stoppedReminderMutation;
   },
 
   clearStoppedReminder: async (reminderId: string): Promise<void> => {
-    const ids = await notificationService.getStoppedReminderIds();
-    if (!ids.delete(String(reminderId))) return;
-    await AsyncStorage.setItem(STOPPED_REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+    stoppedReminderMutation = stoppedReminderMutation.catch(() => undefined).then(async () => {
+      const ids = await notificationService.getStoppedReminderIds();
+      if (!ids.delete(String(reminderId))) return;
+      await AsyncStorage.setItem(STOPPED_REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+    });
+    await stoppedReminderMutation;
   },
 
   syncAssignedReminderNotifications: async (reminders: any[]): Promise<void> => {
