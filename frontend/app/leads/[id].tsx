@@ -13,6 +13,7 @@ import {
   Image,
   Platform,
   KeyboardAvoidingView,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +24,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { offlineApi } from '../../services/offlineApi';
 import { api } from '../../services/api';
+import { cacheService } from '../../services/cacheService';
+import { syncService } from '../../services/syncService';
 import { useOffline } from '../../contexts/OfflineContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone } from '../../constants/leadOptions';
@@ -105,30 +108,76 @@ export default function LeadDetailScreen() {
   // Refresh data when screen comes into focus (e.g., returning from edit)
   useFocusEffect(
     useCallback(() => {
-      loadLead();
-      loadFollowups();
-      loadActivity();
-      loadFiles();
+      void loadLead();
+      const secondaryLoad = InteractionManager.runAfterInteractions(() => {
+        void Promise.allSettled([
+          loadFollowups(),
+          loadActivity(),
+          loadFiles(),
+        ]);
+      });
+      return () => secondaryLoad.cancel();
     }, [id])
   );
 
   const loadLead = async () => {
+    const leadId = String(Array.isArray(id) ? id[0] : id);
+    let localLead: any = null;
+
     try {
       setError(null);
-      let data;
-      try {
-        data = await api.getLead(String(id), { forceNetwork: true });
-      } catch {
-        data = await offlineApi.getLead(String(id));
+
+      // Start the live request immediately, but do not make first paint wait
+      // for it when the lead is already available on this device.
+      const networkResultPromise = isOnline
+        ? api.getLead(leadId, { forceNetwork: true })
+            .then((data) => ({ data, error: null }))
+            .catch((networkError) => ({ data: null, error: networkError }))
+        : Promise.resolve({ data: null, error: null });
+
+      const [detailCacheResult, sqliteResult] = await Promise.allSettled([
+        cacheService.getLead(leadId),
+        syncService.getLead(Number(leadId)),
+      ]);
+      localLead = detailCacheResult.status === 'fulfilled' && detailCacheResult.value
+        ? detailCacheResult.value
+        : sqliteResult.status === 'fulfilled'
+          ? sqliteResult.value
+          : null;
+
+      // A lead may have been loaded in a client/inventory list without its
+      // dedicated detail cache being created yet.
+      if (!localLead) {
+        const [clientsResult, inventoryResult] = await Promise.allSettled([
+          cacheService.getClientLeads(),
+          cacheService.getInventoryLeads(),
+        ]);
+        const clients = clientsResult.status === 'fulfilled' ? clientsResult.value || [] : [];
+        const inventory = inventoryResult.status === 'fulfilled' ? inventoryResult.value || [] : [];
+        localLead = [...clients, ...inventory].find((item: any) => String(item.id) === leadId) || null;
       }
-      console.log('Lead data loaded:', JSON.stringify(data, null, 2));
-      setLead(data);
+
+      if (localLead) {
+        setLead(localLead);
+        setLoading(false);
+      }
+
+      const networkResult = await networkResultPromise;
+      if (networkResult.data) {
+        setLead(networkResult.data);
+        setError(null);
+        return;
+      }
+
+      if (!localLead) {
+        throw networkResult.error || new Error('No cached data available. Please connect to the internet.');
+      }
     } catch (err: any) {
       console.error('Failed to load lead:', err);
       const errorMessage = err?.message || 'Failed to load lead details';
-      setError(errorMessage);
+      if (!localLead) setError(errorMessage);
       // Don't show alert for "no cached data" errors - the error UI will handle it
-      if (!errorMessage.includes('No cached data')) {
+      if (!localLead && !errorMessage.includes('No cached data')) {
         Alert.alert('Error', errorMessage);
       }
     } finally {

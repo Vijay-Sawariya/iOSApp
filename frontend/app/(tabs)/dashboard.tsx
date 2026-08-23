@@ -72,6 +72,7 @@ interface SmartMatch {
 interface DashboardPlotPricing {
   id: number;
   plot_size: number;
+  price_per_sq_yard: number | string;
   min_price: number;
   max_price: number;
   floors?: { floor_label: string; tentative_floor_price: string }[];
@@ -163,8 +164,39 @@ export default function DashboardScreen() {
 
   const funnelTotal = (stats?.new_leads || 0) + (stats?.contacted_leads || 0) + (stats?.qualified_leads || 0) + (stats?.negotiating_leads || 0) + (stats?.won_leads || 0);
   const filteredPricingRows = pricingData
-    .filter((item) => item.location_name.toLowerCase().includes(pricingSearch.trim().toLowerCase()))
+    .filter((item) => {
+      const query = pricingSearch.trim().toLowerCase();
+      if (!query) return true;
+      return item.location_name.toLowerCase().includes(query) ||
+        String(item.colony_category || '').toLowerCase().includes(query) ||
+        String(item.circle_rate || '').toLowerCase().includes(query) ||
+        item.plots.some((plot) =>
+          String(plot.plot_size).includes(query) ||
+          String(plot.price_per_sq_yard || '').toLowerCase().includes(query)
+        );
+    })
     .slice(0, 5);
+
+  const formatIndianNumber = (value: number | string) => {
+    const numeric = typeof value === 'string' ? Number(value.replace(/[^\d.]/g, '')) : Number(value);
+    if (!Number.isFinite(numeric)) return String(value || 'N/A');
+    return numeric.toLocaleString('en-IN');
+  };
+
+  const formatCircleRate = (rate: number | string) => {
+    const numeric = typeof rate === 'string' ? Number(rate.replace(/[^\d.]/g, '')) : Number(rate);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 'N/A';
+    if (numeric >= 100000) {
+      const lakhValue = Number((numeric / 100000).toFixed(1));
+      return `₹${formatIndianNumber(numeric)}/sq mtr · ${lakhValue} L`;
+    }
+    return `₹${formatIndianNumber(numeric)}/sq mtr`;
+  };
+
+  const formatPlotRate = (rate: number | string) => {
+    if (rate === null || rate === undefined || String(rate).trim() === '') return 'N/A';
+    return `₹${formatIndianNumber(rate)} lac per sq yard`;
+  };
 
   const getPricingRange = (plots: DashboardPlotPricing[]) => {
     if (!plots.length) return 'No plots';
@@ -345,6 +377,7 @@ export default function DashboardScreen() {
                       <View style={styles.pricingLocationCell}>
                         <Text style={styles.pricingLocationName} numberOfLines={1}>{item.location_name}</Text>
                         <Text style={styles.pricingLocationMeta} numberOfLines={1}>{item.colony_category || 'N/A'} Category</Text>
+                        <Text style={styles.pricingCircleRate} numberOfLines={1}>Circle: {formatCircleRate(item.circle_rate)}</Text>
                       </View>
                       <View style={styles.pricingPlotsCell}>
                         <Text style={styles.pricingPlotCount}>{item.plots.length}</Text>
@@ -369,6 +402,7 @@ export default function DashboardScreen() {
                               <Text style={styles.pricingPlotSize}>{plot.plot_size} sq yds</Text>
                               <Text style={styles.pricingPlotRange}>₹{plot.min_price} - {plot.max_price} CR</Text>
                             </View>
+                            <Text style={styles.pricingPlotRate}>Plot price: {formatPlotRate(plot.price_per_sq_yard)}</Text>
                             {plot.floors && plot.floors.length > 0 ? (
                               plot.floors.map((floor, index) => (
                                 <View key={`${plot.id}-${floor.floor_label}-${index}`} style={styles.pricingFloorDetailRow}>
@@ -892,6 +926,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  pricingCircleRate: {
+    color: '#A16207',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   pricingPlotCount: {
     color: colors.primary,
     fontSize: 15,
@@ -938,6 +978,12 @@ const styles = StyleSheet.create({
     color: '#A16207',
     fontSize: 12,
     fontWeight: '900',
+  },
+  pricingPlotRate: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   pricingFloorDetailRow: {
     flexDirection: 'row',

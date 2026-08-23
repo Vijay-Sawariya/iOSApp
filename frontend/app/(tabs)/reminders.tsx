@@ -151,6 +151,9 @@ export default function RemindersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [deletingReminderId, setDeletingReminderId] = useState<number | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedReminderIds, setSelectedReminderIds] = useState<Set<number>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState<'stop' | 'complete' | null>(null);
 
   const loadReminders = useCallback(async () => {
     try {
@@ -269,6 +272,7 @@ export default function RemindersScreen() {
 
   const handleStopAlerts = async (item: Reminder) => {
     try {
+      await notificationService.markReminderStopped(item.id.toString());
       await notificationService.cancelReminderNotification(item.id.toString());
       await api.updateReminder(item.id.toString(), { status: 'Dismissed' });
       await loadReminders();
@@ -325,6 +329,62 @@ export default function RemindersScreen() {
   const pendingCount = reminders.filter(r => (r.status || '').toLowerCase() === 'pending').length;
   const completedCount = reminders.filter(r => (r.status || '').toLowerCase() === 'completed').length;
 
+  const isSelectableReminder = (item: Reminder) =>
+    (item.status || '').toLowerCase() !== 'completed';
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedReminderIds(new Set());
+  };
+
+  const toggleReminderSelection = (id: number) => {
+    setSelectedReminderIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisibleReminders = () => {
+    const selectableIds = sortedReminders.filter(isSelectableReminder).map((item) => item.id);
+    const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedReminderIds.has(id));
+    setSelectedReminderIds(allSelected ? new Set() : new Set(selectableIds));
+  };
+
+  const runBulkAction = async (action: 'stop' | 'complete') => {
+    const selected = reminders.filter((item) => selectedReminderIds.has(item.id));
+    if (selected.length === 0 || bulkProcessing) return;
+
+    setBulkProcessing(action);
+    const results = await Promise.allSettled(selected.map(async (item) => {
+      const reminderId = item.id.toString();
+      if (action === 'stop') {
+        await notificationService.markReminderStopped(reminderId);
+        await notificationService.cancelReminderNotification(reminderId);
+        await api.updateReminder(reminderId, { status: 'Dismissed' });
+      } else {
+        await api.updateReminder(reminderId, { status: 'completed' });
+        await notificationService.cancelReminderNotification(reminderId);
+      }
+    }));
+
+    const failedCount = results.filter((result) => result.status === 'rejected').length;
+    const successCount = results.length - failedCount;
+    await loadReminders();
+    setBulkProcessing(null);
+    exitSelectionMode();
+
+    if (failedCount > 0) {
+      Alert.alert('Partially completed', `${successCount} reminder(s) updated. ${failedCount} reminder(s) could not be updated.`);
+    } else {
+      Alert.alert(
+        action === 'stop' ? 'Alerts stopped' : 'Reminders completed',
+        `${successCount} reminder(s) updated successfully.`
+      );
+    }
+  };
+
   const renderReminder = ({ item }: { item: Reminder }) => {
     const { dateLabel, timeStr, isPast, isToday } = getDateInfo(item.reminder_date);
     const statusLower = (item.status || '').toLowerCase();
@@ -333,14 +393,28 @@ export default function RemindersScreen() {
     const deleteDisabled = deletingReminderId !== null;
     const assignedToName = getReminderUserName(item.assigned_to, item.assigned_to_name, item.assigned_to_username);
     const createdByName = getReminderUserName(item.user_id, item.created_by_name, item.created_by_username);
+    const isSelected = selectedReminderIds.has(item.id);
+    const isSelectable = isSelectableReminder(item);
 
     return (
       <TouchableOpacity
-        style={[styles.reminderCard, isOverdue && styles.overdueCard]}
-        onPress={() => router.push(`/reminders/edit/${item.id}`)}
+        style={[styles.reminderCard, isOverdue && styles.overdueCard, isSelected && styles.selectedReminderCard]}
+        onPress={() => selectionMode
+          ? isSelectable && toggleReminderSelection(item.id)
+          : router.push(`/reminders/edit/${item.id}`)}
+        onLongPress={() => {
+          if (!isSelectable) return;
+          setSelectionMode(true);
+          toggleReminderSelection(item.id);
+        }}
         activeOpacity={0.7}
       >
         <View style={styles.reminderHeader}>
+          {selectionMode && (
+            <View style={[styles.selectionCheckbox, isSelected && styles.selectionCheckboxSelected, !isSelectable && styles.selectionCheckboxDisabled]}>
+              {isSelected && <Ionicons name="checkmark" size={16} color={colors.white} />}
+            </View>
+          )}
           <View style={[styles.iconContainer, isOverdue && styles.overdueIcon]}>
             <Ionicons 
               name={getReminderIcon(item.reminder_type) as any} 
@@ -412,7 +486,7 @@ export default function RemindersScreen() {
             )}
           </View>
           
-          <View style={styles.actions}>
+          {!selectionMode && <View style={styles.actions}>
             <View
               style={[
                 styles.statusBadge,
@@ -451,7 +525,7 @@ export default function RemindersScreen() {
                 <Ionicons name="trash-outline" size={18} color="#EF4444" />
               )}
             </TouchableOpacity>
-          </View>
+          </View>}
         </View>
       </TouchableOpacity>
     );
@@ -464,9 +538,17 @@ export default function RemindersScreen() {
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Follow-ups</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/reminders/add')}>
-              <Ionicons name="add" size={22} color="#FFFFFF" />
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => selectionMode ? exitSelectionMode() : setSelectionMode(true)}
+            >
+              <Ionicons name={selectionMode ? 'close' : 'checkmark-done-outline'} size={22} color="#FFFFFF" />
             </TouchableOpacity>
+            {!selectionMode && (
+              <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push('/reminders/add')}>
+                <Ionicons name="add" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </SafeAreaView>
@@ -497,6 +579,32 @@ export default function RemindersScreen() {
           </TouchableOpacity>
         </View>
 
+        {selectionMode && (
+          <View style={styles.bulkActionBar}>
+            <TouchableOpacity style={styles.selectAllButton} onPress={selectAllVisibleReminders} disabled={bulkProcessing !== null}>
+              <Ionicons name="checkbox-outline" size={18} color={colors.primary} />
+              <Text style={styles.selectAllText}>Select all</Text>
+            </TouchableOpacity>
+            <Text style={styles.selectedCount}>{selectedReminderIds.size} selected</Text>
+            <TouchableOpacity
+              style={[styles.bulkButton, styles.bulkStopButton, selectedReminderIds.size === 0 && styles.disabledAction]}
+              onPress={() => runBulkAction('stop')}
+              disabled={selectedReminderIds.size === 0 || bulkProcessing !== null}
+            >
+              {bulkProcessing === 'stop' ? <ActivityIndicator size="small" color="#B45309" /> : <Ionicons name="notifications-off-outline" size={18} color="#B45309" />}
+              <Text style={styles.bulkStopText}>Stop alerts</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bulkButton, styles.bulkCompleteButton, selectedReminderIds.size === 0 && styles.disabledAction]}
+              onPress={() => runBulkAction('complete')}
+              disabled={selectedReminderIds.size === 0 || bulkProcessing !== null}
+            >
+              {bulkProcessing === 'complete' ? <ActivityIndicator size="small" color="#047857" /> : <Ionicons name="checkmark-circle-outline" size={18} color="#047857" />}
+              <Text style={styles.bulkCompleteText}>Complete</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <FlatList
           data={sortedReminders}
           renderItem={renderReminder}
@@ -513,9 +621,9 @@ export default function RemindersScreen() {
         />
       </View>
 
-      <TouchableOpacity style={styles.fab} onPress={() => router.push('/reminders/add')}>
+      {!selectionMode && <TouchableOpacity style={styles.fab} onPress={() => router.push('/reminders/add')}>
         <Ionicons name="add" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
+      </TouchableOpacity>}
     </View>
   );
 }
@@ -604,6 +712,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     ...shadows.card,
+  },
+  selectedReminderCard: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: colors.primarySoft,
+  },
+  selectionCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 8,
+  },
+  selectionCheckboxSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  selectionCheckboxDisabled: {
+    opacity: 0.35,
   },
   overdueCard: {
     borderLeftWidth: 4,
@@ -735,6 +866,57 @@ const styles = StyleSheet.create({
   },
   disabledAction: {
     opacity: 0.55,
+  },
+  bulkActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.surfaceRaised,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  selectAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  selectAllText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectedCount: {
+    flex: 1,
+    color: colors.inkMuted,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  bulkButton: {
+    minHeight: 36,
+    borderRadius: radii.md,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  bulkStopButton: {
+    backgroundColor: '#FEF3C7',
+  },
+  bulkCompleteButton: {
+    backgroundColor: '#D1FAE5',
+  },
+  bulkStopText: {
+    color: '#B45309',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  bulkCompleteText: {
+    color: '#047857',
+    fontSize: 11,
+    fontWeight: '800',
   },
   emptyContainer: {
     alignItems: 'center',
