@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 
 const NOTIFICATION_STORAGE_KEY = 'scheduled_notifications';
+const STOPPED_REMINDER_STORAGE_KEY = 'stopped_reminder_notifications';
 export const REMINDER_CATEGORY = 'reminder-actions';
 export const REMINDER_SNOOZE_ACTION = 'reminder-snooze-1h';
 export const REMINDER_STOP_ACTION = 'reminder-stop';
@@ -230,7 +231,8 @@ export const notificationService = {
     day: number,
     hour: number,   // 0-23 in IST
     minute: number,
-    leadName?: string
+    leadName?: string,
+    reactivateStoppedReminder: boolean = true
   ): Promise<string | null> => {
     try {
       // Web doesn't support push notifications
@@ -242,6 +244,12 @@ export const notificationService = {
       if (!Device.isDevice) {
         console.log('Notifications only work on physical devices');
         return null;
+      }
+
+      // Calls made by reminder add/edit/snooze intentionally reactivate alerts.
+      // Background server sync passes false so it cannot undo an explicit stop.
+      if (reactivateStoppedReminder) {
+        await notificationService.clearStoppedReminder(reminderId);
       }
 
       const secondsUntilDue = getSecondsUntilIST(year, month, day, hour, minute);
@@ -367,9 +375,33 @@ export const notificationService = {
     }
   },
 
+  getStoppedReminderIds: async (): Promise<Set<string>> => {
+    try {
+      const stored = await AsyncStorage.getItem(STOPPED_REMINDER_STORAGE_KEY);
+      const ids: unknown = stored ? JSON.parse(stored) : [];
+      return new Set(Array.isArray(ids) ? ids.map(String) : []);
+    } catch (error) {
+      console.error('Error getting stopped reminders:', error);
+      return new Set();
+    }
+  },
+
+  markReminderStopped: async (reminderId: string): Promise<void> => {
+    const ids = await notificationService.getStoppedReminderIds();
+    ids.add(String(reminderId));
+    await AsyncStorage.setItem(STOPPED_REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+  },
+
+  clearStoppedReminder: async (reminderId: string): Promise<void> => {
+    const ids = await notificationService.getStoppedReminderIds();
+    if (!ids.delete(String(reminderId))) return;
+    await AsyncStorage.setItem(STOPPED_REMINDER_STORAGE_KEY, JSON.stringify([...ids]));
+  },
+
   syncAssignedReminderNotifications: async (reminders: any[]): Promise<void> => {
     if (Platform.OS === 'web' || !Device.isDevice) return;
     const existing = await notificationService.getScheduledNotifications();
+    const stoppedReminderIds = await notificationService.getStoppedReminderIds();
     const existingById = new Map(existing.map((item) => [item.reminderId, item]));
     const serverIds = new Set((reminders || []).map((item) => String(item.id)));
 
@@ -384,6 +416,11 @@ export const notificationService = {
     }
 
     for (const reminder of reminders || []) {
+      const reminderId = String(reminder.id);
+      if (stoppedReminderIds.has(reminderId)) {
+        await notificationService.cancelReminderNotification(reminderId);
+        continue;
+      }
       const status = String(reminder.status || '').toLowerCase();
       if (!['pending', 'up coming', 'snoozed'].includes(status)) continue;
       const value = String(reminder.reminder_date || '').replace(' ', 'T');
@@ -395,11 +432,12 @@ export const notificationService = {
       if (existingReminder && existingMinute === targetMinute) continue;
       if (existingReminder) await notificationService.cancelReminderNotification(String(reminder.id));
       await notificationService.scheduleReminderNotificationIST(
-        String(reminder.id),
+        reminderId,
         reminder.title,
         reminder.notes || reminder.reminder_type || 'Follow-up reminder',
         Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]),
-        reminder.lead_name
+        reminder.lead_name,
+        false
       );
     }
   },
@@ -412,12 +450,17 @@ export const notificationService = {
     const reminderId = String(data.reminderId);
 
     if (response.actionIdentifier === REMINDER_STOP_ACTION) {
+      // Persist the user's choice before cancelling. AppState can trigger a
+      // server sync while this action is being handled; the tombstone prevents
+      // that concurrent sync from recreating the hourly notification sequence.
+      await notificationService.markReminderStopped(reminderId);
       await notificationService.cancelReminderNotification(reminderId);
       await api.updateReminder(reminderId, { status: 'Dismissed' });
       return 'stopped';
     }
 
     if (response.actionIdentifier === REMINDER_SNOOZE_ACTION) {
+      await notificationService.clearStoppedReminder(reminderId);
       const snoozed = new Date(Date.now() + 60 * 60 * 1000);
       const date = `${snoozed.getFullYear()}-${String(snoozed.getMonth() + 1).padStart(2, '0')}-${String(snoozed.getDate()).padStart(2, '0')}`;
       const time = `${String(snoozed.getHours()).padStart(2, '0')}:${String(snoozed.getMinutes()).padStart(2, '0')}:00`;
