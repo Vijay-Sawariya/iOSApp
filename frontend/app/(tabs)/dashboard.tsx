@@ -88,6 +88,8 @@ interface DashboardLocationPricing {
 
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
+  const normalizedRole = user?.role?.trim().toLowerCase();
+  const canAddLeads = !['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [urgentFollowups, setUrgentFollowups] = useState<UrgentFollowup[]>([]);
   const [smartMatches, setSmartMatches] = useState<SmartMatch[]>([]);
@@ -676,14 +678,18 @@ export default function DashboardScreen() {
         <View style={styles.quickActions}>
           <Text style={styles.quickActionsTitle}>Quick Actions</Text>
           <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/leads/add?type=client' as any)}>
-              <Ionicons name="person-add" size={24} color="#3B82F6" />
-              <Text style={styles.actionText}>Add Client</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/leads/add?type=inventory' as any)}>
-              <Ionicons name="add-circle" size={24} color="#10B981" />
-              <Text style={styles.actionText}>Add Inventory</Text>
-            </TouchableOpacity>
+            {canAddLeads && (
+              <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/leads/add?type=client' as any)}>
+                <Ionicons name="person-add" size={24} color="#3B82F6" />
+                <Text style={styles.actionText}>Add Client</Text>
+              </TouchableOpacity>
+            )}
+            {canAddLeads && (
+              <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/leads/add?type=inventory' as any)}>
+                <Ionicons name="add-circle" size={24} color="#10B981" />
+                <Text style={styles.actionText}>Add Inventory</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/clients' as any)}>
               <Ionicons name="people" size={24} color="#8B5CF6" />
               <Text style={styles.actionText}>View Clients</Text>

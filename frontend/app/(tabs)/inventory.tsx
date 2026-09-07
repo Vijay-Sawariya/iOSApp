@@ -93,6 +93,8 @@ export default function InventoryLeadsScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
   const { user } = useAuth();
+  const normalizedRole = user?.role?.trim().toLowerCase();
+  const canAddInventory = !['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
   const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
   const [inventoryFileCounts, setInventoryFileCounts] = useState<Record<number, { images: number; pdfs: number }>>({});
   
@@ -2046,14 +2048,16 @@ export default function InventoryLeadsScreen() {
       </Modal>
 
       {/* FAB - Add Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push((isColdCalling
-          ? '/leads/add?type=inventory&source=Cold_Calling'
-          : '/leads/add?type=inventory') as any)}
-      >
-        <Ionicons name="add" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
+      {canAddInventory && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => router.push((isColdCalling
+            ? '/leads/add?type=inventory&source=Cold_Calling'
+            : '/leads/add?type=inventory') as any)}
+        >
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
       <MatchingLeadsModal
         visible={!!matchingLead}

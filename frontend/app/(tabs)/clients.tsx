@@ -1346,12 +1346,14 @@ www.sagarhome.com`;
       </Modal>
 
       {/* FAB - Blue Floating Add Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/leads/add?type=client' as any)}
-      >
-        <Ionicons name="add" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
+      {!['caller', 'tele caller', 'telecaller'].includes(user?.role?.trim().toLowerCase() || '') && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => router.push('/leads/add?type=client' as any)}
+        >
+          <Ionicons name="add" size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
       <MatchingLeadsModal
         visible={!!matchingLead}

@@ -84,7 +84,9 @@ const MenuItem = ({ icon, label, color, bgColor, onPress, visible = true }: Menu
 // More Menu Popup Component
 const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; onClose: () => void; bottomInset: number }) => {
   const { hasFeature, user } = useAuth();
-  const isAdmin = user?.role?.trim().toLowerCase() === 'admin';
+  const normalizedRole = user?.role?.trim().toLowerCase();
+  const isAdmin = normalizedRole === 'admin';
+  const isCaller = ['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
   const handleMenuItemPress = (tab: string) => {
     onClose();
     router.push(`/more?tab=${tab}&fromPopup=true` as any);
@@ -184,7 +186,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.primary}
               bgColor={colors.primarySoft}
               onPress={() => handleRoutePress('/cold-calling')}
-              visible={hasFeature('cold_calling_inventory')}
+              visible={!isCaller && hasFeature('cold_calling_inventory')}
             />
             <MenuItem
               icon="stats-chart"
@@ -208,7 +210,7 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               color={colors.amber}
               bgColor={colors.amberSoft}
               onPress={() => handleRoutePress('/pricing')}
-              visible={hasFeature('inventory_pricing')}
+              visible={!isCaller && hasFeature('inventory_pricing')}
             />
           </View>
         </Pressable>
@@ -220,7 +222,9 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const { hasFeature } = useAuth();
+  const { hasFeature, user } = useAuth();
+  const normalizedRole = user?.role?.trim().toLowerCase();
+  const isCaller = ['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
   
   const tabBarHeight = Platform.OS === 'ios' ? 65 + insets.bottom : 70;
   const tabBarPaddingBottom = Platform.OS === 'ios' ? insets.bottom : 8;
@@ -302,6 +306,36 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="cold-calling"
+          options={{
+            title: 'Cold Calling',
+            headerShown: false,
+            href: isCaller && hasFeature('cold_calling_inventory') ? undefined : null,
+            tabBarIcon: ({ focused }) => (
+              <TabIcon
+                name="call"
+                focused={focused}
+                gradientColors={['#2563EB', '#1D4ED8']}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="pricing"
+          options={{
+            title: 'Pricing',
+            headerShown: false,
+            href: isCaller && hasFeature('inventory_pricing') ? undefined : null,
+            tabBarIcon: ({ focused }) => (
+              <TabIcon
+                name="calculator"
+                focused={focused}
+                gradientColors={['#B7791F', '#8A5A15']}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="builders"
           options={{
             title: 'Builders',
@@ -350,16 +384,8 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="pricing"
-          options={{ href: null }}
-        />
-        <Tabs.Screen
           name="leads"
           options={{ href: null }}
-        />
-        <Tabs.Screen
-          name="cold-calling"
-          options={{ href: null, headerShown: false }}
         />
       </Tabs>
       
