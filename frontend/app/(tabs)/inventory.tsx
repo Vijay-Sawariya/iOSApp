@@ -94,7 +94,8 @@ export default function InventoryLeadsScreen() {
   const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
   const { user } = useAuth();
   const normalizedRole = user?.role?.trim().toLowerCase();
-  const canAddInventory = !['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
+  const isCaller = ['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
+  const canAddInventory = isColdCalling || !isCaller;
   const [shareMenuLead, setShareMenuLead] = useState<Lead | null>(null);
   const [inventoryFileCounts, setInventoryFileCounts] = useState<Record<number, { images: number; pdfs: number }>>({});
   

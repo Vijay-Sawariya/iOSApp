@@ -225,6 +225,16 @@ export default function AddLeadScreen() {
     setFloorPrices(floorPrices.filter((_, i) => i !== index));
   };
 
+  const handleFloorSelection = (floors: string[]) => {
+    setSelectedFloors(floors);
+
+    if (isInventory) {
+      setFloorPrices((currentPrices) => floors.map((floor) => (
+        currentPrices.find((item) => item.floor === floor) || { floor, price: '' }
+      )));
+    }
+  };
+
   const toggleAmenity = (key: string) => {
     setAmenities(prev => ({
       ...prev,
@@ -551,7 +561,7 @@ export default function AddLeadScreen() {
             label="Floor"
             selectedFloors={selectedFloors}
             options={[...FLOORS]}
-            onSelect={setSelectedFloors}
+            onSelect={handleFloorSelection}
             placeholder="Select Floors"
           />
 
