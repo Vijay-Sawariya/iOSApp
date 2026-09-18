@@ -251,20 +251,13 @@ export default function RemindersScreen() {
     }
   };
 
-  const handleSnoozeOneHour = async (item: Reminder) => {
+  const handleSnoozeSixHours = async (item: Reminder) => {
     try {
-      const current = new Date(item.reminder_date.replace(' ', 'T'));
-      const snoozeFrom = Math.max(Date.now(), current.getTime());
-      const snoozed = new Date(snoozeFrom + 60 * 60 * 1000);
-      const date = `${snoozed.getFullYear()}-${String(snoozed.getMonth() + 1).padStart(2, '0')}-${String(snoozed.getDate()).padStart(2, '0')}`;
-      const time = `${String(snoozed.getHours()).padStart(2, '0')}:${String(snoozed.getMinutes()).padStart(2, '0')}:00`;
-      await api.updateReminder(item.id.toString(), { reminder_date: `${date}T${time}`, status: 'pending' });
-      await notificationService.scheduleReminderNotificationIST(
-        item.id.toString(), item.title, item.notes || item.reminder_type,
-        snoozed.getFullYear(), snoozed.getMonth() + 1, snoozed.getDate(), snoozed.getHours(), snoozed.getMinutes(), item.lead_name
+      await notificationService.snoozeReminder(
+        item.id.toString(), item.title, item.notes || item.reminder_type, item.lead_name
       );
       await loadReminders();
-      Alert.alert('Snoozed', 'The reminder and hourly alerts will resume in one hour.');
+      Alert.alert('Snoozed', 'The reminder and hourly alerts will resume in six hours.');
     } catch (error) {
       Alert.alert('Error', 'Unable to snooze this reminder.');
     }
@@ -502,7 +495,7 @@ export default function RemindersScreen() {
             
             {statusLower === 'pending' && (
               <>
-                <TouchableOpacity style={styles.completeButton} onPress={() => handleSnoozeOneHour(item)}>
+                <TouchableOpacity accessibilityLabel="Snooze 6 Hours" style={styles.completeButton} onPress={() => handleSnoozeSixHours(item)}>
                   <Ionicons name="time-outline" size={21} color="#3B82F6" />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.completeButton} onPress={() => handleStopAlerts(item)}>

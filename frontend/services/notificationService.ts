@@ -8,7 +8,8 @@ const NOTIFICATION_STORAGE_KEY = 'scheduled_notifications';
 const STOPPED_REMINDER_STORAGE_KEY = 'stopped_reminder_notifications';
 let stoppedReminderMutation: Promise<void> = Promise.resolve();
 export const REMINDER_CATEGORY = 'reminder-actions';
-export const REMINDER_SNOOZE_ACTION = 'reminder-snooze-1h';
+export const REMINDER_SNOOZE_ACTION = 'reminder-snooze-6h';
+const LEGACY_REMINDER_SNOOZE_ACTION = 'reminder-snooze-1h';
 export const REMINDER_STOP_ACTION = 'reminder-stop';
 
 // IST offset in minutes (5 hours 30 minutes = 330 minutes)
@@ -81,7 +82,7 @@ export const notificationService = {
     await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY, [
       {
         identifier: REMINDER_SNOOZE_ACTION,
-        buttonTitle: 'Snooze 1 Hour',
+        buttonTitle: 'Snooze 6 Hours',
         options: { opensAppToForeground: true },
       },
       {
@@ -454,6 +455,26 @@ export const notificationService = {
     }
   },
 
+  // Round up to a minute so alerts never resume before six full hours.
+  snoozeReminder: async (reminderId: string, title: string, body: string, leadName?: string): Promise<void> => {
+    const resumeAt = Math.ceil((Date.now() + 6 * 60 * 60 * 1000) / 60000) * 60000;
+    const ist = new Date(resumeAt + IST_OFFSET_MINUTES * 60000);
+    const reminderDate = ist.toISOString().slice(0, 19);
+    await api.updateReminder(reminderId, { reminder_date: reminderDate, status: 'Pending' });
+    await notificationService.scheduleReminderNotificationIST(
+      reminderId, title, body,
+      ist.getUTCFullYear(), ist.getUTCMonth() + 1, ist.getUTCDate(),
+      ist.getUTCHours(), ist.getUTCMinutes(), leadName
+    );
+  },
+
+  getLastNotificationResponse: async () => Platform.OS === 'web'
+    ? null : Notifications.getLastNotificationResponseAsync(),
+
+  clearLastNotificationResponse: async () => {
+    if (Platform.OS !== 'web') await Notifications.clearLastNotificationResponseAsync();
+  },
+
   handleReminderNotificationResponse: async (
     response: Notifications.NotificationResponse
   ): Promise<'snoozed' | 'stopped' | 'opened' | null> => {
@@ -471,17 +492,11 @@ export const notificationService = {
       return 'stopped';
     }
 
-    if (response.actionIdentifier === REMINDER_SNOOZE_ACTION) {
-      await notificationService.clearStoppedReminder(reminderId);
-      const snoozed = new Date(Date.now() + 60 * 60 * 1000);
-      const date = `${snoozed.getFullYear()}-${String(snoozed.getMonth() + 1).padStart(2, '0')}-${String(snoozed.getDate()).padStart(2, '0')}`;
-      const time = `${String(snoozed.getHours()).padStart(2, '0')}:${String(snoozed.getMinutes()).padStart(2, '0')}:00`;
-      await api.updateReminder(reminderId, { reminder_date: `${date}T${time}`, status: 'Pending' });
-      await notificationService.scheduleReminderNotificationIST(
+    if ([REMINDER_SNOOZE_ACTION, LEGACY_REMINDER_SNOOZE_ACTION].includes(response.actionIdentifier)) {
+      await notificationService.snoozeReminder(
         reminderId,
         String(data.title || 'Follow-up'),
         String(data.body || 'Follow-up reminder'),
-        snoozed.getFullYear(), snoozed.getMonth() + 1, snoozed.getDate(), snoozed.getHours(), snoozed.getMinutes(),
         String(data.leadName || '') || undefined
       );
       return 'snoozed';

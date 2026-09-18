@@ -345,6 +345,28 @@ export default function EditReminderScreen() {
     ]);
   };
 
+  const handleNotificationAction = async (action: 'stop' | 'snooze') => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      if (action === 'stop') {
+        await notificationService.markReminderStopped(reminderId);
+        await notificationService.cancelReminderNotification(reminderId);
+        await api.updateReminder(reminderId, { status: 'Dismissed' });
+      } else {
+        await notificationService.snoozeReminder(reminderId, title, notes || reminderType, selectedLead?.name);
+      }
+      await loadData();
+      Alert.alert(action === 'stop' ? 'Alerts stopped' : 'Snoozed', action === 'stop'
+        ? 'Hourly notifications for this reminder have been stopped.'
+        : 'The reminder and hourly alerts will resume in six hours.');
+    } catch (error) {
+      Alert.alert('Error', 'Unable to update this reminder. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDateSelect = (option: { year: number; month: number; day: number }) => {
     setSelectedYear(option.year);
     setSelectedMonth(option.month);
@@ -439,6 +461,20 @@ export default function EditReminderScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notifications</Text>
+            <Text>{['dismissed', 'completed'].includes(status.toLowerCase()) ? 'Alerts stopped' : 'Hourly alerts enabled'}</Text>
+            <View style={styles.statusToggle}>
+              <TouchableOpacity style={styles.statusButton} disabled={loading} onPress={() => handleNotificationAction('snooze')}>
+                <Ionicons name="time-outline" size={18} color="#3B82F6" />
+                <Text style={styles.statusButtonText}>Snooze 6 Hours</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.statusButton} disabled={loading} onPress={() => handleNotificationAction('stop')}>
+                <Ionicons name="notifications-off-outline" size={18} color="#F59E0B" />
+                <Text style={styles.statusButtonText}>Stop Reminders</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
           {/* Status Toggle */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Status</Text>

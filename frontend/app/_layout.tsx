@@ -11,6 +11,8 @@ function RootLayoutContent() {
   const { token, user, loading, hasFeature, featureFlagsLoading } = useAuth();
   const { isInitialized } = useOffline();
   const pathname = usePathname();
+  const handledResponses = React.useRef(new Set<string>());
+  const notificationReady = !!token && !loading && isInitialized && pathname !== '/' && pathname !== '/login';
   const deniedPathRef = React.useRef<string | null>(null);
 
   useEffect(() => {
@@ -18,34 +20,55 @@ function RootLayoutContent() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!notificationReady) return;
     void notificationService.configureReminderActions();
+    let active = true;
+    let actionPending = false;
+    let actionVersion = 0;
     const syncAssignedReminders = async () => {
+      const version = actionVersion;
       try {
         const reminders = await api.getReminders({ forceNetwork: true });
+        if (!active || actionPending || version !== actionVersion) return;
         await notificationService.syncAssignedReminderNotifications(Array.isArray(reminders) ? reminders : []);
       } catch (error) {
         console.warn('Assigned reminder notification sync skipped:', error);
       }
     };
-    void syncAssignedReminders();
-    const responseSubscription = notificationService.addNotificationResponseReceivedListener(async (response) => {
+    const handleResponse = async (response: Parameters<typeof notificationService.handleReminderNotificationResponse>[0]) => {
+      const data = response.notification.request.content.data;
+      if (!active || data?.type !== 'reminder' || !data.reminderId) return;
+      const key = `${response.notification.request.identifier}:${response.actionIdentifier}`;
+      if (handledResponses.current.has(key)) return;
+      handledResponses.current.add(key);
+      actionPending = true;
+      actionVersion += 1;
       try {
-        const result = await notificationService.handleReminderNotificationResponse(response);
-        if (result === 'opened') router.push('/(tabs)/reminders' as any);
+        await notificationService.handleReminderNotificationResponse(response);
       } catch (error) {
         console.error('Failed to process reminder notification action:', error);
-        Alert.alert('Reminder Update Failed', 'Open Follow-ups and try the action again.');
+        Alert.alert('Reminder Update Failed', 'Please try the action again on this reminder.');
+      } finally {
+        if (active) router.push({ pathname: '/reminders/edit/[id]', params: { id: String(data.reminderId) } });
+        actionPending = false;
+        await notificationService.clearLastNotificationResponse();
       }
-    });
+    };
+    const responseSubscription = notificationService.addNotificationResponseReceivedListener(handleResponse);
+    void (async () => {
+      const response = await notificationService.getLastNotificationResponse();
+      if (response) await handleResponse(response);
+      if (active && !actionPending) await syncAssignedReminders();
+    })().catch(error => console.warn('Notification launch handling failed:', error));
     const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void syncAssignedReminders();
+      if (state === 'active' && !actionPending) void syncAssignedReminders();
     });
     return () => {
+      active = false;
       responseSubscription.remove();
       appStateSubscription.remove();
     };
-  }, [token]);
+  }, [token, notificationReady]);
 
   useEffect(() => {
     if (loading || token || pathname === '/' || pathname === '/login') return;
