@@ -21,7 +21,7 @@ function RootLayoutContent() {
 
   useEffect(() => {
     if (!notificationReady) return;
-    void notificationService.configureReminderActions();
+    void notificationService.configureReminderActions().catch(error => console.warn('Reminder actions unavailable:', error));
     let active = true;
     let actionPending = false;
     let actionVersion = 0;
@@ -43,13 +43,14 @@ function RootLayoutContent() {
       handledResponses.current.add(key);
       actionPending = true;
       actionVersion += 1;
+      // Navigate before any local cancellation or network request can block us.
+      router.navigate({ pathname: '/reminders/edit/[id]', params: { id: String(data.reminderId) } });
       try {
         await notificationService.handleReminderNotificationResponse(response);
       } catch (error) {
         console.error('Failed to process reminder notification action:', error);
         Alert.alert('Reminder Update Failed', 'Please try the action again on this reminder.');
       } finally {
-        if (active) router.push({ pathname: '/reminders/edit/[id]', params: { id: String(data.reminderId) } });
         actionPending = false;
         await notificationService.clearLastNotificationResponse();
       }

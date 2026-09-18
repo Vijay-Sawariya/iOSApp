@@ -2710,7 +2710,17 @@ def update_reminder(reminder_id: int, reminder_data: dict, current_user: dict = 
         conn.commit()
         
         if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Action/Reminder not found")
+            # MySQL reports changed rows, not matched rows. Repeating a stop
+            # on an already-dismissed reminder is a successful no-op.
+            if current_user.get('role') == 'admin':
+                cursor.execute("SELECT id FROM actions WHERE id = %s", (reminder_id,))
+            else:
+                cursor.execute(
+                    "SELECT id FROM actions WHERE id = %s AND (user_id = %s OR assigned_to = %s)",
+                    (reminder_id, current_user['id'], current_user['id']),
+                )
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Action/Reminder not found")
         
         cursor.execute(
             """SELECT a.*, l.name as lead_name, l.phone as lead_phone,

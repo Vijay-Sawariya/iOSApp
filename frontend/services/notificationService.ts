@@ -4,6 +4,8 @@ import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 
+const reminderUpdateListeners = new Set<(id: string) => void>();
+
 const NOTIFICATION_STORAGE_KEY = 'scheduled_notifications';
 const STOPPED_REMINDER_STORAGE_KEY = 'stopped_reminder_notifications';
 let stoppedReminderMutation: Promise<void> = Promise.resolve();
@@ -455,6 +457,15 @@ export const notificationService = {
     }
   },
 
+  addReminderUpdatedListener: (listener: (id: string) => void) => {
+    reminderUpdateListeners.add(listener);
+    return () => { reminderUpdateListeners.delete(listener); };
+  },
+
+  notifyReminderUpdated: (id: string) => {
+    for (const listener of reminderUpdateListeners) listener(id);
+  },
+
   // Round up to a minute so alerts never resume before six full hours.
   snoozeReminder: async (reminderId: string, title: string, body: string, leadName?: string): Promise<void> => {
     const resumeAt = Math.ceil((Date.now() + 6 * 60 * 60 * 1000) / 60000) * 60000;
@@ -489,6 +500,7 @@ export const notificationService = {
       await notificationService.markReminderStopped(reminderId);
       await notificationService.cancelReminderNotification(reminderId);
       await api.updateReminder(reminderId, { status: 'Dismissed' });
+      notificationService.notifyReminderUpdated(reminderId);
       return 'stopped';
     }
 
@@ -499,6 +511,7 @@ export const notificationService = {
         String(data.body || 'Follow-up reminder'),
         String(data.leadName || '') || undefined
       );
+      notificationService.notifyReminderUpdated(reminderId);
       return 'snoozed';
     }
 

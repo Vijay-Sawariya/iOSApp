@@ -121,6 +121,9 @@ export default function EditReminderScreen() {
 
   useEffect(() => {
     loadData();
+    return notificationService.addReminderUpdatedListener((updatedId) => {
+      if (updatedId === reminderId) void loadData();
+    });
   }, [reminderId]);
 
   const loadData = async () => {
@@ -173,27 +176,14 @@ export default function EditReminderScreen() {
           setSelectedMinute(date.getMinutes());
         }
 
-        // If there's a linked lead, fetch it for display
-        if (reminder.lead_id) {
-          try {
-            const [clients, inventory] = await Promise.all([
-              api.getClientLeads(),
-              api.getInventoryLeads(),
-            ]);
-            const allLeads = [...clients, ...inventory];
-            const lead = allLeads.find(l => l.id === reminder.lead_id);
-            if (lead) {
-              setSelectedLead({
-                id: lead.id,
-                name: lead.name,
-                phone: lead.phone,
-                lead_type: lead.lead_type,
-              });
-            }
-          } catch (e) {
-            console.error('Failed to load lead details:', e);
-          }
-        }
+        // The reminder response already includes the linked client's display
+        // fields. Do not download all clients and inventory to show this page.
+        setSelectedLead(reminder.lead_id ? {
+          id: reminder.lead_id,
+          name: reminder.lead_name || 'Linked client',
+          phone: reminder.lead_phone || null,
+          lead_type: reminder.lead_type || null,
+        } : null);
       }
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -352,16 +342,20 @@ export default function EditReminderScreen() {
       if (action === 'stop') {
         await notificationService.markReminderStopped(reminderId);
         await notificationService.cancelReminderNotification(reminderId);
-        await api.updateReminder(reminderId, { status: 'Dismissed' });
+        if (!['dismissed', 'completed'].includes(status.toLowerCase())) {
+          await api.updateReminder(reminderId, { status: 'Dismissed' });
+        }
+        setStatus(status.toLowerCase() === 'completed' ? 'completed' : 'Dismissed');
       } else {
         await notificationService.snoozeReminder(reminderId, title, notes || reminderType, selectedLead?.name);
       }
-      await loadData();
+      if (action === 'snooze') await loadData();
       Alert.alert(action === 'stop' ? 'Alerts stopped' : 'Snoozed', action === 'stop'
         ? 'Hourly notifications for this reminder have been stopped.'
         : 'The reminder and hourly alerts will resume in six hours.');
     } catch (error) {
-      Alert.alert('Error', 'Unable to update this reminder. Please try again.');
+      console.error('Reminder notification action failed:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Unable to update this reminder. Please try again.');
     } finally {
       setLoading(false);
     }
