@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -32,36 +32,44 @@ export default function PerformanceScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const requestId = useRef(0);
+
   const loadPerformance = useCallback(async (selectedDays = days, selectedAgentId = agentId) => {
+    const currentRequest = ++requestId.current;
+    setLoading(true);
     try {
       setError(null);
-      const result = await api.getMobilePerformance(selectedDays, selectedAgentId);
+      const result = await api.getMobilePerformance(selectedDays, selectedAgentId ?? Number(user?.id));
+      if (currentRequest !== requestId.current) return;
       setData(result);
-      if (!selectedAgentId && result?.agent?.id) setAgentId(result.agent.id);
     } catch (error: any) {
+      if (currentRequest !== requestId.current) return;
       setError(error?.message || 'Unable to load performance data.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [agentId, days]);
+  }, [agentId, days, user?.id]);
 
   useFocusEffect(
     useCallback(() => {
-      loadPerformance();
+      void loadPerformance();
+      return () => { requestId.current += 1; };
     }, [loadPerformance])
   );
 
   const selectDays = (value: number) => {
     setDays(value);
     setLoading(true);
-    loadPerformance(value, agentId);
+
   };
 
   const selectAgent = (id: number) => {
     setAgentId(id);
     setLoading(true);
-    loadPerformance(days, id);
+
   };
 
   const openMetric = (metric: string, title: string) => {
@@ -161,10 +169,10 @@ export default function PerformanceScreen() {
             {data.agents.map((agent: any) => (
               <TouchableOpacity
                 key={agent.id}
-                style={[styles.agentChip, agentId === agent.id && styles.agentChipActive]}
+                style={[styles.agentChip, (agentId ?? Number(user?.id)) === agent.id && styles.agentChipActive]}
                 onPress={() => selectAgent(agent.id)}
               >
-                <Text style={[styles.agentChipText, agentId === agent.id && styles.agentChipTextActive]}>
+                <Text style={[styles.agentChipText, (agentId ?? Number(user?.id)) === agent.id && styles.agentChipTextActive]}>
                   {agent.full_name || agent.username}
                 </Text>
               </TouchableOpacity>

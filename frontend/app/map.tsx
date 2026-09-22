@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,14 @@ import {
   ScrollView,
   Linking,
   RefreshControl,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { LOCATIONS } from '../constants/leadOptions';
+
 
 interface MapLead {
   id: number;
@@ -25,11 +26,16 @@ interface MapLead {
   location: string;
   address: string | null;
   Property_locationUrl: string | null;
+  has_map_url?: boolean;
   budget_min: number | null;
   budget_max: number | null;
   bhk: string | null;
   area_size: string | null;
 }
+
+const normalize = (value?: string | null) => (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const hasPinnedLocation = (lead: MapLead) => lead.has_map_url ?? Boolean(lead.Property_locationUrl?.trim());
 
 export default function MapViewScreen() {
   const { token } = useAuth();
@@ -37,16 +43,19 @@ export default function MapViewScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  
+  const [showFilters, setShowFilters] = useState(true);
+
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [locationFilter, setLocationFilter] = useState<string>('');
   const [locationSearch, setLocationSearch] = useState('');
+  const [addressSearch, setAddressSearch] = useState('');
+  const [selectedAddress, setSelectedAddress] = useState<{ address: string; location: string } | null>(null);
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
 
   const loadMapData = useCallback(async () => {
     if (!token) return;
-    
+
     setError(null);
     try {
       const data = await api.getMapData(typeFilter || undefined);
@@ -69,14 +78,28 @@ export default function MapViewScreen() {
     loadMapData();
   };
 
-  const filteredLeads = leads.filter(l => {
-    const matchesLocation = !locationFilter || 
-      l.location?.toLowerCase().includes(locationFilter.toLowerCase());
-    return Boolean(l.location?.trim()) && matchesLocation;
+  const locationLeads = leads.filter(lead => !locationFilter || normalize(lead.location) === normalize(locationFilter));
+  const addressSuggestions = useMemo(() => {
+    const unique = new Map<string, { address: string; location: string }>();
+    for (const lead of leads) {
+      if (locationFilter && normalize(lead.location) !== normalize(locationFilter)) continue;
+      const address = lead.address?.trim();
+      if (!address || !normalize(address).includes(normalize(addressSearch))) continue;
+      const location = lead.location?.trim() || '';
+      unique.set(JSON.stringify([normalize(address), normalize(location)]), { address, location });
+    }
+    return Array.from(unique.values()).sort((a, b) => a.address.localeCompare(b.address));
+  }, [leads, locationFilter, addressSearch]);
+
+  const filteredLeads = locationLeads.filter(lead => {
+    const matchesAddress = selectedAddress
+      ? normalize(lead.address) === normalize(selectedAddress.address) && normalize(lead.location) === normalize(selectedAddress.location)
+      : normalize(lead.address).includes(normalize(addressSearch));
+    return (hasPinnedLocation(lead) || Boolean(lead.location?.trim() || lead.address?.trim())) && matchesAddress;
   });
 
   // Leads without map URL (for stats)
-  const leadsWithoutMapUrl = leads.filter(l => !l.Property_locationUrl || l.Property_locationUrl.trim() === '');
+  const pinnedCount = filteredLeads.filter(hasPinnedLocation).length;
 
   const openInMaps = (url: string) => {
     Linking.openURL(url).catch(err => console.error('Failed to open map:', err));
@@ -95,17 +118,27 @@ export default function MapViewScreen() {
   };
 
   // Filtered location options
-  const filteredLocations = LOCATIONS.filter(loc => 
-    loc.toLowerCase().includes(locationSearch.toLowerCase())
-  );
+  const filteredLocations = Array.from(new Set(leads.map(lead => lead.location?.trim()).filter((location): location is string => Boolean(location))))
+    .filter(location => normalize(location).includes(normalize(locationSearch)))
+    .sort((a, b) => a.localeCompare(b));
+
+  const changeLocation = (location: string) => {
+    setLocationFilter(location);
+    setLocationSearch('');
+    setAddressSearch('');
+    setSelectedAddress(null);
+    setShowAddressSuggestions(false);
+  };
 
   const renderPropertyCard = ({ item }: { item: MapLead }) => {
     const typeInfo = getTypeColor(item.lead_type);
     const budget = item.budget_max || item.budget_min;
-    
+    const pinned = hasPinnedLocation(item);
+    const restricted = pinned && !item.Property_locationUrl?.trim();
+
     // Combine address and location for display
     const addressLocationText = [item.address, item.location].filter(Boolean).join(', ');
-    
+
     return (
       <View style={styles.propertyCard}>
         <TouchableOpacity
@@ -127,7 +160,13 @@ export default function MapViewScreen() {
               <Text style={[styles.typeBadgeText, { color: typeInfo.text }]}>{typeInfo.label}</Text>
             </View>
           </View>
-          
+
+          <View style={styles.locationKind}>
+            <Ionicons name={pinned ? 'pin' : 'search'} size={16} color={pinned ? '#059669' : '#B45309'} />
+            <Text style={{ color: pinned ? '#059669' : '#B45309', fontWeight: '600' }}>
+              {pinned ? 'Pinned Location' : 'Searched Location'}
+            </Text>
+          </View>
           <View style={styles.detailsRow}>
             {item.area_size && (
               <View style={styles.detailChip}>
@@ -148,14 +187,15 @@ export default function MapViewScreen() {
             )}
           </View>
         </TouchableOpacity>
-        
+
         {/* Map Button */}
         <TouchableOpacity
-          style={styles.mapButton}
+          style={[styles.mapButton, restricted && { backgroundColor: '#9CA3AF' }]}
+          disabled={restricted}
           onPress={() => openInMaps(getMapUrl(item))}
         >
           <Ionicons name="navigate" size={20} color="#FFFFFF" />
-          <Text style={styles.mapButtonText}>Open in Maps</Text>
+          <Text style={styles.mapButtonText}>{restricted ? 'Location access required' : pinned ? 'Open Pinned Location' : 'Search Location'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -176,7 +216,7 @@ export default function MapViewScreen() {
             <Ionicons 
               name="options-outline" 
               size={22} 
-              color={(typeFilter || locationFilter) ? '#FFD700' : '#FFFFFF'} 
+              color={(typeFilter || locationFilter || addressSearch) ? '#FFD700' : '#FFFFFF'}
             />
           </TouchableOpacity>
         </View>
@@ -187,12 +227,12 @@ export default function MapViewScreen() {
         <View style={styles.statItem}>
           <Ionicons name="location" size={18} color="#10B981" />
           <Text style={styles.statsText}>
-            {filteredLeads.length} properties with location
+            {pinnedCount} pinned locations
           </Text>
         </View>
-        {leadsWithoutMapUrl.length > 0 && (
+        {filteredLeads.length - pinnedCount > 0 && (
           <Text style={styles.statsSubtext}>
-            {leadsWithoutMapUrl.length} using searchable address
+            {filteredLeads.length - pinnedCount} searched locations
           </Text>
         )}
       </View>
@@ -240,11 +280,11 @@ export default function MapViewScreen() {
               </TouchableOpacity>
             )}
           </View>
-          
+
           {locationSearch && filteredLocations.length > 0 && (
             <View style={styles.locationDropdown}>
               <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {filteredLocations.slice(0, 6).map(loc => (
+                {filteredLocations.map(loc => (
                   <TouchableOpacity
                     key={loc}
                     style={[
@@ -252,8 +292,7 @@ export default function MapViewScreen() {
                       locationFilter === loc && styles.locationItemActive
                     ]}
                     onPress={() => {
-                      setLocationFilter(loc);
-                      setLocationSearch('');
+                      changeLocation(loc);
                     }}
                   >
                     <Text style={styles.locationItemText}>{loc}</Text>
@@ -270,18 +309,74 @@ export default function MapViewScreen() {
             <View style={styles.selectedLocationTag}>
               <Ionicons name="location" size={14} color="#3B82F6" />
               <Text style={styles.selectedLocationText}>{locationFilter}</Text>
-              <TouchableOpacity onPress={() => setLocationFilter('')}>
+              <TouchableOpacity onPress={() => changeLocation('')}>
                 <Ionicons name="close-circle" size={16} color="#3B82F6" />
               </TouchableOpacity>
             </View>
           )}
 
-          {(typeFilter || locationFilter) && (
+          <Text style={styles.filterLabel}>Address:</Text>
+          <View style={styles.locationSearchContainer}>
+            <Ionicons name="search" size={18} color="#6B7280" />
+            <TextInput
+              style={styles.locationSearchInput}
+              placeholder={locationFilter ? `Search address in ${locationFilter}` : 'Search address across inventory...'}
+              placeholderTextColor="#9CA3AF"
+              value={addressSearch}
+              autoCorrect={false}
+              onFocus={() => setShowAddressSuggestions(true)}
+              onChangeText={(value) => {
+                setAddressSearch(value);
+                setSelectedAddress(null);
+                setShowAddressSuggestions(true);
+              }}
+            />
+            {addressSearch.length > 0 && (
+              <TouchableOpacity accessibilityLabel="Clear address search" onPress={() => {
+                setAddressSearch('');
+                setSelectedAddress(null);
+                setShowAddressSuggestions(false);
+              }}>
+                <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
+          </View>
+          {showAddressSuggestions && (addressSearch.trim().length > 0 || Boolean(locationFilter)) && (
+            <View style={styles.locationDropdown}>
+              <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                {addressSuggestions.slice(0, 30).map(suggestion => (
+                  <TouchableOpacity
+                    key={JSON.stringify([suggestion.address, suggestion.location])}
+                    style={styles.locationItem}
+                    onPress={() => {
+                      setAddressSearch(suggestion.address);
+                      setSelectedAddress(suggestion);
+                      setShowAddressSuggestions(false);
+                      Keyboard.dismiss();
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.locationItemText}>{suggestion.address}</Text>
+                      <Text style={styles.locationText}>{suggestion.location}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                {addressSuggestions.length > 30 && (
+                  <Text style={[styles.locationText, { padding: 12 }]}>Keep typing to narrow {addressSuggestions.length} matching addresses.</Text>
+                )}
+                {addressSuggestions.length === 0 && (
+                  <Text style={[styles.locationText, { padding: 12 }]}>No inventory addresses match your search.</Text>
+                )}
+              </ScrollView>
+            </View>
+          )}
+
+          {(typeFilter || locationFilter || addressSearch) && (
             <TouchableOpacity 
               style={styles.clearFiltersBtn}
               onPress={() => {
                 setTypeFilter('');
-                setLocationFilter('');
+                changeLocation('');
               }}
             >
               <Text style={styles.clearFiltersBtnText}>Clear All Filters</Text>
@@ -311,7 +406,7 @@ export default function MapViewScreen() {
             <Text style={styles.emptyText}>No properties with map location</Text>
             <Text style={styles.emptySubtext}>
               {leads.length > 0 
-                ? `${leads.length} properties found but missing Google Maps URL`
+                ? 'No properties match the selected location or address'
                 : 'Try adjusting your filters'}
             </Text>
           </View>
@@ -553,6 +648,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  locationKind: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   detailsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   RefreshControl,
   ScrollView,
@@ -39,13 +38,19 @@ export default function AssignedLeadsScreen() {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async (force = false) => {
+    setLoadError(null);
     try {
-      const result = await api.getAssignedLeads(force ? { forceNetwork: true } : undefined);
+      const result = await api.getAssignedLeads({
+        forceNetwork: force,
+        onBackgroundRefresh: (fresh) => setLeads(Array.isArray(fresh) ? fresh : []),
+      });
       setLeads(Array.isArray(result) ? result : []);
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to load assigned leads');
+      setLoadError('Assigned leads could not be loaded. Please try again.');
+      console.warn('Failed to load assigned leads:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -80,7 +85,7 @@ export default function AssignedLeadsScreen() {
         </TouchableOpacity>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Assigned Leads</Text>
-          <Text style={styles.subtitle}>{leads.length} leads ready for action</Text>
+          <Text style={styles.subtitle}>{loadError ? 'Unable to refresh assigned leads' : `${leads.length} leads ready for action`}</Text>
         </View>
         <TouchableOpacity style={styles.iconButton} onPress={onRefresh}>
           <Ionicons name="refresh" size={20} color={colors.primary} />
@@ -91,13 +96,23 @@ export default function AssignedLeadsScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {leads.length === 0 ? (
+        {loadError && (
+          <View style={styles.empty}>
+            <Ionicons name="cloud-offline-outline" size={28} color={colors.inkSubtle} />
+            <Text style={styles.emptyTitle}>Unable to load assigned leads</Text>
+            <Text style={styles.emptyText}>{loadError}</Text>
+            <TouchableOpacity style={styles.smallButton} onPress={onRefresh} disabled={refreshing}>
+              <Text style={styles.smallButtonText}>{refreshing ? 'Retrying...' : 'Retry'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {leads.length === 0 ? (!loadError && (
           <View style={styles.empty}>
             <Ionicons name="person-circle-outline" size={28} color={colors.inkSubtle} />
             <Text style={styles.emptyTitle}>No assigned leads</Text>
             <Text style={styles.emptyText}>Assigned buyer, tenant, seller, and inventory leads will appear here.</Text>
           </View>
-        ) : (
+        )) : (
           leads.map((lead) => (
             <View key={lead.id} style={styles.card}>
               <View style={styles.cardTop}>
