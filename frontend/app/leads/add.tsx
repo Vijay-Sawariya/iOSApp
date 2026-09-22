@@ -18,6 +18,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '../../services/api';
 import * as Location from 'expo-location';
 import { useOffline } from '../../contexts/OfflineContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Import shared components
 import { CustomDropdown } from '../../components/forms/CustomDropdown';
@@ -86,8 +87,9 @@ export default function AddLeadScreen() {
     source?: string;
   }>();
   const { isOnline } = useOffline();
+  const { user } = useAuth();
   const isClientForm = params.type === 'client';
-  const isInventoryForm = params.type === 'inventory' || !params.type; // Default to inventory
+  const isColdCallingForm = params.type === 'cold-calling';
   
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -103,7 +105,7 @@ export default function AddLeadScreen() {
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('New');
   const [inventoryStatuses, setInventoryStatuses] = useState<string[]>(['Available']);
-  const [leadSource, setLeadSource] = useState(params.source || (params.legacyId ? 'Legacy Enquiry' : ''));
+  const [leadSource, setLeadSource] = useState(params.source || (isColdCallingForm ? 'Cold_Calling' : params.legacyId ? 'Legacy Enquiry' : ''));
   const [builderId, setBuilderId] = useState('');
   
   // Property Details
@@ -268,6 +270,10 @@ export default function AddLeadScreen() {
   };
 
   const handleSave = async () => {
+    if (isClient && user?.role?.trim().toLowerCase() !== 'admin' && !isColdCallingForm) {
+      Alert.alert('Cold Calling Required', 'Please add buyers and tenants from the Cold Calling screen.');
+      return;
+    }
     if (!name.trim()) {
       Alert.alert('Error', 'Name is required');
       return;
@@ -284,6 +290,7 @@ export default function AddLeadScreen() {
     setSaving(true);
     try {
       const leadData: any = {
+        creation_context: isColdCallingForm ? 'cold_calling' : undefined,
         name: name.trim(),
         phone: phone.trim(),
         lead_type: leadType,
@@ -406,7 +413,7 @@ export default function AddLeadScreen() {
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={isClientForm ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
+            options={isColdCallingForm ? [...LEAD_TYPES] : isClientForm ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
             required

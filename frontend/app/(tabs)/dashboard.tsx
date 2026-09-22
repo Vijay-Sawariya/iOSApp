@@ -515,8 +515,8 @@ export default function DashboardScreen() {
                 <Text style={styles.nextActionName}>No urgent follow-ups</Text>
                 <Text style={styles.nextActionTitle}>Review hot leads or add new inventory.</Text>
               </View>
-              <TouchableOpacity style={styles.nextActionCta} onPress={() => router.push('/leads/add?type=client' as any)}>
-                <Text style={styles.nextActionCtaText}>Add Lead</Text>
+              <TouchableOpacity style={styles.nextActionCta} onPress={() => router.push((normalizedRole === 'admin' ? '/leads/add?type=client' : '/cold-calling') as any)}>
+                <Text style={styles.nextActionCtaText}>{normalizedRole === 'admin' ? 'Add Lead' : 'Cold Calling'}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -678,7 +678,7 @@ export default function DashboardScreen() {
         <View style={styles.quickActions}>
           <Text style={styles.quickActionsTitle}>Quick Actions</Text>
           <View style={styles.actionsRow}>
-            {canAddLeads && (
+            {normalizedRole === 'admin' && (
               <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/leads/add?type=client' as any)}>
                 <Ionicons name="person-add" size={24} color="#3B82F6" />
                 <Text style={styles.actionText}>Add Client</Text>

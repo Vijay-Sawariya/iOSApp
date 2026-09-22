@@ -2053,7 +2053,7 @@ export default function InventoryLeadsScreen() {
         <TouchableOpacity
           style={styles.fab}
           onPress={() => router.push((isColdCalling
-            ? '/leads/add?type=inventory&source=Cold_Calling'
+            ? '/leads/add?type=cold-calling&source=Cold_Calling'
             : '/leads/add?type=inventory') as any)}
         >
           <Ionicons name="add" size={28} color="#FFFFFF" />

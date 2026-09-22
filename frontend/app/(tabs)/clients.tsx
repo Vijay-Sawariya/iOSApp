@@ -1346,7 +1346,7 @@ www.sagarhome.com`;
       </Modal>
 
       {/* FAB - Blue Floating Add Button */}
-      {!['caller', 'tele caller', 'telecaller'].includes(user?.role?.trim().toLowerCase() || '') && (
+      {user?.role?.trim().toLowerCase() === 'admin' && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => router.push('/leads/add?type=client' as any)}
