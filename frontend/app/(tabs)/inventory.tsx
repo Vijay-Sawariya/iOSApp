@@ -40,6 +40,8 @@ import {
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
+import AssignLeadButton from '../../components/AssignLeadButton';
+import { canShowInventory, isUnavailableInventory, formatInventoryCopy } from '../../utils/inventory';
 import { colors, radii, shadows } from '../../constants/theme';
 
 // Filter arrays
@@ -53,11 +55,6 @@ const TYPE_OPTIONS = [
   { label: 'Rent', value: 'landlord' },
   { label: 'Agent', value: 'agent' },
 ];
-
-const isSoldInventory = (lead: Lead): boolean =>
-  (lead.lead_status || '')
-    .split(',')
-    .some((status) => status.trim().toLowerCase() === 'sold');
 
 const GODADDY_BASE_URL = 'https://sagarhomelms.com';
 const GODADDY_API_KEY = 'SagarHome_Upload_2024_Secret';
@@ -84,6 +81,7 @@ export default function InventoryLeadsScreen() {
   const pathname = usePathname();
   const isColdCalling = pathname.startsWith('/cold-calling');
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingLeads, setLoadingLeads] = useState(true);
@@ -198,7 +196,7 @@ export default function InventoryLeadsScreen() {
 
   // Stats calculations - combine seller and builder into "sell"
   const stats = useMemo(() => {
-    const activeLeads = leads.filter((lead) => !isSoldInventory(lead));
+    const activeLeads = leads.filter((lead) => !isUnavailableInventory(lead));
 
     return {
       total: activeLeads.length,
@@ -284,16 +282,8 @@ export default function InventoryLeadsScreen() {
   ) => {
     let filtered = [...data];
 
-    // Keep sold inventory out of the default list. It remains discoverable through
-    // the main search and by explicitly selecting the Sold status filter.
-    const hasSearch = normalizeSearchText(search).length > 0;
-    const isSoldStatusSelected = statuses.some(
-      (status) => status.trim().toLowerCase() === 'sold'
-    );
-    if (!hasSearch && !isSoldStatusSelected) {
-      filtered = filtered.filter((lead) => !isSoldInventory(lead));
-    }
-    
+    filtered = filtered.filter(lead => canShowInventory(lead, search, statuses, addrFilter));
+
     // Client/Buyer matching filter - If a client is selected, filter inventory to only show preferred/matched properties
     if (client && preferredIds.length > 0) {
       // Filter to only show inventory that's in the preferred list for this client
@@ -479,6 +469,7 @@ export default function InventoryLeadsScreen() {
     }
 
     setFilteredLeads(filtered);
+    setSelectedIds(previous => new Set([...previous].filter(id => filtered.some(lead => lead.id === id))));
   };
 
   React.useEffect(() => {
@@ -772,25 +763,6 @@ export default function InventoryLeadsScreen() {
     return lines.join('\n');
   };
 
-  const composePropertyCopyMessage = (lead: Lead) => {
-    const locationText = [lead.address, lead.location].filter(Boolean).join(', ');
-    const floorBhkText = [
-      lead.floor ? `Floor: ${lead.floor}` : null,
-      lead.bhk ? `BHK: ${lead.bhk}` : null,
-    ].filter(Boolean).join(' | ');
-    const pricingText = formatFloorPricing(lead.floor_pricing, lead.unit);
-    const lines = [
-      `Property 1 - (${lead.id}):`,
-      locationText ? `📍 Location: ${locationText}` : null,
-      lead.area_size ? `📐 Plot Area: ${lead.area_size} sq. yds` : null,
-      floorBhkText ? `🏠 ${floorBhkText}` : null,
-      lead.lead_status ? `📋 Status: ${lead.lead_status}` : null,
-      pricingText ? `💰 Pricing: ${pricingText}` : null,
-    ].filter(Boolean);
-
-    return lines.join('\n');
-  };
-
   const handleSharePropertyInfo = async (lead: Lead) => {
     try {
       const message = composePropertyInfoMessage(lead);
@@ -815,7 +787,7 @@ export default function InventoryLeadsScreen() {
 
   const handleCopyPropertyInfo = async (lead: Lead) => {
     try {
-      await Clipboard.setStringAsync(composePropertyCopyMessage(lead));
+      await Clipboard.setStringAsync(formatInventoryCopy(lead));
       Alert.alert('Copied', 'Inventory details copied.');
     } catch (error: any) {
       console.error('Copy property info error:', error);
@@ -893,6 +865,16 @@ export default function InventoryLeadsScreen() {
 
     return (
       <View style={styles.leadCard}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 8 }}>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: selectedIds.has(item.id) }} accessibilityLabel={`Select inventory ${item.id}`} style={{ padding: 8 }} onPress={() => setSelectedIds(previous => {
+            const next = new Set(previous);
+            if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+            return next;
+          })}>
+            <Ionicons name={selectedIds.has(item.id) ? 'checkbox' : 'square-outline'} size={24} color="#2563EB" />
+          </TouchableOpacity>
+          <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} inventory onAssigned={() => void loadLeadsRef.current(true)} />
+        </View>
         {/* Aging & Temperature Banner */}
         <View style={styles.agingBanner}>
           {/* Aging Indicator */}
@@ -1303,6 +1285,7 @@ export default function InventoryLeadsScreen() {
       <View style={styles.contentArea}>
         {/* Leads List with Header Components */}
         <FlatList
+          extraData={selectedIds}
           data={filteredLeads}
           renderItem={renderLeadCard}
           keyExtractor={(item) => item.id.toString()}
@@ -1312,6 +1295,22 @@ export default function InventoryLeadsScreen() {
           }
           ListHeaderComponent={
             <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12 }}>
+                <TouchableOpacity onPress={() => setSelectedIds(new Set())} accessibilityLabel="Clear inventory selection" style={{ padding: 8 }}>
+                  <Text>{filteredLeads.filter(lead => selectedIds.has(lead.id)).length} selected · Clear</Text>
+                </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" disabled={!filteredLeads.some(lead => selectedIds.has(lead.id))} style={{ padding: 12, backgroundColor: '#E0E7FF', borderRadius: 10 }} onPress={async () => {
+                  const selected = filteredLeads.filter(lead => selectedIds.has(lead.id));
+                  try {
+                    await Clipboard.setStringAsync(selected.map((lead, index) => formatInventoryCopy(lead, index + 1)).join('\n\n'));
+                    Alert.alert('Copied', `${selected.length} inventories copied.`);
+                  } catch {
+                    Alert.alert('Copy Failed', 'Could not copy inventory details. Please try again.');
+                  }
+                }}>
+                  <Text style={{ color: '#3730A3', fontWeight: '600' }}>Copy Information</Text>
+                </TouchableOpacity>
+              </View>
               {/* Stats Bar - Clickable Tiles */}
               <View style={styles.statsBar}>
                 <TouchableOpacity 

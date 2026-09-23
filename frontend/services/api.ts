@@ -812,6 +812,23 @@ export const api = {
     return response.json();
   },
 
+  getActiveAssignmentUsers: async () => {
+    // No fallback to unfiltered team lists: only active accounts may receive leads.
+    const response = await fetch(`${API_URL}/api/users/assignable`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Failed to load active users'));
+    return response.json();
+  },
+
+  assignLead: async (leadId: number, userId: number) => {
+    const response = await fetch(`${API_URL}/api/team/assign-lead?lead_id=${leadId}&user_id=${userId}`, {
+      method: 'POST', headers: getHeaders(),
+    });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Failed to assign lead'));
+    const result = await response.json();
+    await invalidateLeadAccessCaches(leadId);
+    return result;
+  },
+
   getAssignableUsers: async () => {
     const headers = getHeaders();
     const listEndpoints = [

@@ -1,3 +1,4 @@
+import AssignLeadButton from '../../components/AssignLeadButton';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
@@ -605,6 +606,9 @@ www.sagarhome.com`;
     
     return (
       <View style={styles.leadCard}>
+        <View style={{ alignItems: 'flex-end', paddingHorizontal: 14, paddingVertical: 8 }}>
+          <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} onAssigned={() => void loadLeadsRef.current(true)} />
+        </View>
         {/* Aging & Temperature Banner */}
         <View style={styles.agingBanner}>
           {/* Aging Indicator */}

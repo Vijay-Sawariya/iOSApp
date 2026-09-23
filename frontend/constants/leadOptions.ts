@@ -13,7 +13,7 @@ export const LEAD_TEMPERATURES = ['Hot', 'Warm', 'Cold'] as const;
 export type LeadTemperature = typeof LEAD_TEMPERATURES[number];
 
 export const CLIENT_STATUSES = ['New', 'Hot', 'Pending', 'Warm', 'Cold', 'Follow Up', 'Closed/Lost'] as const;
-export const INVENTORY_STATUSES = ['Available', 'Under Construction', 'Ready to Move', 'Near Completion', 'Booking', 'Old', 'Sold', 'Already Rented'] as const;
+export const INVENTORY_STATUSES = ['Available', 'Under Construction', 'Ready to Move', 'Near Completion', 'Booking', 'Old', 'Sold', 'Not Available', 'Already Rented'] as const;
 
 // How Old options (in years)
 export const HOW_OLD_OPTIONS = Array.from({ length: 50 }, (_, index) => String(index + 1));
@@ -247,6 +247,7 @@ export interface Lead {
   budget_max: number | null;
   floor: string | null;
   bhk?: string | null;
+  car_parking_number?: number | null;
   lift?: string | null;
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
