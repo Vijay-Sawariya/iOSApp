@@ -865,18 +865,15 @@ export default function InventoryLeadsScreen() {
 
     return (
       <View style={styles.leadCard}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 8 }}>
-          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: selectedIds.has(item.id) }} accessibilityLabel={`Select inventory ${item.id}`} style={{ padding: 8 }} onPress={() => setSelectedIds(previous => {
+        {/* Aging & Temperature Banner */}
+        <View style={styles.agingBanner}>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: selectedIds.has(item.id) }} accessibilityLabel={`Select inventory ${item.id}`} style={styles.selectionCheckbox} onPress={() => setSelectedIds(previous => {
             const next = new Set(previous);
             if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
             return next;
           })}>
-            <Ionicons name={selectedIds.has(item.id) ? 'checkbox' : 'square-outline'} size={24} color="#2563EB" />
+            <Ionicons name={selectedIds.has(item.id) ? 'checkbox' : 'square-outline'} size={21} color="#235B76" />
           </TouchableOpacity>
-          <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} inventory onAssigned={() => void loadLeadsRef.current(true)} />
-        </View>
-        {/* Aging & Temperature Banner */}
-        <View style={styles.agingBanner}>
           {/* Aging Indicator */}
           <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
             <Ionicons 
@@ -884,7 +881,7 @@ export default function InventoryLeadsScreen() {
               size={14} 
               color={agingStyles.text} 
             />
-            <Text style={[styles.agingText, { color: agingStyles.text }]}>
+            <Text numberOfLines={1} style={[styles.agingText, { color: agingStyles.text }]}>
               {item.aging_label || 'Never contacted'}
             </Text>
           </View>
@@ -1114,14 +1111,10 @@ export default function InventoryLeadsScreen() {
             )}
             <Text style={[styles.actionText, { color: '#15803D' }]}>Share</Text>
           </TouchableOpacity>
-          <View style={styles.actionDivider} />
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleCopyPropertyInfo(item)}
-          >
-            <Ionicons name="copy-outline" size={15} color="#6D28D9" />
-            <Text style={[styles.actionText, { color: '#6D28D9' }]}>Copy</Text>
-          </TouchableOpacity>
+          {normalizedRole === 'admin' && <>
+            <View style={styles.actionDivider} />
+            <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} inventory onAssigned={() => void loadLeadsRef.current(true)} />
+          </>}
           {canManageLead && (
             <>
               <View style={styles.actionDivider} />
@@ -1143,16 +1136,19 @@ export default function InventoryLeadsScreen() {
             </>
           )}
         </View> : (
-          <TouchableOpacity
-            style={styles.requestAccessButton}
-            disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}
-            onPress={() => requestDetailAccess(item)}
-          >
-            {requestingAccessId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
-              <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color="#2563EB" />
-            )}
-            <Text style={styles.requestAccessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
-          </TouchableOpacity>
+          <View style={styles.restrictedActions}>
+            <TouchableOpacity
+              style={[styles.requestAccessButton, { flex: 4 }]}
+              disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}
+              onPress={() => requestDetailAccess(item)}
+            >
+              {requestingAccessId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
+                <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color="#2563EB" />
+              )}
+              <Text style={styles.requestAccessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
+            </TouchableOpacity>
+            <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} inventory onAssigned={() => void loadLeadsRef.current(true)} />
+          </View>
         )}
 
         {/* File Upload Row */}
@@ -2006,7 +2002,7 @@ export default function InventoryLeadsScreen() {
         setFacingSearch
       )}
 
-      <Modal visible={!!shareMenuLead} animationType="fade" transparent>
+      <Modal visible={!!shareMenuLead} animationType="fade" transparent onRequestClose={() => setShareMenuLead(null)}>
         <TouchableOpacity
           style={styles.shareMenuOverlay}
           activeOpacity={1}
@@ -2029,6 +2025,17 @@ export default function InventoryLeadsScreen() {
             >
               <Ionicons name="document-text-outline" size={20} color="#2563EB" />
               <Text style={styles.shareMenuItemText}>Property Info</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shareMenuItem}
+              onPress={() => {
+                const leadToCopy = shareMenuLead;
+                setShareMenuLead(null);
+                if (leadToCopy) void handleCopyPropertyInfo(leadToCopy);
+              }}
+            >
+              <Ionicons name="copy-outline" size={20} color="#6D28D9" />
+              <Text style={styles.shareMenuItemText}>Copy Information</Text>
             </TouchableOpacity>
             {shareMenuLead && (inventoryFileCounts[shareMenuLead.id]?.images || 0) > 0 && (
               <TouchableOpacity
@@ -2398,11 +2405,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    gap: 12,
+    gap: 6,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   agingBadge: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -2411,6 +2419,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   agingText: {
+    flexShrink: 1,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -2610,6 +2619,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
+  selectionCheckbox: { minWidth: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center', marginLeft: -6, marginRight: 4 },
+  restrictedActions: { flexDirection: 'row', alignItems: 'center', paddingRight: 8 },
   actionsRow: {
     flexDirection: 'row',
     borderTopWidth: 1,

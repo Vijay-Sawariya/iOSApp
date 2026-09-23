@@ -49,7 +49,7 @@ export default function AssignedLeadsScreen() {
       });
       setLeads(Array.isArray(result) ? result : []);
     } catch (error: any) {
-      setLoadError('Assigned leads could not be loaded. Please try again.');
+      setLoadError(error instanceof Error ? error.message : 'Assigned leads could not be loaded. Please try again.');
       console.warn('Failed to load assigned leads:', error);
     } finally {
       setLoading(false);

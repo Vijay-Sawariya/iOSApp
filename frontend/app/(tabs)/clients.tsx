@@ -606,9 +606,6 @@ www.sagarhome.com`;
     
     return (
       <View style={styles.leadCard}>
-        <View style={{ alignItems: 'flex-end', paddingHorizontal: 14, paddingVertical: 8 }}>
-          <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} onAssigned={() => void loadLeadsRef.current(true)} />
-        </View>
         {/* Aging & Temperature Banner */}
         <View style={styles.agingBanner}>
           {/* Aging Indicator */}
@@ -776,6 +773,10 @@ www.sagarhome.com`;
             <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
             <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
           </TouchableOpacity>
+          {user?.role?.trim().toLowerCase() === 'admin' && <>
+            <View style={styles.actionDivider} />
+            <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} onAssigned={() => void loadLeadsRef.current(true)} />
+          </>}
           {canManageLead && (
             <>
               <View style={styles.actionDivider} />
@@ -797,16 +798,19 @@ www.sagarhome.com`;
             </>
           )}
         </View> : (
-          <TouchableOpacity
-            style={styles.requestAccessButton}
-            disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}
-            onPress={() => requestDetailAccess(item)}
-          >
-            {requestingAccessId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
-              <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color="#2563EB" />
-            )}
-            <Text style={styles.requestAccessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
-          </TouchableOpacity>
+          <View style={styles.restrictedActions}>
+            <TouchableOpacity
+              style={[styles.requestAccessButton, { flex: 4 }]}
+              disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}
+              onPress={() => requestDetailAccess(item)}
+            >
+              {requestingAccessId === item.id ? <ActivityIndicator size="small" color="#2563EB" /> : (
+                <Ionicons name={item.detail_access_status === 'pending' ? 'hourglass-outline' : 'shield-checkmark-outline'} size={17} color="#2563EB" />
+              )}
+              <Text style={styles.requestAccessText}>{item.detail_access_status === 'pending' ? 'Pending' : 'Request Access'}</Text>
+            </TouchableOpacity>
+            <AssignLeadButton leadId={item.id} assigneeId={item.current_assignee_id || item.assigned_to} onAssigned={() => void loadLeadsRef.current(true)} />
+          </View>
         )}
       </View>
     );
@@ -1666,6 +1670,7 @@ const styles = StyleSheet.create({
     color: '#10B981',
     marginLeft: 8,
   },
+  restrictedActions: { flexDirection: 'row', alignItems: 'center', paddingRight: 8 },
   actionsRow: {
     flexDirection: 'row',
     borderTopWidth: 1,

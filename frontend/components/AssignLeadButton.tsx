@@ -26,11 +26,11 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
   };
   const close = () => { if (!saving) setVisible(false); };
   return <>
-    <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={() => {
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={assigneeId ? "Reassign lead" : "Assign lead"} style={styles.cardAction} onPress={() => {
       setSelected(assigneeId || null); setVisible(true); void load();
     }}>
-      <Ionicons name="person-add-outline" size={18} color="#2563EB" />
-      <Text style={styles.link}>{assigneeId ? 'Reassign' : 'Assign'}</Text>
+      <View style={styles.assignIcon}><Ionicons name="person-add" size={18} color="#148399" /></View>
+      <Text style={styles.assignLabel}>{assigneeId ? 'Reassign' : 'Assign'}</Text>
     </TouchableOpacity>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
       <View style={styles.backdrop}>
@@ -67,6 +67,9 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
   </>;
 }
 const styles = StyleSheet.create({
+  cardAction: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
+  assignIcon: { backgroundColor: '#EAF8FA', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 4 },
+  assignLabel: { color: '#148399', fontSize: 10, fontWeight: '600', marginTop: 2 },
   button: { padding: 12, flexDirection: 'row', gap: 6, alignItems: 'center' },
   link: { color: '#2563EB', fontWeight: '600' },
   backdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#0008' },

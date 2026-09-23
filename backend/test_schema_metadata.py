@@ -16,7 +16,7 @@ class Cursor:
 
     def fetchall(self):
         if 'information_schema.columns' in self.queries[-1][0]:
-            return [{self.metadata_key: name} for name in ['id', 'assigned_at', 'assigned_to']]
+            return [{self.metadata_key: name} for name in ['id', 'assigned_at', 'assigned_to', 'lead_id', 'user_id']]
         return [{'id': 12, 'name': 'Assigned buyer', 'lead_type': 'buyer'}]
 
 
@@ -50,7 +50,7 @@ class SchemaMetadataTests(unittest.TestCase):
             with self.subTest(key=key):
                 cursor = Cursor(key)
                 columns = load_functions(cursor)['_table_columns'](cursor, 'leads')
-                self.assertEqual(columns, {'id', 'assigned_at', 'assigned_to'})
+                self.assertEqual(columns, {'id', 'assigned_at', 'assigned_to', 'lead_id', 'user_id'})
                 self.assertIn('COLUMN_NAME AS column_name', cursor.queries[0][0])
                 self.assertEqual(cursor.queries[0][1], ('leads',))
 
