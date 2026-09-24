@@ -13,6 +13,7 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [canViewPrivate, setCanViewPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   if (user?.role?.trim().toLowerCase() !== 'admin') return null;
@@ -27,7 +28,7 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
   const close = () => { if (!saving) setVisible(false); };
   return <>
     <TouchableOpacity accessibilityRole="button" accessibilityLabel={assigneeId ? "Reassign lead" : "Assign lead"} style={styles.cardAction} onPress={() => {
-      setSelected(assigneeId || null); setVisible(true); void load();
+      setSelected(assigneeId || null); setCanViewPrivate(false); setVisible(true); void load();
     }}>
       <View style={styles.assignIcon}><Ionicons name="person-add" size={18} color="#148399" /></View>
       <Text style={styles.assignLabel}>{assigneeId ? 'Reassign' : 'Assign'}</Text>
@@ -37,7 +38,11 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
         <View style={styles.sheet} accessibilityViewIsModal>
           <Text style={styles.title}>Assign {inventory ? 'Inventory' : 'Lead'}</Text>
           <Text>Select the active user responsible for this {inventory ? 'inventory' : 'client'}.</Text>
-          <Text style={styles.note}>The assigned user can view contact details under the app’s current access rules.</Text>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: canViewPrivate }} disabled={saving} style={styles.agent} onPress={() => setCanViewPrivate(value => !value)}>
+            <Ionicons name={canViewPrivate ? 'checkbox' : 'square-outline'} size={22} color="#148399" />
+            <Text style={{ flex: 1 }}>Can view phone number and address</Text>
+          </TouchableOpacity>
+          <Text style={styles.note}>Off by default. Existing admin, creator, or approved access still applies.</Text>
           {loading ? <ActivityIndicator style={{ padding: 24 }} /> : error ? <TouchableOpacity onPress={() => void load()} style={styles.button}><Text style={styles.link}>{error} Tap to retry.</Text></TouchableOpacity> :
             <ScrollView style={{ maxHeight: 320 }}>
               {!agents.length && <Text style={styles.note}>No active users available.</Text>}
@@ -52,7 +57,7 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
               if (!selected) return;
               setSaving(true);
               try {
-                await api.assignLead(leadId, selected);
+                await api.assignLead(leadId, selected, canViewPrivate);
                 setVisible(false); onAssigned();
                 Alert.alert('Assigned', `${inventory ? 'Inventory' : 'Lead'} assigned successfully.`);
               } catch (e) { Alert.alert('Assignment Failed', e instanceof Error ? e.message : 'Please try again.'); }

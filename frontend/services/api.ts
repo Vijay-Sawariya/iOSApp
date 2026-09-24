@@ -819,8 +819,8 @@ export const api = {
     return response.json();
   },
 
-  assignLead: async (leadId: number, userId: number) => {
-    const response = await fetch(`${API_URL}/api/team/assign-lead?lead_id=${leadId}&user_id=${userId}`, {
+  assignLead: async (leadId: number, userId: number, canViewPrivate = false) => {
+    const response = await fetch(`${API_URL}/api/team/assign-lead?lead_id=${leadId}&user_id=${userId}&can_view_private=${canViewPrivate}`, {
       method: 'POST', headers: getHeaders(),
     });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Failed to assign lead'));

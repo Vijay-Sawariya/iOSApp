@@ -257,6 +257,8 @@ export interface Lead {
   created_by?: number | null;  // ID of the user who created this lead
   assigned_to?: number | null;
   current_assignee_id?: number | null;
+  assigned_to_username?: string | null;
+  assigned_to_name?: string | null;
   can_view_sensitive?: boolean;
   detail_access_status?: 'pending' | 'approved' | 'declined' | null;
   created_by_name?: string | null;

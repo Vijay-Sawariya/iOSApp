@@ -89,3 +89,22 @@ def test_declined_request_can_be_approved_again():
 def test_access_does_not_change_ownership_rules():
     assert should_mask_data("user", 3, 1, 2) is True
     assert apply_lead_masking(lead(), "user", 3, "approved")["can_view_sensitive"] is True
+
+
+def test_assignment_contact_access_defaults_off():
+    result = apply_lead_masking(lead(), "user", 2)
+    assert result["can_view_sensitive"] is False
+    assert result["phone"] != "9876543210"
+
+
+def test_assignment_contact_access_requires_explicit_grant():
+    for flag in (True, 1, '1'):
+        result = apply_lead_masking(lead(assignment_can_view_private=flag), "user", 2)
+        assert result["can_view_sensitive"] is True
+    for flag in (False, 0, '0', None):
+        assert apply_lead_masking(lead(assignment_can_view_private=flag), "user", 2)["can_view_sensitive"] is False
+
+
+def test_old_assignee_cannot_use_new_owners_grant():
+    result = apply_lead_masking(lead(current_assignee_id=4, assignment_can_view_private=True), "user", 2)
+    assert result["can_view_sensitive"] is False

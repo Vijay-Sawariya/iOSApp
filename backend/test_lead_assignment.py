@@ -20,14 +20,14 @@ class Connection:
     def commit(self): self.committed = True
     def rollback(self): self.rolled_back = True
 
-def load(cursor, columns={'is_active', 'is_deleted'}):
+def load(cursor, columns={'is_active', 'is_deleted', 'can_view_private'}):
     conn = Connection(cursor)
     @contextmanager
     def db(): yield conn
     nodes = [n for n in ast.parse(Path(__file__).with_name('server.py').read_text()).body if isinstance(n, ast.FunctionDef) and n.name in {'active_assignment_user_condition', 'assign_lead_to_member'}]
     for node in nodes:
         node.decorator_list = []
-        node.args.defaults = []
+        node.args.defaults = node.args.defaults[-1:] if node.name == 'assign_lead_to_member' else []
     scope = {'get_db': db, '_table_columns': lambda *_: columns, 'ensure_collaboration_tables': lambda _: None, 'HTTPException': HTTPException}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'server.py', 'exec'), scope)
     return scope, conn
@@ -54,6 +54,12 @@ class AssignmentTests(unittest.TestCase):
         self.assertIn('is_deleted != 1', cursor.queries[0][0])
         self.assertTrue(conn.committed)
         self.assertEqual(cursor.queries[-1][1], (2, 1))
+        self.assertEqual(cursor.queries[-2][1], (1, 2, 3, 0))
+
+    def test_explicit_contact_grant_is_saved(self):
+        cursor = Cursor(); scope, conn = load(cursor)
+        scope['assign_lead_to_member'](1, 2, {'id': 3, 'role': 'admin'}, True)
+        self.assertEqual(cursor.queries[-2][1], (1, 2, 3, 1))
 
     def test_legacy_schema_omits_absent_flags(self):
         scope, _ = load(Cursor(), set())

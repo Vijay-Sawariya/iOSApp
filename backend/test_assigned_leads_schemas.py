@@ -4,7 +4,8 @@ from contextlib import contextmanager
 from datetime import datetime, date
 from pathlib import Path
 import sqlite3
-from typing import Any, List
+from typing import Any, List, Dict, Optional
+import re
 import unittest
 
 
@@ -20,13 +21,13 @@ def handler(db):
     @contextmanager
     def get_db(): yield Connection()
     tree = ast.parse(Path(__file__).with_name('server.py').read_text())
-    nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in {'get_mobile_assigned_leads', '_lead_summary'}]
+    nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in {'get_mobile_assigned_leads', '_lead_summary', 'current_assignee_map', 'assignment_contact_map', 'attach_current_assignees', 'apply_lead_masking', 'should_mask_data', 'mask_phone', 'mask_address'}]
     for node in nodes:
         node.decorator_list = []
         if node.name == 'get_mobile_assigned_leads': node.args.defaults = node.args.defaults[-1:]
-    scope = dict(Any=Any, List=List, datetime=datetime, date=date, get_db=get_db,
+    scope = dict(Any=Any, List=List, Dict=Dict, Optional=Optional, re=re, datetime=datetime, date=date, get_db=get_db,
                  _table_columns=lambda _, table: {row['name'] for row in db.execute(f'PRAGMA table_info({table})')},
-                 apply_lead_masking=lambda row, *_: row)
+                 _table_exists=lambda _, table: bool(db.execute('SELECT name FROM sqlite_master WHERE name = ?', (table,)).fetchone()))
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'server.py', 'exec'), scope)
     return scope
 
@@ -67,6 +68,25 @@ class AssignedSchemaTests(unittest.TestCase):
         db = self.database()
         db.execute('DROP TABLE lead_assignments')
         self.assertEqual(handler(db)['get_mobile_assigned_leads']({'id': 7, 'role': 'caller'}), [])
+        db.close()
+
+    def test_assignment_privacy_and_username(self):
+        db = self.database(mobile=True)
+        db.execute('ALTER TABLE leads ADD COLUMN phone TEXT')
+        db.execute("UPDATE leads SET phone = '9876543210'")
+        scope = handler(db)
+        fn = scope['get_mobile_assigned_leads']
+        # No privacy column or explicit grant means contacts remain masked.
+        self.assertFalse(fn({'id': 7, 'role': 'caller'})[0]['can_view_sensitive'])
+        db.execute('ALTER TABLE lead_assignments ADD COLUMN can_view_private INTEGER DEFAULT 0')
+        row = fn({'id': 7, 'role': 'caller'})[0]
+        self.assertEqual(row['assigned_to_username'], 'agent')
+        self.assertNotEqual(row['phone'], '9876543210')
+        db.execute('UPDATE lead_assignments SET can_view_private = 1')
+        self.assertEqual(fn({'id': 7, 'role': 'caller'})[0]['phone'], '9876543210')
+        db.execute('UPDATE lead_assignments SET can_view_private = 0')
+        self.assertFalse(fn({'id': 7, 'role': 'caller'})[0]['can_view_sensitive'])
+        self.assertTrue(fn({'id': 8, 'role': 'admin'})[0]['can_view_sensitive'])
         db.close()
 
     def test_summary_accepts_driver_date_objects_strings_and_null(self):

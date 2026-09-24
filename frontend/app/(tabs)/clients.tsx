@@ -59,6 +59,8 @@ interface Lead {
   created_by?: number | null;  // ID of the user who created this lead
   assigned_to?: number | null;
   current_assignee_id?: number | null;
+  assigned_to_username?: string | null;
+  assigned_to_name?: string | null;
   created_by_name?: string | null;
   can_view_sensitive?: boolean;
   detail_access_status?: 'pending' | 'approved' | 'declined' | null;
@@ -756,13 +758,20 @@ www.sagarhome.com`;
           )}
         </TouchableOpacity>
 
+        {!!(item.current_assignee_id || item.assigned_to) && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingBottom: 10 }}>
+            <Ionicons name="person-circle-outline" size={14} color="#148399" />
+            <Text style={{ color: '#148399', fontSize: 12, flexShrink: 1 }}>Assigned to {item.assigned_to_username || item.assigned_to_name || `User ${item.current_assignee_id || item.assigned_to}`}</Text>
+          </View>
+        )}
+
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         {canViewData ? <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
           >
-            <Ionicons name="git-compare-outline" size={18} color="#2563EB" />
+            <Ionicons name="git-compare-outline" size={15} color="#2563EB" />
             <Text style={[styles.actionText, { color: '#2563EB' }]}>Matches</Text>
           </TouchableOpacity>
           <View style={styles.actionDivider} />
@@ -770,8 +779,8 @@ www.sagarhome.com`;
             style={styles.actionButton}
             onPress={() => handleAddReminder(item)}
           >
-            <Ionicons name="alarm-outline" size={18} color="#F59E0B" />
-            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
+            <Ionicons name="alarm-outline" size={15} color="#F59E0B" />
+            <Text style={[styles.actionText, { color: '#F59E0B' }]}>Remind</Text>
           </TouchableOpacity>
           {user?.role?.trim().toLowerCase() === 'admin' && <>
             <View style={styles.actionDivider} />
@@ -784,7 +793,7 @@ www.sagarhome.com`;
                 style={styles.actionButton}
                 onPress={() => router.push(`/leads/edit/${item.id}` as any)}
               >
-                <Ionicons name="create-outline" size={18} color="#3B82F6" />
+                <Ionicons name="create-outline" size={15} color="#3B82F6" />
                 <Text style={[styles.actionText, { color: '#3B82F6' }]}>Edit</Text>
               </TouchableOpacity>
               <View style={styles.actionDivider} />
@@ -792,7 +801,7 @@ www.sagarhome.com`;
                 style={styles.actionButton}
                 onPress={() => handleDelete(item.id, item.name)}
               >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Ionicons name="trash-outline" size={15} color="#EF4444" />
                 <Text style={[styles.actionText, { color: '#EF4444' }]}>Delete</Text>
               </TouchableOpacity>
             </>
@@ -1680,19 +1689,25 @@ const styles = StyleSheet.create({
   requestAccessText: { color: '#2563EB', fontSize: 13, fontWeight: '700' },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    minWidth: 0,
+    minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 2,
+  },
+  actionButtonDisabled: {
+    opacity: 0.65,
   },
   actionDivider: {
     width: 1,
     backgroundColor: '#F3F4F6',
   },
   actionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginLeft: 6,
+    fontSize: 9,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
   },
   emptyContainer: {
     alignItems: 'center',

@@ -1064,6 +1064,13 @@ export default function InventoryLeadsScreen() {
           )}
         </TouchableOpacity>
 
+        {!!(item.current_assignee_id || item.assigned_to) && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingBottom: 10 }}>
+            <Ionicons name="person-circle-outline" size={14} color="#148399" />
+            <Text style={{ color: '#148399', fontSize: 12, flexShrink: 1 }}>Assigned to {item.assigned_to_username || item.assigned_to_name || `User ${item.current_assignee_id || item.assigned_to}`}</Text>
+          </View>
+        )}
+
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         {canViewData ? <View style={styles.actionsRow}>
           <TouchableOpacity
