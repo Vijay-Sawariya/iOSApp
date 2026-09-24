@@ -1,3 +1,4 @@
+import { canContactAssignedLead } from '../utils/contactAccess';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -133,12 +134,14 @@ export default function AssignedLeadsScreen() {
                 <Text style={styles.detailText} numberOfLines={1}>{lead.bhk || lead.floor || lead.area_size || 'Requirement details pending'}</Text>
               </View>
               <View style={styles.actions}>
+                {canContactAssignedLead(lead) && <>
                 <TouchableOpacity style={styles.iconAction} onPress={() => callPhone(lead.phone)} disabled={!lead.phone}>
                   <Ionicons name="call" size={17} color={lead.phone ? colors.accent : colors.inkSubtle} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.iconAction} onPress={() => openWhatsApp(lead.phone, lead.name, lead.id)} disabled={!lead.phone}>
                   <Ionicons name="logo-whatsapp" size={17} color={lead.phone ? '#25D366' : colors.inkSubtle} />
                 </TouchableOpacity>
+                </>}
                 <TouchableOpacity style={styles.smallButton} onPress={() => router.push(`/leads/${lead.id}` as any)}>
                   <Ionicons name="open-outline" size={16} color={colors.primary} />
                   <Text style={styles.smallButtonText}>Open</Text>

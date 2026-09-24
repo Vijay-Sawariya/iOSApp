@@ -42,13 +42,13 @@ export default function AssignLeadButton({ leadId, assigneeId, inventory = false
             <Ionicons name={canViewPrivate ? 'checkbox' : 'square-outline'} size={22} color="#148399" />
             <Text style={{ flex: 1 }}>Can view phone number and address</Text>
           </TouchableOpacity>
-          <Text style={styles.note}>Off by default. Existing admin, creator, or approved access still applies.</Text>
+          <Text style={styles.note}>Off by default. Leave unchecked to hide contact details from the assigned user.</Text>
           {loading ? <ActivityIndicator style={{ padding: 24 }} /> : error ? <TouchableOpacity onPress={() => void load()} style={styles.button}><Text style={styles.link}>{error} Tap to retry.</Text></TouchableOpacity> :
             <ScrollView style={{ maxHeight: 320 }}>
               {!agents.length && <Text style={styles.note}>No active users available.</Text>}
               {agents.map(agent => <TouchableOpacity key={agent.id} accessibilityRole="radio" accessibilityState={{ selected: selected === agent.id }} disabled={saving} style={styles.agent} onPress={() => setSelected(agent.id)}>
                 <Ionicons name={selected === agent.id ? 'radio-button-on' : 'radio-button-off'} size={22} color="#2563EB" />
-                <Text style={{ flex: 1 }}>{agent.full_name || agent.username} ({agent.role})</Text>
+                <Text style={{ flex: 1 }}>{agent.full_name || agent.username}</Text>
               </TouchableOpacity>)}
             </ScrollView>}
           <View style={styles.actions}>

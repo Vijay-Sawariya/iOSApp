@@ -1,3 +1,4 @@
+import { canViewLeadContacts } from '../../utils/contactAccess';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
@@ -831,7 +832,7 @@ export default function InventoryLeadsScreen() {
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
     // Check if user can view sensitive data for this lead
-    const canViewData = item.can_view_sensitive === true;
+    const canViewData = canViewLeadContacts(item, user?.id);
     const canManageLead = canViewSensitiveData(user?.role, user?.id, item.created_by, item.current_assignee_id || item.assigned_to);
     
     // Determine what to display for phone and address (location is always visible)

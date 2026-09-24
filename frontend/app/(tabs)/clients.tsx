@@ -1,3 +1,4 @@
+import { canViewLeadContacts } from '../../utils/contactAccess';
 import AssignLeadButton from '../../components/AssignLeadButton';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
@@ -62,6 +63,7 @@ interface Lead {
   assigned_to_username?: string | null;
   assigned_to_name?: string | null;
   created_by_name?: string | null;
+  assignment_can_view_private?: boolean;
   can_view_sensitive?: boolean;
   detail_access_status?: 'pending' | 'approved' | 'declined' | null;
   // Action/Followup fields
@@ -595,7 +597,7 @@ www.sagarhome.com`;
       item.created_by,
       item.current_assignee_id || item.assigned_to
     );
-    const canViewData = item.can_view_sensitive === true;
+    const canViewData = canViewLeadContacts(item, user?.id);
     
     // Determine what to display for phone (location is visible to everyone)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);

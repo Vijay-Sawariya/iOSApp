@@ -1,3 +1,4 @@
+import { canViewLeadContacts } from '../../utils/contactAccess';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -494,7 +495,7 @@ export default function LeadDetailScreen() {
     if (!lead) return;
     
     // Check if user can view sensitive data for this lead
-    const userCanViewData = lead?.can_view_sensitive === true;
+    const userCanViewData = canViewLeadContacts(lead, user?.id);
     
     const unit = formatUnit(lead.unit).toUpperCase();
     let details = '';
@@ -680,7 +681,7 @@ export default function LeadDetailScreen() {
   };
 
   // Check if user can view sensitive data for this lead
-  const canViewData = lead?.can_view_sensitive === true;
+  const canViewData = canViewLeadContacts(lead, user?.id);
   const canManageLead = canViewSensitiveData(user?.role, user?.id, lead?.created_by, lead?.current_assignee_id || lead?.assigned_to);
   
   // Get display values for sensitive fields (location is visible to everyone)

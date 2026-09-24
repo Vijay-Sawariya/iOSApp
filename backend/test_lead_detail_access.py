@@ -108,3 +108,13 @@ def test_assignment_contact_access_requires_explicit_grant():
 def test_old_assignee_cannot_use_new_owners_grant():
     result = apply_lead_masking(lead(current_assignee_id=4, assignment_can_view_private=True), "user", 2)
     assert result["can_view_sensitive"] is False
+
+
+def test_unchecked_assignment_overrides_previous_access_for_recipient():
+    for role in ('user', 'admin'):
+        result = apply_lead_masking(lead(assignment_can_view_private=False), role, 2, 'approved')
+        assert result['can_view_sensitive'] is False
+        assert result['phone'] != '9876543210'
+        assert result['address'] == '**********'
+    result = apply_lead_masking(lead(created_by=2, assignment_can_view_private=False), 'user', 2)
+    assert result['can_view_sensitive'] is False
