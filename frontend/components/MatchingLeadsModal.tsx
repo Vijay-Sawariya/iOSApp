@@ -14,7 +14,7 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LOCATIONS, FLOORS, formatUnit } from '../constants/leadOptions';
@@ -632,7 +632,9 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      {/* Native modals need their own provider to measure status bar and home indicator insets. */}
+      <SafeAreaProvider>
+      <SafeAreaView style={styles.container} edges={['top', 'right', 'bottom', 'left']}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
@@ -940,6 +942,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

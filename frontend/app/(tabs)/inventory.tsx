@@ -1298,7 +1298,7 @@ export default function InventoryLeadsScreen() {
                     Alert.alert('Copy Failed', 'Could not copy inventory details. Please try again.');
                   }
                 }}>
-                  <Text style={{ color: '#3730A3', fontWeight: '600' }}>Copy Information for Internal</Text>
+                  <Text style={{ color: '#3730A3', fontWeight: '600' }}>Copy Details</Text>
                 </TouchableOpacity>
               </View>
               {/* Stats Bar - Clickable Tiles */}
@@ -2029,7 +2029,7 @@ export default function InventoryLeadsScreen() {
               }}
             >
               <Ionicons name="copy-outline" size={20} color="#6D28D9" />
-              <Text style={styles.shareMenuItemText}>Copy Information for Internal</Text>
+              <Text style={styles.shareMenuItemText}>Copy Details</Text>
             </TouchableOpacity>
             {shareMenuLead && (inventoryFileCounts[shareMenuLead.id]?.images || 0) > 0 && (
               <TouchableOpacity
