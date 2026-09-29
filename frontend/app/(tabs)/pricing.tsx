@@ -57,6 +57,8 @@ const FLOOR_OPTIONS = [
   '4F',
   '4F+Terr',
   'Terrace',
+  'Kothi',
+  'Commercial',
 ];
 
 export default function PricingScreen() {
@@ -83,24 +85,17 @@ export default function PricingScreen() {
   const [floors, setFloors] = useState<FloorPrice[]>([{ floor_label: '', tentative_floor_price: '' }]);
   const [saving, setSaving] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (forceNetwork = false) => {
+    // Picker options must not hold up the pricing list.
+    void api.getAllLocations().then(setLocations).catch(error => {
+      console.error('Failed to load locations:', error);
+    });
     try {
-      const [pricing, locs] = await Promise.all([
-        api.getAllPricing(),
-        api.getAllLocations(),
-      ]);
+      const pricing = await api.getAllPricing({ forceNetwork, onBackgroundRefresh: data => { setPricingData(data); setLoading(false); } });
       setPricingData(pricing);
-      setLocations(locs);
-      setExpandedLocations(prev => {
-        if (prev.size > 0) return prev;
-        return new Set(pricing.map((item: LocationPricing) => item.location_name));
-      });
     } catch (error) {
       console.error('Failed to load pricing data:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error && error.message ? error.message : 'Failed to load pricing data'
-      );
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to load pricing data');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -113,7 +108,7 @@ export default function PricingScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    loadData(true);
   };
 
   const toggleLocation = (locationName: string) => {

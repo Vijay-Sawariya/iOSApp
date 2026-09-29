@@ -1,5 +1,5 @@
 import { canViewLeadContacts } from '../../utils/contactAccess';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -106,6 +106,8 @@ export default function LeadDetailScreen() {
   const [sharingMatched, setSharingMatched] = useState(false);
   const [requestingAccess, setRequestingAccess] = useState(false);
 
+  const leadRequest = useRef(0);
+
   // Refresh data when screen comes into focus (e.g., returning from edit)
   useFocusEffect(
     useCallback(() => {
@@ -117,13 +119,15 @@ export default function LeadDetailScreen() {
           loadFiles(),
         ]);
       });
-      return () => secondaryLoad.cancel();
+      return () => { leadRequest.current += 1; secondaryLoad.cancel(); };
     }, [id])
   );
 
   const loadLead = async () => {
+    const request = ++leadRequest.current;
     const leadId = String(Array.isArray(id) ? id[0] : id);
     let localLead: any = null;
+    let liveLead: any = null;
 
     try {
       setError(null);
@@ -131,20 +135,33 @@ export default function LeadDetailScreen() {
       // Start the live request immediately, but do not make first paint wait
       // for it when the lead is already available on this device.
       const networkResultPromise = isOnline
-        ? api.getLead(leadId, { forceNetwork: true })
-            .then((data) => ({ data, error: null }))
+        ? api.getLead(leadId, { forceNetwork: true, onBackgroundRefresh: data => {
+            if (request !== leadRequest.current) return;
+            liveLead = data;
+            setLead(data);
+            setLoading(false);
+          } })
+            .then((data) => {
+              if (request === leadRequest.current) {
+                liveLead = data;
+                setLead(data);
+                setLoading(false);
+              }
+              return { data, error: null };
+            })
             .catch((networkError) => ({ data: null, error: networkError }))
         : Promise.resolve({ data: null, error: null });
 
-      const [detailCacheResult, sqliteResult] = await Promise.allSettled([
-        cacheService.getLead(leadId),
-        syncService.getLead(Number(leadId)),
-      ]);
-      localLead = detailCacheResult.status === 'fulfilled' && detailCacheResult.value
-        ? detailCacheResult.value
-        : sqliteResult.status === 'fulfilled'
-          ? sqliteResult.value
-          : null;
+      localLead = await cacheService.getLead(leadId);
+      if (request !== leadRequest.current) return;
+      if (localLead && !liveLead) {
+        setLead(localLead);
+        setLoading(false);
+      }
+      if (!localLead && !liveLead) {
+        localLead = await syncService.getLead(Number(leadId));
+        if (request !== leadRequest.current) return;
+      }
 
       // A lead may have been loaded in a client/inventory list without its
       // dedicated detail cache being created yet.
@@ -153,17 +170,19 @@ export default function LeadDetailScreen() {
           cacheService.getClientLeads(),
           cacheService.getInventoryLeads(),
         ]);
+        if (request !== leadRequest.current) return;
         const clients = clientsResult.status === 'fulfilled' ? clientsResult.value || [] : [];
         const inventory = inventoryResult.status === 'fulfilled' ? inventoryResult.value || [] : [];
         localLead = [...clients, ...inventory].find((item: any) => String(item.id) === leadId) || null;
       }
 
-      if (localLead) {
+      if (localLead && !liveLead) {
         setLead(localLead);
         setLoading(false);
       }
 
       const networkResult = await networkResultPromise;
+      if (request !== leadRequest.current) return;
       if (networkResult.data) {
         setLead(networkResult.data);
         setError(null);
@@ -174,6 +193,7 @@ export default function LeadDetailScreen() {
         throw networkResult.error || new Error('No cached data available. Please connect to the internet.');
       }
     } catch (err: any) {
+      if (request !== leadRequest.current) return;
       console.error('Failed to load lead:', err);
       const errorMessage = err?.message || 'Failed to load lead details';
       if (!localLead) setError(errorMessage);
@@ -182,7 +202,7 @@ export default function LeadDetailScreen() {
         Alert.alert('Error', errorMessage);
       }
     } finally {
-      setLoading(false);
+      if (request === leadRequest.current) setLoading(false);
     }
   };
 

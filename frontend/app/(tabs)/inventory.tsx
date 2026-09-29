@@ -747,21 +747,7 @@ export default function InventoryLeadsScreen() {
   };
 
   const composePropertyInfoMessage = (lead: Lead) => {
-    const lines = [
-      `Property: ${lead.name || 'Inventory'}`,
-      lead.lead_type ? `Type: ${getLeadTypeDisplay(lead.lead_type)}` : null,
-      lead.location ? `Location: ${lead.location}` : null,
-      lead.address ? `Address: ${lead.address}` : null,
-      lead.floor ? `Floor: ${lead.floor}` : null,
-      lead.bhk ? `BHK: ${lead.bhk}` : null,
-      lead.area_size ? `Area: ${lead.area_size} sq.yds` : null,
-      lead.building_facing ? `Facing: ${lead.building_facing}` : null,
-      lead.lead_status ? `Status: ${lead.lead_status}` : null,
-      formatFloorPricing(lead.floor_pricing, lead.unit) ? `Pricing: ${formatFloorPricing(lead.floor_pricing, lead.unit)}` : null,
-      lead.Property_locationUrl ? `Map: ${lead.Property_locationUrl}` : null,
-    ].filter(Boolean);
-
-    return lines.join('\n');
+    return formatInventoryCopy(lead);
   };
 
   const handleSharePropertyInfo = async (lead: Lead) => {
@@ -788,7 +774,7 @@ export default function InventoryLeadsScreen() {
 
   const handleCopyPropertyInfo = async (lead: Lead) => {
     try {
-      await Clipboard.setStringAsync(formatInventoryCopy(lead));
+      await Clipboard.setStringAsync(formatInventoryCopy({ ...lead, address: canViewLeadContacts(lead, user?.id) ? lead.address : null }, 1, true));
       Alert.alert('Copied', 'Inventory details copied.');
     } catch (error: any) {
       console.error('Copy property info error:', error);
@@ -1306,13 +1292,13 @@ export default function InventoryLeadsScreen() {
                 <TouchableOpacity accessibilityRole="button" disabled={!filteredLeads.some(lead => selectedIds.has(lead.id))} style={{ padding: 12, backgroundColor: '#E0E7FF', borderRadius: 10 }} onPress={async () => {
                   const selected = filteredLeads.filter(lead => selectedIds.has(lead.id));
                   try {
-                    await Clipboard.setStringAsync(selected.map((lead, index) => formatInventoryCopy(lead, index + 1)).join('\n\n'));
+                    await Clipboard.setStringAsync(selected.map((lead, index) => formatInventoryCopy({ ...lead, address: canViewLeadContacts(lead, user?.id) ? lead.address : null }, index + 1, true)).join('\n\n'));
                     Alert.alert('Copied', `${selected.length} inventories copied.`);
                   } catch {
                     Alert.alert('Copy Failed', 'Could not copy inventory details. Please try again.');
                   }
                 }}>
-                  <Text style={{ color: '#3730A3', fontWeight: '600' }}>Copy Information</Text>
+                  <Text style={{ color: '#3730A3', fontWeight: '600' }}>Copy Information for Internal</Text>
                 </TouchableOpacity>
               </View>
               {/* Stats Bar - Clickable Tiles */}
@@ -1686,7 +1672,7 @@ export default function InventoryLeadsScreen() {
                       {showFloorDropdown && (
                         <View style={styles.multiSelectDropdown}>
                           <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                            {(floorSearch.length > 0 ? filteredFloors : FLOOR_OPTIONS).slice(0, 10).map((floor) => (
+                            {(floorSearch.length > 0 ? filteredFloors : FLOOR_OPTIONS).map((floor) => (
                               <TouchableOpacity
                                 key={floor}
                                 style={[
@@ -2032,7 +2018,7 @@ export default function InventoryLeadsScreen() {
               }}
             >
               <Ionicons name="document-text-outline" size={20} color="#2563EB" />
-              <Text style={styles.shareMenuItemText}>Property Info</Text>
+              <Text style={styles.shareMenuItemText}>Share Property Details</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.shareMenuItem}
@@ -2043,7 +2029,7 @@ export default function InventoryLeadsScreen() {
               }}
             >
               <Ionicons name="copy-outline" size={20} color="#6D28D9" />
-              <Text style={styles.shareMenuItemText}>Copy Information</Text>
+              <Text style={styles.shareMenuItemText}>Copy Information for Internal</Text>
             </TouchableOpacity>
             {shareMenuLead && (inventoryFileCounts[shareMenuLead.id]?.images || 0) > 0 && (
               <TouchableOpacity

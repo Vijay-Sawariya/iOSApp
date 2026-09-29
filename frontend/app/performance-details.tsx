@@ -19,10 +19,15 @@ export default function PerformanceDetailsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const metric = params.metric || '';
 
-  const load = useCallback(async () => {
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (forceNetwork = false) => {
+    setError(null);
     try {
-      const result = await api.getMobilePerformance(Number(params.days || 30), Number(params.agentId || 0) || undefined, metric);
+      const result = await api.getMobilePerformance(Number(params.days || 30), Number(params.agentId || 0) || undefined, metric, forceNetwork);
       setItems(Array.isArray(result?.details?.[metric]) ? result.details[metric] : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load performance details.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -65,15 +70,16 @@ export default function PerformanceDetailsScreen() {
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}><Ionicons name="chevron-back" size={22} color={colors.ink} /></TouchableOpacity>
         <View style={styles.headerCopy}><Text style={styles.title}>{params.title || 'Performance details'}</Text><Text style={styles.subtitle}>{subtitle}</Text></View>
-        <TouchableOpacity style={styles.headerButton} onPress={() => { setRefreshing(true); void load(); }}><Ionicons name="refresh" size={19} color={colors.primary} /></TouchableOpacity>
+        <TouchableOpacity style={styles.headerButton} onPress={() => { setRefreshing(true); void load(true); }}><Ionicons name="refresh" size={19} color={colors.primary} /></TouchableOpacity>
       </View>
+      {error && <Text style={{ padding: 16, color: colors.danger }}>{error}</Text>}
       {loading ? <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View> : (
         <FlatList
           data={items}
           keyExtractor={(item, index) => `${item.id || item.lead_id || 'item'}-${index}`}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(true); }} />}
           ListEmptyComponent={<View style={styles.empty}><Ionicons name="file-tray-outline" size={48} color={colors.inkSubtle} /><Text style={styles.emptyTitle}>No matching records</Text><Text style={styles.emptyText}>The badge currently has no detail records for this period.</Text></View>}
         />
       )}

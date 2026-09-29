@@ -1092,7 +1092,7 @@ www.sagarhome.com`;
                 {showFloorDropdown && (
                   <View style={styles.multiSelectDropdown}>
                     <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                      {FLOOR_OPTIONS.slice(0, 10).map((floor) => (
+                      {FLOOR_OPTIONS.map((floor) => (
                         <TouchableOpacity
                           key={floor}
                           style={[

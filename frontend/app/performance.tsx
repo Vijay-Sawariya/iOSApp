@@ -34,12 +34,12 @@ export default function PerformanceScreen() {
 
   const requestId = useRef(0);
 
-  const loadPerformance = useCallback(async (selectedDays = days, selectedAgentId = agentId) => {
+  const loadPerformance = useCallback(async (selectedDays = days, selectedAgentId = agentId, forceNetwork = false) => {
     const currentRequest = ++requestId.current;
     setLoading(true);
     try {
       setError(null);
-      const result = await api.getMobilePerformance(selectedDays, selectedAgentId ?? Number(user?.id));
+      const result = await api.getMobilePerformance(selectedDays, selectedAgentId ?? Number(user?.id), undefined, forceNetwork);
       if (currentRequest !== requestId.current) return;
       setData(result);
     } catch (error: any) {
@@ -134,7 +134,7 @@ export default function PerformanceScreen() {
             {data?.agent?.full_name || data?.agent?.username || 'My performance'} · {dateLabel(data?.from)}–{dateLabel(data?.to)}
           </Text>
         </View>
-        <TouchableOpacity style={styles.headerButton} onPress={() => loadPerformance()}>
+        <TouchableOpacity style={styles.headerButton} onPress={() => loadPerformance(days, agentId, true)}>
           <Ionicons name="refresh" size={19} color={colors.primary} />
         </TouchableOpacity>
       </View>
@@ -146,7 +146,7 @@ export default function PerformanceScreen() {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              loadPerformance();
+              loadPerformance(days, agentId, true);
             }}
           />
         }

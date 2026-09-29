@@ -51,6 +51,8 @@ export default function BuilderDetailScreen() {
   const [builder, setBuilder] = useState<Builder | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingLeads, setLoadingLeads] = useState(true);
+  const [leadsError, setLeadsError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,28 +60,33 @@ export default function BuilderDetailScreen() {
     loadData();
   }, [id]);
 
-  const loadData = async () => {
+  const loadData = async (forceNetwork = false) => {
+    setError(null);
+    setLoadingLeads(true);
+    setLeadsError(false);
+    const properties = api.getBuilderLeads(String(id))
+      .then(data => setLeads(data || []))
+      .catch(() => setLeadsError(true))
+      .finally(() => setLoadingLeads(false));
     try {
-      setError(null);
-      const [builderData, leadsData] = await Promise.all([
-        api.getBuilder(String(id)),
-        api.getBuilderLeads(String(id)).catch(() => []),
-      ]);
+      const builderData = await api.getBuilder(String(id), {
+        forceNetwork,
+        onBackgroundRefresh: data => { setBuilder(data); setLoading(false); },
+      });
       setBuilder(builderData);
-      setLeads(leadsData || []);
     } catch (err) {
       console.error('Failed to load builder:', err);
       setError('Failed to load builder details');
-      Alert.alert('Error', 'Failed to load builder details');
     } finally {
       setLoading(false);
+      await properties;
       setRefreshing(false);
     }
   };
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadData();
+    void loadData(true);
   };
 
   const handleCall = () => {
@@ -305,7 +312,7 @@ export default function BuilderDetailScreen() {
       {/* Stats Section */}
       <View style={styles.statsSection}>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{leads.length}</Text>
+          <Text style={styles.statNumber}>{loadingLeads ? '…' : leadsError ? '—' : leads.length}</Text>
           <Text style={styles.statLabel}>Properties</Text>
         </View>
         <View style={styles.statCard}>
@@ -394,7 +401,9 @@ export default function BuilderDetailScreen() {
         </View>
       )}
 
-      {leads.length === 0 && (
+      {loadingLeads && <ActivityIndicator style={{ margin: 24 }} />}
+      {leadsError && <Text style={{ padding: 24 }}>Unable to load properties. Pull down to retry.</Text>}
+      {!loadingLeads && !leadsError && leads.length === 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Properties</Text>
           <View style={styles.emptyProperties}>

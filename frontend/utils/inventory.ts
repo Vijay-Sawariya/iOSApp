@@ -23,10 +23,10 @@ const floorNames: Record<string, string> = {
 const floorLabel = (floor: string) => floorNames[floor.replace(/\s/g, '').toUpperCase()] || floor.trim() || 'Floor';
 const amount = (value: string | number) => Number.isFinite(Number(value)) ? String(Number(Number(value).toFixed(2))) : String(value);
 
-export const formatInventoryCopy = (lead: Lead, index = 1): string => {
+export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): string => {
   const size = `${lead.area_size ? amount(lead.area_size) : 'NA'} Sq. Yds.`;
   const location = lead.location?.trim() || 'NA';
-  const floor = (lead.floor || '').split(/[,|]/).filter(Boolean).map(floorLabel).join(' | ');
+  const floor = (lead.floor || lead.property_type || '').split(/[,|]/).filter(Boolean).map(floorLabel).join(' | ');
   const bedrooms = (lead.bhk || '').split(/[,|]/).map(value => {
     const match = value.trim().match(/^(\d+)(\+?)\s*(?:BHK)?$/i);
     return match ? `${match[1]}${match[2]} ${match[1] === '1' && !match[2] ? 'Bedroom' : 'Bedrooms'}` : value.trim();
@@ -40,11 +40,11 @@ export const formatInventoryCopy = (lead: Lead, index = 1): string => {
     prices.push(`Ask: ${budget != null ? price(budget) : 'On Request Negotiable'}`);
   }
   return [
-    `${String(index).padStart(2, '0')}-${lead.id}) ${size} At ${location}`,
+    `Property Ref Id: ${String(index).padStart(2, '0')}-${lead.id} - ${internal ? `${[lead.address?.trim(), lead.location?.trim()].filter(Boolean).join(', ') || 'NA'} | ` : ''}${size} At ${location}`,
     `Location: ${location}`,
     `Size: ${size}`,
     (floor || bedrooms) ? `Configuration: ${floor || 'NA'}${bedrooms ? ` | — ${bedrooms}` : ''}` : null,
     lead.car_parking_number != null ? `Parking: ${lead.car_parking_number} ${Number(lead.car_parking_number) === 1 ? 'Car' : 'Cars'}` : null,
     ...prices,
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('\n\n');
 };

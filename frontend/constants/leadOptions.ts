@@ -18,14 +18,14 @@ export const INVENTORY_STATUSES = ['Available', 'Under Construction', 'Ready to 
 // How Old options (in years)
 export const HOW_OLD_OPTIONS = Array.from({ length: 50 }, (_, index) => String(index + 1));
 
-export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Villa'] as const;
+export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Villa', 'Kothi', 'Commercial'] as const;
 
 export const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '5+ BHK', 'Farm House', 'Hall'] as const;
 
 export const UNITS = ['CR', 'L', 'K'] as const;
 
-// Added Plot and Kothi to floor options
-export const FLOORS = ['BMT+GF', 'BMT', 'GF', 'UGF', 'FF', 'SF', 'TF', 'TF+Terr', 'Plot', 'Farm House'] as const;
+// Shared floor options for forms and filters
+export const FLOORS = ['BMT+GF', 'BMT', 'GF', 'UGF', 'FF', 'SF', 'TF', 'TF+Terr', 'Plot', 'Farm House', 'Kothi', 'Commercial'] as const;
 
 export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'] as const;
 

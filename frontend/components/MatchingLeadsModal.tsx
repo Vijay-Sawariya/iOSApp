@@ -14,6 +14,7 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LOCATIONS, FLOORS, formatUnit } from '../constants/leadOptions';
@@ -631,26 +632,27 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
-            <Text style={styles.title}>{title} for {toText(lead?.name)}</Text>
-            <Text style={styles.subtitle}>{leadInfo?.leadType} Lead ID: {leadInfo?.leadId}</Text>
+            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.leadName} numberOfLines={2}>{toText(lead?.name)}</Text>
+            <Text style={styles.subtitle}>{leadInfo?.leadType} · Lead #{leadInfo?.leadId}</Text>
           </View>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close matching screen">
             <Ionicons name="close" size={24} color="#0F172A" />
           </TouchableOpacity>
         </View>
 
         {/* Lead Info Pills */}
         {leadInfo && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.infoPillsScroll}>
+          <ScrollView style={styles.infoPillsScroll} contentContainerStyle={styles.summaryContent} nestedScrollEnabled>
             <View style={styles.infoPillsContainer}>
               {leadInfo.location && (
-                <View style={styles.infoPill}>
+                <View style={styles.locationPill}>
                   <Ionicons name="location" size={14} color="#475569" />
-                  <Text style={styles.infoPillText}>{leadInfo.location}</Text>
+                  <Text style={styles.summaryLocation}>{splitCsv(leadInfo.location).join(', ')}</Text>
                 </View>
               )}
               {leadInfo.areaSize && (
@@ -688,7 +690,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
         </TouchableOpacity>
 
         {showFilters && (
-          <View style={styles.filtersContainer}>
+          <ScrollView style={styles.filtersScroll} contentContainerStyle={styles.filtersContainer} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
             {/* Locations */}
             <View style={styles.filterRow}>
               <Text style={styles.filterLabel}>Locations</Text>
@@ -851,12 +853,12 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
                 <Text style={styles.applyBtnText}>Apply Filters</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         )}
 
         {/* Results Header */}
         <View style={styles.resultsHeader}>
-          <Text style={styles.resultsText}>{matches.length} record(s)</Text>
+          <Text style={styles.resultsText}>{loading ? 'Finding matches…' : `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`}</Text>
           <Text style={styles.selectedText}>{selectedIds.length} selected</Text>
         </View>
 
@@ -868,6 +870,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
           </View>
         ) : (
           <FlatList
+            style={styles.resultsList}
             data={matches}
             keyExtractor={(item) => String(item.id)}
             renderItem={({ item, index }) => renderMatch({ item, index, isTablet })}
@@ -875,7 +878,16 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
             key={numColumns}
             contentContainerStyle={styles.listContent}
             columnWrapperStyle={isTablet ? styles.columnWrapper : undefined}
-            ListEmptyComponent={<Text style={styles.emptyText}>No matching records found.</Text>}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="search-outline" size={32} color="#94A3B8" />
+                <Text style={styles.emptyTitle}>No matches yet</Text>
+                <Text style={styles.emptyText}>Try broadening the location, size or budget filters.</Text>
+                <TouchableOpacity style={styles.emptyAction} onPress={() => setShowFilters(true)}>
+                  <Text style={styles.filterToggleText}>Modify Filters</Text>
+                </TouchableOpacity>
+              </View>
+            }
             removeClippedSubviews={Platform.OS === 'ios'}
             initialNumToRender={10}
             maxToRenderPerBatch={10}
@@ -885,10 +897,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
         {/* Footer */}
         <View style={styles.footer}>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <Text style={styles.closeBtnText}>Close</Text>
-          </TouchableOpacity>
-          
+
           {/* Internal Sharing - Full address, no recipient */}
           <TouchableOpacity 
             style={[styles.internalShareBtn, (internalSharing || selectedIds.length === 0) && styles.btnDisabled]} 
@@ -930,7 +939,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
             <Text style={styles.addBtnText}>Add</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -941,10 +950,10 @@ export { openWhatsApp, makeCall, composeInventoryWhatsappMessage, composeMultipl
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
   header: {
-    paddingTop: 56,
+    paddingTop: 12,
     paddingHorizontal: 20,
     paddingBottom: 12,
     backgroundColor: '#FFFFFF',
@@ -960,7 +969,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#0F172A',
-    fontStyle: 'italic',
+    lineHeight: 26,
+  },
+  leadName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#334155',
+    marginTop: 6,
   },
   subtitle: {
     marginTop: 4,
@@ -968,22 +983,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   closeButton: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   // Lead Info Pills
   infoPillsScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 136,
     backgroundColor: '#FFFFFF',
-    paddingBottom: 12,
   },
+  summaryContent: { paddingHorizontal: 20, paddingBottom: 14 },
+  locationPill: {
+    width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+  },
+  summaryLocation: { flex: 1, minWidth: 0, color: '#475569', fontSize: 13, lineHeight: 20 },
   infoPillsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   infoPill: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1F5F9',
@@ -993,6 +1019,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   infoPillText: {
+    flexShrink: 1,
     color: '#475569',
     fontSize: 13,
     fontWeight: '500',
@@ -1015,6 +1042,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Filters Container
+  filtersScroll: { flexGrow: 0, maxHeight: '45%' },
   filtersContainer: {
     backgroundColor: '#FFFFFF',
     padding: 16,
@@ -1197,6 +1225,7 @@ const styles = StyleSheet.create({
   },
   loadingWrap: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1205,16 +1234,18 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 14,
   },
-  listContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
+  resultsList: { flex: 1, backgroundColor: '#F8FAFC' },
+  listContent: { padding: 16, flexGrow: 1 },
   columnWrapper: {
     justifyContent: 'space-between',
     gap: 12,
   },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  emptyTitle: { marginTop: 12, fontSize: 17, fontWeight: '600', color: '#334155' },
+  emptyAction: { marginTop: 16, padding: 12 },
   emptyText: {
-    paddingVertical: 40,
+    marginTop: 8,
+    lineHeight: 22,
     textAlign: 'center',
     color: '#64748B',
     fontSize: 15,
@@ -1269,9 +1300,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   openButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#EFF6FF',
@@ -1340,41 +1371,24 @@ const styles = StyleSheet.create({
   },
   // Footer
   footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     flexDirection: 'row',
     gap: 10,
   },
-  closeBtn: {
-    flex: 1,
-    height: 50,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  closeBtnText: {
-    color: '#334155',
-    fontSize: 15,
-    fontWeight: '700',
-  },
   internalShareBtn: {
     flex: 1,
-    height: 50,
+    minHeight: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
+    flexDirection: 'column',
+    gap: 4,
     backgroundColor: '#6366F1',
   },
   internalShareBtnText: {
@@ -1384,12 +1398,14 @@ const styles = StyleSheet.create({
   },
   shareBtn: {
     flex: 1,
-    height: 50,
+    minHeight: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
+    flexDirection: 'column',
+    gap: 4,
     backgroundColor: '#22C55E',
   },
   shareBtnText: {
@@ -1399,12 +1415,14 @@ const styles = StyleSheet.create({
   },
   addBtn: {
     flex: 1,
-    height: 50,
+    minHeight: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
+    flexDirection: 'column',
+    gap: 4,
     backgroundColor: '#2563EB',
   },
   addBtnText: {

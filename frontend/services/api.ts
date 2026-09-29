@@ -4,6 +4,9 @@ import * as db from './database';
 import { API_URL } from '../constants/config';
 
 let authToken: string | null = null;
+// Brief, session-only reuse for expensive performance reports.
+const performanceCache = new Map<string, { data: any; expires: number }>();
+const performanceRequests = new Map<string, Promise<any>>();
 let isOfflineMode = false;
 let authFailureHandler: (() => void | Promise<void>) | null = null;
 
@@ -32,6 +35,10 @@ export const isRequestTimeout = (error: unknown): boolean =>
 
 export const setAuthToken = (token: string | null) => {
   console.log('setAuthToken called with:', token ? 'token present' : 'null');
+  if (authToken !== token) {
+    performanceCache.clear();
+    performanceRequests.clear();
+  }
   authToken = token;
 };
 
@@ -375,29 +382,34 @@ export const api = {
     return response.json();
   },
 
-  getMobilePerformance: async (days = 30, agentId?: number, detailMetric?: string) => {
+  getMobilePerformance: async (days = 30, agentId?: number, detailMetric?: string, forceNetwork = false) => {
     const params = new URLSearchParams({ days: String(days) });
     if (agentId) params.set('agent_id', String(agentId));
     if (detailMetric) params.set('detail_metric', detailMetric);
-    let response: Response | null = null;
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        response = await fetchWithTimeout(`${API_URL}/api/mobile/performance?${params.toString()}`, {
-          headers: getHeaders(),
-        }, 60000);
-        if (response.ok || response.status < 500) break;
-      } catch (error) {
-        lastError = error;
+    const token = authToken;
+    const key = getUserScopedCacheKey(`performance_${params.toString()}`);
+    const cached = performanceCache.get(key);
+    if (!forceNetwork && cached && cached.expires > Date.now()) return cached.data;
+    const pending = performanceRequests.get(key);
+    if (pending) return pending;
+    const request = (async () => {
+      const response = await fetchWithTimeout(`${API_URL}/api/mobile/performance?${params.toString()}`, {
+        headers: getHeaders(),
+      });
+      if (!response.ok) {
+        notifyAuthFailure(response);
+        throw new Error(await getApiErrorMessage(response, 'Failed to load performance'));
       }
+      const data = await response.json();
+      if (authToken === token) performanceCache.set(key, { data, expires: Date.now() + 30000 });
+      return data;
+    })();
+    performanceRequests.set(key, request);
+    try {
+      return await request;
+    } finally {
+      if (performanceRequests.get(key) === request) performanceRequests.delete(key);
     }
-    if (!response) {
-      throw lastError instanceof Error ? lastError : new Error('Performance service is temporarily unavailable.');
-    }
-    if (!response.ok) {
-      throw new Error(await getApiErrorMessage(response, 'Failed to load performance'));
-    }
-    return response.json();
   },
 
   getEnquiries: async (options?: CacheFetchOptions) => {
@@ -674,17 +686,18 @@ export const api = {
     );
   },
 
-  getBuilder: async (id: string) => {
+  getBuilder: async (id: string, options?: CacheFetchOptions) => {
     return fetchWithCache(
       `${API_URL}/api/builders/${id}`,
       `builder_${id}`,
       (data) => cacheService.cacheBuilder(id, data),
-      () => cacheService.getBuilder(id)
+      () => cacheService.getBuilder(id),
+      options
     );
   },
 
   getBuilderLeads: async (id: string) => {
-    const response = await fetch(`${API_URL}/api/builders/${id}/leads`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/builders/${id}/leads`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch builder leads');
@@ -938,12 +951,13 @@ export const api = {
   },
 
   // Tentative Pricing APIs
-  getAllPricing: async () => {
+  getAllPricing: async (options?: CacheFetchOptions) => {
     return fetchWithCache(
       `${API_URL}/api/pricing`,
       'plot_floor_pricing',
       (data) => cacheService.cachePlotFloorPricing(data),
-      () => cacheService.getPlotFloorPricing()
+      () => cacheService.getPlotFloorPricing(),
+      options
     );
   },
 
@@ -1008,7 +1022,7 @@ export const api = {
   },
 
   getAllLocations: async () => {
-    const response = await fetch(`${API_URL}/api/locations/all`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/locations/all`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch locations');
