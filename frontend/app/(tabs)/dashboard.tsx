@@ -1,3 +1,4 @@
+import TeamInboxBell from '../../components/TeamInboxBell';
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
@@ -307,9 +308,12 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>{user?.full_name || user?.username || 'User'}</Text>
           </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TeamInboxBell />
           <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
             <Ionicons name="log-out-outline" size={24} color={colors.white} />
           </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 

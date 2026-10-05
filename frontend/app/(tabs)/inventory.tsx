@@ -1,3 +1,5 @@
+import InventoryUpdateModal from '../../components/InventoryUpdateModal';
+import TeamInboxBell from '../../components/TeamInboxBell';
 import { canViewLeadContacts } from '../../utils/contactAccess';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
@@ -81,6 +83,7 @@ const formatLeadDate = (value?: string | null) => {
 export default function InventoryLeadsScreen() {
   const pathname = usePathname();
   const isColdCalling = pathname.startsWith('/cold-calling');
+  const [updatingInventoryId, setUpdatingInventoryId] = useState<number | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
@@ -884,6 +887,7 @@ export default function InventoryLeadsScreen() {
         
         <TouchableOpacity
           style={styles.leadContent}
+          disabled={!canManageLead && normalizedRole !== 'manager'}
           onPress={() => router.push(`/leads/${item.id}`)}
           activeOpacity={0.7}
         >
@@ -1059,6 +1063,11 @@ export default function InventoryLeadsScreen() {
         )}
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
+        {(canManageLead || item.detail_access_status === 'approved' || (normalizedRole === 'sr agent' && item.lead_type === 'builder')) && (
+          <TouchableOpacity style={styles.requestAccessButton} onPress={() => setUpdatingInventoryId(item.id)}>
+            <Ionicons name="options-outline" size={18} color="#2563EB" /><Text style={styles.requestAccessText}>Update inventory</Text>
+          </TouchableOpacity>
+        )}
         {canViewData ? <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionButton}
@@ -1249,6 +1258,7 @@ export default function InventoryLeadsScreen() {
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>{isColdCalling ? 'Cold Calling' : 'Inventories'}</Text>
           <View style={styles.headerActions}>
+            <TeamInboxBell />
             {/* Map View Button */}
             <TouchableOpacity 
               style={styles.headerIconBtn}
@@ -2059,6 +2069,8 @@ export default function InventoryLeadsScreen() {
           <Ionicons name="add" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       )}
+
+      {updatingInventoryId !== null && <InventoryUpdateModal key={updatingInventoryId} leadId={updatingInventoryId} onClose={() => setUpdatingInventoryId(null)} onSaved={() => void loadLeadsRef.current(true)} />}
 
       <MatchingLeadsModal
         visible={!!matchingLead}

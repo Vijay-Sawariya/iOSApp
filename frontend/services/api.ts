@@ -282,6 +282,28 @@ export const api = {
     );
   },
 
+  getInventoryUpdate: async (leadId: number) => {
+    if (!(await cacheService.isOnline()) || isOfflineMode) throw new Error('An online connection is required to update inventory.');
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/inventory-update`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load inventory.'));
+    return response.json();
+  },
+
+  saveInventoryUpdate: async (leadId: number, data: unknown) => {
+    if (!(await cacheService.isOnline()) || isOfflineMode) throw new Error('An online connection is required to update inventory.');
+    const response = await fetch(`${API_URL}/api/leads/${leadId}/inventory-update`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to save inventory. Please try again.'));
+    return response.json();
+  },
+
+  getTeamInboxSummary: async () => {
+    const response = await fetch(`${API_URL}/api/collaboration/inbox/summary`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Unable to load inbox count.');
+    return response.json();
+  },
+
   getCollaborationInbox: async () => {
     const response = await fetch(`${API_URL}/api/collaboration/inbox`, {
       headers: getHeaders(),

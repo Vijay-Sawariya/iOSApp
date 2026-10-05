@@ -38,7 +38,7 @@ class DetailPricingTests(unittest.TestCase):
         for node in nodes:
             node.decorator_list = []
         scope = dict(List=List, Depends=lambda _: None, get_current_user=lambda: None,
-                     get_db=get_db, ensure_collaboration_tables=lambda _: None,
+                     get_db=get_db, can_access_collaboration_lead=lambda *_: True, ensure_collaboration_tables=lambda _: None,
                      attach_current_assignees=lambda *_: None, get_detail_access_map=lambda *_: {},
                      assignment_contact_map=lambda *_: {}, should_mask_data=lambda *_: True,
                      mask_phone=lambda _: '***', mask_address=lambda _: '***',
