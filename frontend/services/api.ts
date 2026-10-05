@@ -283,8 +283,8 @@ export const api = {
   },
 
   getInventoryUpdate: async (leadId: number) => {
-    if (!(await cacheService.isOnline()) || isOfflineMode) throw new Error('An online connection is required to update inventory.');
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/inventory-update`, { headers: getHeaders() });
+    if (isOfflineMode) throw new Error('An online connection is required to update inventory.');
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/inventory-update?_refresh=${Date.now()}`, { headers: getHeaders() });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load inventory.'));
     return response.json();
   },
@@ -564,6 +564,13 @@ export const api = {
       () => cacheService.getInventoryLeads(),
       options
     );
+  },
+
+  getLeadEditData: async (id: string) => {
+    if (isOfflineMode) throw new Error('An online connection is required to edit leads.');
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${id}/edit-data?_refresh=${Date.now()}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load lead for editing.'));
+    return response.json();
   },
 
   getLead: async (id: string, options?: CacheFetchOptions) => {

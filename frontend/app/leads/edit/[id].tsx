@@ -137,8 +137,11 @@ export default function EditLeadScreen() {
 
   useEffect(() => {
     loadLead();
-    loadBuilders();
   }, [leadId]);
+
+  useEffect(() => {
+    if (!loading && isInventory) void loadBuilders();
+  }, [loading, isInventory]);
 
   const loadBuilders = async () => {
     try {
@@ -155,10 +158,11 @@ export default function EditLeadScreen() {
       Alert.alert('Error', 'Lead ID is missing');
       return;
     }
+    setLoading(true);
     try {
       // Editing requires a live authorization check so revoked private data can
       // never be restored from an old local snapshot.
-      const data = await api.getLead(leadId, { forceNetwork: true });
+      const data = await api.getLeadEditData(leadId);
       if (!data) {
         throw new Error('Lead details are not available on this device');
       }
