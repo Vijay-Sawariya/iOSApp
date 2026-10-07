@@ -17,12 +17,12 @@ test('copy matches the requested format exactly', () => {
   assert.ok(formatInventoryCopy(lead, 2).startsWith('Property Ref Id: 02-1587 -'));
   assert.ok(!formatInventoryCopy(lead).includes('D-201'));
 });
-test('closed inventory is shown only for an explicit status or matching address', () => {
-  for (const status of ['Sold', 'Not available', 'Not-Available', 'Ready, Sold']) {
+test('closed inventory is shown only for an explicit status', () => {
+  for (const status of ['Sold', 'Not available', 'Not-Available', 'Unavailable', 'Un-available', 'Ready, Sold']) {
     const closed = { ...lead, lead_status: status };
     for (const search of ['', 'Defence Colony', 'Ram', '9717113347', 'Available']) assert.equal(canShowInventory(closed, search), false);
-    assert.equal(canShowInventory(closed, 'D-201'), true);
-    assert.equal(canShowInventory(closed, '', [], 'D-201'), true);
+    assert.equal(canShowInventory(closed, 'D-201'), false);
+    assert.equal(canShowInventory(closed, '', [], 'D-201'), false);
     assert.equal(canShowInventory(closed, 'D-202'), false);
   }
   assert.equal(canShowInventory({ ...lead, lead_status: 'Sold' }, 'sold'), true);

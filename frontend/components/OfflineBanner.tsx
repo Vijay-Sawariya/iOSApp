@@ -5,7 +5,7 @@ import { useOffline } from '../contexts/OfflineContext';
 import { colors, radii } from '../constants/theme';
 
 export const OfflineBanner: React.FC = () => {
-  const { isOnline, isSyncing, syncProgress, formatLastSync } = useOffline();
+  const { isOnline, isSyncing, syncProgress, syncError, triggerSync, formatLastSync } = useOffline();
   const [showSyncComplete, setShowSyncComplete] = React.useState(false);
   const [wasJustSyncing, setWasJustSyncing] = React.useState(false);
 
@@ -15,17 +15,17 @@ export const OfflineBanner: React.FC = () => {
       setWasJustSyncing(true);
     } else if (wasJustSyncing) {
       // Syncing just finished - show complete briefly
-      setShowSyncComplete(true);
+      setShowSyncComplete(!syncError);
       const timer = setTimeout(() => {
         setShowSyncComplete(false);
         setWasJustSyncing(false);
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [isSyncing, wasJustSyncing]);
+  }, [isSyncing, wasJustSyncing, syncError]);
 
   // Show brief sync complete message
-  if (showSyncComplete && !isSyncing) {
+  if (showSyncComplete && !isSyncing && !syncError) {
     return (
       <View style={styles.syncCompleteContainer}>
         <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
@@ -56,6 +56,16 @@ export const OfflineBanner: React.FC = () => {
           </View>
         </View>
       </View>
+    );
+  }
+
+  if (syncError) {
+    return (
+      <TouchableOpacity style={styles.offlineContainer} onPress={triggerSync}
+        accessibilityRole="button" accessibilityLabel={`Sync failed: ${syncError}. Tap to retry`}>
+        <Text style={styles.offlineText}>Sync failed — tap to retry</Text>
+        <Text style={styles.lastSyncText} numberOfLines={2}>{syncError}</Text>
+      </TouchableOpacity>
     );
   }
 

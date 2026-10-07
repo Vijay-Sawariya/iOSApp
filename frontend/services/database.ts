@@ -64,3 +64,5 @@ export const getPendingOperationCount = async (): Promise<number> => 0;
 export const getLeadCount = async (): Promise<{ clients: number; inventory: number }> => ({ clients: 0, inventory: 0 });
 
 export const getBuilderCount = async (): Promise<number> => 0;
+
+export const resolvePendingCreate = async (operationId: number, entity: string, localId: number, serverId: number): Promise<void> => {};

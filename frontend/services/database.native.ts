@@ -636,3 +636,21 @@ export const getBuilderCount = async (): Promise<number> => {
   ) as { count: number } | null;
   return result?.count || 0;
 };
+
+// Keep dependent edits resolvable across retries and app restarts.
+export const resolvePendingCreate = async (operationId: number, entity: string, localId: number, serverId: number): Promise<void> => {
+  const database = getDatabase();
+  await database.withExclusiveTransactionAsync(async (transaction: any) => {
+    const dependents = await transaction.getAllAsync(
+      'SELECT id, payload FROM pending_operations WHERE entity_type = ? AND local_entity_id = ? AND id != ?',
+      [entity, localId, operationId]
+    );
+    for (const item of dependents) {
+      const payload = JSON.parse(item.payload);
+      payload.id = serverId;
+      await transaction.runAsync('UPDATE pending_operations SET local_entity_id = ?, payload = ? WHERE id = ?',
+        [serverId, JSON.stringify(payload), item.id]);
+    }
+    await transaction.runAsync('DELETE FROM pending_operations WHERE id = ?', [operationId]);
+  });
+};

@@ -1,7 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
-import { isNetworkReachable } from './networkState';
 import * as db from './database';
-import { getAuthToken } from './api';
+import { getAuthToken, fetchWithTimeout } from './api';
 import { API_URL } from '../constants/config';
 
 interface SyncProgress {
@@ -69,7 +68,7 @@ class SyncService {
 
   // Fetch data from API
   private async fetchFromApi(endpoint: string): Promise<any> {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetchWithTimeout(`${API_URL}${endpoint}`, {
       headers: this.getHeaders(),
     });
     if (!response.ok) {
@@ -79,7 +78,7 @@ class SyncService {
   }
 
   private async postToApi(endpoint: string, payload: any): Promise<any> {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetchWithTimeout(`${API_URL}${endpoint}`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
@@ -91,7 +90,7 @@ class SyncService {
   }
 
   private async putToApi(endpoint: string, payload: any): Promise<any> {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetchWithTimeout(`${API_URL}${endpoint}`, {
       method: 'PUT',
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
@@ -103,7 +102,7 @@ class SyncService {
   }
 
   private async deleteFromApi(endpoint: string): Promise<any> {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetchWithTimeout(`${API_URL}${endpoint}`, {
       method: 'DELETE',
       headers: this.getHeaders(),
     });
@@ -117,6 +116,8 @@ class SyncService {
   private async pushPendingOperations(onProgress?: ProgressCallback): Promise<void> {
     const pending = await db.getPendingOperations();
     if (pending.length === 0) return;
+    const failures: string[] = [];
+    const blockedEntities = new Set<string>();
     const localLeadIdMap = new Map<number, number>();
     const localReminderIdMap = new Map<number, number>();
 
@@ -124,11 +125,13 @@ class SyncService {
 
     for (let index = 0; index < pending.length; index += 1) {
       const operation = pending[index];
+      const entityKey = `${operation.entity_type}:${operation.local_entity_id}`;
+      if (blockedEntities.has(entityKey)) continue;
       try {
         const payload = JSON.parse(operation.payload);
         if (operation.entity_type === 'lead' && operation.operation_type === 'create') {
           const created = await this.postToApi('/api/leads', payload);
-          await db.deletePendingOperation(operation.id);
+          await db.resolvePendingCreate(operation.id, 'lead', operation.local_entity_id, created.id);
           if (operation.local_entity_id) {
             if (created?.id) {
               localLeadIdMap.set(operation.local_entity_id, created.id);
@@ -146,9 +149,7 @@ class SyncService {
           const queuedLeadId = payload.id || operation.local_entity_id;
           const leadId = queuedLeadId < 0 ? localLeadIdMap.get(queuedLeadId) : queuedLeadId;
           if (!leadId) {
-            await db.deletePendingOperation(operation.id);
-            onProgress?.({ stage: 'Skipped superseded offline lead update...', progress: index + 1, total: pending.length });
-            continue;
+            throw new Error('Waiting for the offline create to sync');
           }
           const updated = await this.putToApi(`/api/leads/${leadId}`, payload.data || payload);
           await db.deletePendingOperation(operation.id);
@@ -163,9 +164,7 @@ class SyncService {
           const queuedLeadId = payload.id || operation.local_entity_id;
           const leadId = queuedLeadId < 0 ? localLeadIdMap.get(queuedLeadId) : queuedLeadId;
           if (!leadId) {
-            await db.deletePendingOperation(operation.id);
-            onProgress?.({ stage: 'Skipped superseded offline lead delete...', progress: index + 1, total: pending.length });
-            continue;
+            throw new Error('Waiting for the offline create to sync');
           }
           await this.deleteFromApi(`/api/leads/${leadId}`);
           await db.deletePendingOperation(operation.id);
@@ -177,14 +176,12 @@ class SyncService {
           if (operation.local_entity_id && created?.id) {
             localReminderIdMap.set(operation.local_entity_id, created.id);
           }
-          await db.deletePendingOperation(operation.id);
+          await db.resolvePendingCreate(operation.id, 'reminder', operation.local_entity_id, created.id);
         } else if (operation.entity_type === 'reminder' && operation.operation_type === 'update') {
           const queuedReminderId = payload.id || operation.local_entity_id;
           const reminderId = queuedReminderId < 0 ? localReminderIdMap.get(queuedReminderId) : queuedReminderId;
           if (!reminderId) {
-            await db.deletePendingOperation(operation.id);
-            onProgress?.({ stage: 'Skipped superseded offline reminder update...', progress: index + 1, total: pending.length });
-            continue;
+            throw new Error('Waiting for the offline create to sync');
           }
           await this.putToApi(`/api/reminders/${reminderId}`, payload.data || payload);
           await db.deletePendingOperation(operation.id);
@@ -192,20 +189,24 @@ class SyncService {
           const queuedReminderId = payload.id || operation.local_entity_id;
           const reminderId = queuedReminderId < 0 ? localReminderIdMap.get(queuedReminderId) : queuedReminderId;
           if (!reminderId) {
-            await db.deletePendingOperation(operation.id);
-            onProgress?.({ stage: 'Skipped superseded offline reminder delete...', progress: index + 1, total: pending.length });
-            continue;
+            throw new Error('Waiting for the offline create to sync');
           }
           await this.deleteFromApi(`/api/reminders/${reminderId}`);
           await db.deletePendingOperation(operation.id);
         }
       } catch (error: any) {
         await db.markPendingOperationError(operation.id, error.message || 'Sync failed');
-        throw error;
+        blockedEntities.add(entityKey);
+        failures.push(error.message || 'Sync failed');
       }
 
       onProgress?.({ stage: 'Uploading offline changes...', progress: index + 1, total: pending.length });
     }
+    if (failures.length) throw new Error(`${failures.length} offline change(s) could not sync: ${failures[0]}`);
+  }
+
+  async hasPendingOperations(): Promise<boolean> {
+    return (await db.getPendingOperationCount()) > 0;
   }
 
   // Full sync from server (quick mode skips followups)
@@ -214,14 +215,11 @@ class SyncService {
       return { success: false, error: 'Sync already in progress' };
     }
 
-    const isOnline = await this.isOnline();
-    if (!isOnline) {
-      return { success: false, error: 'No internet connection' };
-    }
-
     this.isSyncing = true;
 
     try {
+      if (!getAuthToken()) throw new Error('Sign in to sync offline changes');
+      if (!await this.isOnline()) throw new Error('No internet connection');
       const totalSteps = quickMode ? 4 : 5;
 
       await this.pushPendingOperations(onProgress);

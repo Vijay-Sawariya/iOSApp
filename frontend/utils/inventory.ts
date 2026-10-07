@@ -1,6 +1,6 @@
 import { Lead, normalizeSearchText } from '../constants/leadOptions';
 
-const closedStatuses = new Set(['sold', 'notavailable']);
+const closedStatuses = new Set(['sold', 'notavailable', 'unavailable']);
 export const isUnavailableInventory = (lead: Lead) =>
   (lead.lead_status || '').split(/[,|/]/).some(status => closedStatuses.has(normalizeSearchText(status)));
 
@@ -11,9 +11,7 @@ export const canShowInventory = (lead: Lead, search: string, statuses: string[] 
   const ownStatuses = (lead.lead_status || '').split(/[,|/]/).map(normalizeSearchText);
   const statusSearch = closedStatuses.has(query) && ownStatuses.includes(query);
   const explicitStatus = statuses.some(status => closedStatuses.has(normalizeSearchText(status)) && ownStatuses.includes(normalizeSearchText(status)));
-  const address = normalizeSearchText(lead.address || '');
-  const addressSearch = [query, normalizeSearchText(addressFilter)].some(value => value.length > 0 && /[a-z0-9]/i.test(address) && address.includes(value));
-  return statusSearch || explicitStatus || addressSearch;
+  return statusSearch || explicitStatus;
 };
 
 const floorNames: Record<string, string> = {

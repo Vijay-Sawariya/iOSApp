@@ -45,3 +45,28 @@ test('performance separates filters and details, forces refresh, and clears on a
   await s.api.getMobilePerformance(30, 1);
   assert.equal(s.calls(), 6);
 });
+
+test('simultaneous reminder reads share a request and notify each consumer', async () => {
+  const exports = {};
+  let calls = 0;
+  let release;
+  const response = new Promise(resolve => { release = resolve; });
+  const updates = [];
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../services/api.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, {
+    exports, require: name => name === './cacheService' ? {
+      CACHE_KEYS: { REMINDERS: 'reminders' },
+      cacheService: { get: async () => null, set: async () => {}, updateLastSync: async () => {} },
+    } : { API_URL: 'https://test' },
+    console: { log() {} }, AbortController, setTimeout, clearTimeout, URLSearchParams,
+    fetch: async () => { calls++; return response; },
+  });
+  const first = exports.api.getReminders({ forceNetwork: true, onBackgroundRefresh: data => updates.push(data) });
+  const second = exports.api.getReminders({ forceNetwork: true, onBackgroundRefresh: data => updates.push(data) });
+  assert.equal(calls, 1);
+  release({ ok: true, json: async () => [{ id: 42 }] });
+  await Promise.all([first, second]);
+  assert.equal(updates.length, 2);
+  assert.equal(updates[0][0].id, 42);
+});

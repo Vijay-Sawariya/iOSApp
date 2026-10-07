@@ -16,7 +16,7 @@ type CacheFetchOptions = {
   skipCacheWrite?: boolean;
 };
 
-const fetchWithTimeout = async (
+export const fetchWithTimeout = async (
   url: string,
   options: RequestInit = {},
   timeoutMs: number = 45000
@@ -102,7 +102,6 @@ const invalidateLeadAccessCaches = async (leadId?: string | number) => {
 };
 
 const getHeaders = () => {
-  console.log('getHeaders - authToken present:', !!authToken);
   return {
     'Content-Type': 'application/json',
     ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -127,6 +126,8 @@ const getApiErrorMessage = async (response: Response, fallback: string): Promise
   return `${fallback} (status ${response.status})`;
 };
 
+const cachedReadRequests = new Map<string, Promise<any>>();
+
 // Helper function to fetch with stale-while-revalidate cache behavior
 const fetchWithCache = async <T>(
   url: string,
@@ -135,7 +136,7 @@ const fetchWithCache = async <T>(
   cacheGetter: () => Promise<T | null>,
   options: CacheFetchOptions = {}
 ): Promise<T> => {
-  const refreshFromNetwork = async (): Promise<T> => {
+  const performRefresh = async (): Promise<T> => {
     let response: Response;
     try {
       const separator = url.includes('?') ? '&' : '?';
@@ -169,6 +170,20 @@ const fetchWithCache = async <T>(
     if (!options.skipCacheWrite) await cacheSetter(data);
     await cacheService.updateLastSync();
     return data;
+  };
+
+  const refreshFromNetwork = async (): Promise<T> => {
+    const key = `${authToken || ''}:${url}:${!!options.skipCacheWrite}`;
+    const existing = cachedReadRequests.get(key);
+    if (existing) {
+      const data = await existing;
+      options.onBackgroundRefresh?.(data);
+      return data;
+    }
+    const request = performRefresh();
+    cachedReadRequests.set(key, request);
+    try { return await request; }
+    finally { if (cachedReadRequests.get(key) === request) cachedReadRequests.delete(key); }
   };
 
   if (options.forceNetwork) {
@@ -882,7 +897,7 @@ export const api = {
     let lastError = 'Failed to fetch users';
     for (const endpoint of listEndpoints) {
       try {
-        const response = await fetch(endpoint, { headers });
+        const response = await fetchWithTimeout(endpoint, { headers }, 5000);
         if (response.ok) {
           const data = await response.json();
           if (Array.isArray(data)) return data;
@@ -894,7 +909,7 @@ export const api = {
       }
     }
 
-    const meResponse = await fetch(`${API_URL}/api/auth/me`, { headers });
+    const meResponse = await fetchWithTimeout(`${API_URL}/api/auth/me`, { headers }, 5000);
     if (meResponse.ok) {
       const currentUser = await meResponse.json();
       return currentUser ? [{ ...currentUser, is_current_user: true }] : [];

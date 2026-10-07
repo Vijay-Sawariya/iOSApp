@@ -131,28 +131,23 @@ export default function EditReminderScreen() {
       const remindersData = await api.getReminders();
       const reminders = Array.isArray(remindersData) ? remindersData as any[] : [];
 
-      let users: AssignableUser[] = [];
-      try {
-        const usersData = await api.getAssignableUsers();
-        users = Array.isArray(usersData) ? usersData as AssignableUser[] : [];
-      } catch (error) {
-        console.error('Failed to load assignable users:', error);
-      }
-
-      setAssignableUsers(users);
-
       const reminder = reminders.find((r: any) => r.id.toString() === reminderId);
       if (reminder) {
         setTitle(reminder.title);
         setReminderType(reminder.reminder_type);
         setNotes(reminder.notes || '');
         setStatus(reminder.status);
-        setSelectedAssignedUser(
-          users.find((user) => user.id === reminder.assigned_to) ||
-          users.find((user) => user.is_current_user) ||
-          users[0] ||
-          null
-        );
+        // Preserve the actual assignee while the optional picker loads.
+        setSelectedAssignedUser(reminder.assigned_to ? {
+          id: reminder.assigned_to, username: '', full_name: reminder.assigned_to_name || 'Assigned user', role: null,
+        } : null);
+        void api.getAssignableUsers().then((data) => {
+          const users: AssignableUser[] = Array.isArray(data) ? data : [];
+          setAssignableUsers(users);
+          setSelectedAssignedUser(current => current
+            ? users.find(user => user.id === current.id) || current
+            : users.find(user => user.is_current_user) || null);
+        }).catch(error => console.warn('Failed to load assignable users:', error));
 
         // Parse the reminder_date which is stored in IST format (YYYY-MM-DDTHH:MM:SS)
         const dateStr = reminder.reminder_date;
