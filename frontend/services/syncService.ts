@@ -1,3 +1,4 @@
+import { canAutomaticallyRetry, createSyncFailure, readSyncFailure } from './syncRetryPolicy';
 import NetInfo from '@react-native-community/netinfo';
 import * as db from './database';
 import { getAuthToken, fetchWithTimeout } from './api';
@@ -66,13 +67,22 @@ class SyncService {
     };
   }
 
+  private async apiError(response: Response, endpoint: string): Promise<Error & { status: number }> {
+    let detail = '';
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === 'string') detail = body.detail;
+    } catch {}
+    return Object.assign(new Error(`${endpoint}: ${detail || 'Request failed'} (HTTP ${response.status})`), { status: response.status });
+  }
+
   // Fetch data from API
   private async fetchFromApi(endpoint: string): Promise<any> {
     const response = await fetchWithTimeout(`${API_URL}${endpoint}`, {
       headers: this.getHeaders(),
     });
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      throw await this.apiError(response, endpoint);
     }
     return response.json();
   }
@@ -84,7 +94,7 @@ class SyncService {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      throw await this.apiError(response, endpoint);
     }
     return response.json();
   }
@@ -96,7 +106,7 @@ class SyncService {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      throw await this.apiError(response, endpoint);
     }
     return response.json();
   }
@@ -107,14 +117,20 @@ class SyncService {
       headers: this.getHeaders(),
     });
     if (!response.ok && response.status !== 404) {
-      throw new Error(`API error: ${response.status}`);
+      throw await this.apiError(response, endpoint);
     }
     if (response.status === 404) return { message: 'Already deleted' };
     return response.json();
   }
 
-  private async pushPendingOperations(onProgress?: ProgressCallback): Promise<void> {
-    const pending = await db.getPendingOperations();
+  private async pushPendingOperations(onProgress?: ProgressCallback, automatic = false): Promise<void> {
+    const blockedForRetry = new Set<string>();
+    const pending = (await db.getPendingOperations()).filter(operation => {
+      if (!automatic) return true;
+      const key = `${operation.entity_type}:${operation.local_entity_id}`;
+      if (!canAutomaticallyRetry(operation.last_error)) blockedForRetry.add(key);
+      return !blockedForRetry.has(key);
+    });
     if (pending.length === 0) return;
     const failures: string[] = [];
     const blockedEntities = new Set<string>();
@@ -127,6 +143,10 @@ class SyncService {
       const operation = pending[index];
       const entityKey = `${operation.entity_type}:${operation.local_entity_id}`;
       if (blockedEntities.has(entityKey)) continue;
+      if (automatic && !canAutomaticallyRetry(operation.last_error)) {
+        blockedEntities.add(entityKey);
+        continue;
+      }
       try {
         const payload = JSON.parse(operation.payload);
         if (operation.entity_type === 'lead' && operation.operation_type === 'create') {
@@ -195,7 +215,8 @@ class SyncService {
           await db.deletePendingOperation(operation.id);
         }
       } catch (error: any) {
-        await db.markPendingOperationError(operation.id, error.message || 'Sync failed');
+        const failure = createSyncFailure(error, operation.last_error);
+        await db.markPendingOperationError(operation.id, JSON.stringify(failure));
         blockedEntities.add(entityKey);
         failures.push(error.message || 'Sync failed');
       }
@@ -205,12 +226,25 @@ class SyncService {
     if (failures.length) throw new Error(`${failures.length} offline change(s) could not sync: ${failures[0]}`);
   }
 
-  async hasPendingOperations(): Promise<boolean> {
-    return (await db.getPendingOperationCount()) > 0;
+  async hasPendingOperations(automatic = false): Promise<boolean> {
+    if (!automatic) return (await db.getPendingOperationCount()) > 0;
+    const blocked = new Set<string>();
+    return (await db.getPendingOperations()).some(operation => {
+      const key = `${operation.entity_type}:${operation.local_entity_id}`;
+      if (!canAutomaticallyRetry(operation.last_error)) blocked.add(key);
+      return !blocked.has(key);
+    });
+  }
+
+  async getPendingSyncError(): Promise<string | null> {
+    const operation = (await db.getPendingOperations()).find(item => item.last_error);
+    if (!operation) return null;
+    const failure = readSyncFailure(operation.last_error);
+    return `${operation.entity_type} ${operation.operation_type} (${operation.local_entity_id}): ${failure?.message}. Change kept on this device.`;
   }
 
   // Full sync from server (quick mode skips followups)
-  async fullSync(onProgress?: ProgressCallback, quickMode: boolean = true): Promise<{ success: boolean; error?: string }> {
+  async fullSync(onProgress?: ProgressCallback, quickMode: boolean = true, automatic = false): Promise<{ success: boolean; error?: string }> {
     if (this.isSyncing) {
       return { success: false, error: 'Sync already in progress' };
     }
@@ -222,7 +256,7 @@ class SyncService {
       if (!await this.isOnline()) throw new Error('No internet connection');
       const totalSteps = quickMode ? 4 : 5;
 
-      await this.pushPendingOperations(onProgress);
+      await this.pushPendingOperations(onProgress, automatic);
       
       // Step 1: Fetch client leads
       onProgress?.({ stage: 'Syncing client leads...', progress: 0, total: totalSteps });

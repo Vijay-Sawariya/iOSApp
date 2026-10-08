@@ -12,7 +12,7 @@ function setup(operations, send) {
     getPendingOperations: async () => structuredClone(pending),
     getPendingOperationCount: async () => pending.length,
     deletePendingOperation: async id => { pending = pending.filter(op => op.id !== id); },
-    markPendingOperationError: async (id, message) => errors.push({ id, message }),
+    markPendingOperationError: async (id, message) => { errors.push({ id, message }); pending.find(op => op.id === id).last_error = message; },
     resolvePendingCreate: async (id, entity, localId, serverId) => {
       pending = pending.filter(op => op.id !== id).map(op => {
         if (op.entity_type !== entity || op.local_entity_id !== localId) return op;
@@ -23,7 +23,10 @@ function setup(operations, send) {
     saveBuilders: async () => {}, updateLastSyncTime: async () => {},
   };
   const exports = {};
+  const policy = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../services/syncRetryPolicy.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: policy });
   const mocks = {
+    './syncRetryPolicy': policy,
     '@react-native-community/netinfo': { default: { fetch: async () => ({ isConnected: true }) } },
     './database': db,
     './api': { getAuthToken: () => 'token', fetchWithTimeout: send },
@@ -32,7 +35,7 @@ function setup(operations, send) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../services/syncService.ts'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText, { exports, require: name => mocks[name], console: { error() {} } });
-  return { service: exports.syncService, pending: () => pending, errors };
+  return { policy, service: exports.syncService, pending: () => pending, errors };
 }
 const operation = (id, type, localId, data) => ({ id, entity_type: 'lead', operation_type: type, local_entity_id: localId, payload: JSON.stringify(data) });
 const ok = data => ({ ok: true, json: async () => data });
@@ -82,4 +85,32 @@ test('simultaneous sync triggers upload a queued create once', async () => {
   });
   await Promise.all([s.service.fullSync(), s.service.fullSync()]);
   assert.equal(creates, 1);
+});
+
+
+test('404 pauses automatic retries across restarts, retains data, and allows manual recovery', async () => {
+  let requests = 0;
+  const send = async () => { requests++; return { ok: false, status: 404, json: async () => ({ detail: 'Lead not found' }) }; };
+  const s = setup([operation(1, 'update', 42, { id: 42, data: { name: 'Saved edit' } })], send);
+  await s.service.fullSync(undefined, true, true);
+  assert.equal(requests, 1);
+  assert.equal(await s.service.hasPendingOperations(true), false);
+  assert.match(await s.service.getPendingSyncError(), /Lead not found/);
+  const restarted = setup(s.pending(), async (url, request) => { requests++; return ok(request.method ? { id: 42 } : []); });
+  assert.equal(await restarted.service.hasPendingOperations(true), false);
+  await restarted.service.fullSync();
+  assert.equal(restarted.pending().length, 0);
+});
+
+test('transient retries back off and legacy 404 items stay preserved for manual retry', () => {
+  const { policy } = setup([], async () => ok([]));
+  let previous;
+  for (const delay of [30000, 60000, 120000, 240000, 480000, 900000, 900000]) {
+    const failure = policy.createSyncFailure({ message: 'Unavailable', status: 503 }, previous, 1000);
+    previous = JSON.stringify(failure);
+    assert.equal(failure.retryAfter, 1000 + delay);
+    assert.equal(policy.canAutomaticallyRetry(previous, 1000 + delay - 1), false);
+    assert.equal(policy.canAutomaticallyRetry(previous, 1000 + delay), true);
+  }
+  assert.equal(policy.canAutomaticallyRetry('API error: 404'), false);
 });

@@ -1,3 +1,4 @@
+import { isUnavailableInventory } from '../utils/inventory';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -389,7 +390,10 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
       const payload = mode === 'inventory'
         ? await offlineApi.getMatchingInventory(lead.id, activeFilters)
         : await offlineApi.getMatchingClients(lead.id, activeFilters);
-      const rows = payload?.matches || [];
+      const candidates = Array.isArray(payload?.matches) ? payload.matches : [];
+      const rows = mode === 'inventory'
+        ? candidates.filter((row: any) => !isUnavailableInventory(row))
+        : candidates;
       setMatches(rows);
       setSelectedIds(rows.filter((row: any) => row.is_preferred).map((row: any) => row.id));
     } catch (error: any) {

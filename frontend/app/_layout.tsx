@@ -25,7 +25,12 @@ function RootLayoutContent() {
     let active = true;
     let actionPending = false;
     let actionVersion = 0;
+    let reminderSyncPending = false;
+    let nextReminderSync = 0;
+    let wasBackgrounded = AppState.currentState === 'background';
     const syncAssignedReminders = async () => {
+      if (!active || actionPending || reminderSyncPending || AppState.currentState !== 'active' || Date.now() < nextReminderSync) return;
+      reminderSyncPending = true;
       const version = actionVersion;
       try {
         const reminders = await api.getReminders({ forceNetwork: true });
@@ -33,6 +38,9 @@ function RootLayoutContent() {
         await notificationService.syncAssignedReminderNotifications(Array.isArray(reminders) ? reminders : []);
       } catch (error) {
         console.warn('Assigned reminder notification sync skipped:', error);
+      } finally {
+        reminderSyncPending = false;
+        nextReminderSync = Date.now() + 60000;
       }
     };
     const handleResponse = async (response: Parameters<typeof notificationService.handleReminderNotificationResponse>[0]) => {
@@ -62,7 +70,10 @@ function RootLayoutContent() {
       if (active && !actionPending) await syncAssignedReminders();
     })().catch(error => console.warn('Notification launch handling failed:', error));
     const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && !actionPending) void syncAssignedReminders();
+      if (state === 'active') {
+        if (wasBackgrounded && !actionPending) void syncAssignedReminders();
+        wasBackgrounded = false;
+      } else if (state === 'background') wasBackgrounded = true;
     });
     return () => {
       active = false;

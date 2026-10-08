@@ -418,14 +418,14 @@ export const notificationService = {
     const existing = await notificationService.getScheduledNotifications();
     const stoppedReminderIds = await notificationService.getStoppedReminderIds();
     const existingById = new Map(existing.map((item) => [item.reminderId, item]));
-    const serverIds = new Set((reminders || []).map((item) => String(item.id)));
+    const serverById = new Map((reminders || []).map((item) => [String(item.id), item]));
 
     // Cancel local alerts when another participant completed, dismissed, or
     // deleted the shared reminder.
     for (const item of existing) {
-      const reminder = (reminders || []).find((row) => String(row.id) === item.reminderId);
+      const reminder = serverById.get(item.reminderId);
       const status = String(reminder?.status || '').toLowerCase();
-      if (!serverIds.has(item.reminderId) || !['pending', 'up coming', 'snoozed'].includes(status)) {
+      if (!serverById.has(item.reminderId) || !['pending', 'up coming', 'snoozed'].includes(status)) {
         await notificationService.cancelReminderNotification(item.reminderId);
       }
     }
@@ -445,7 +445,6 @@ export const notificationService = {
       const targetMinute = value.slice(0, 16);
       const existingMinute = String(existingReminder?.scheduledTime || '').replace(' ', 'T').slice(0, 16);
       if (existingReminder && existingMinute === targetMinute) continue;
-      if (existingReminder) await notificationService.cancelReminderNotification(String(reminder.id));
       await notificationService.scheduleReminderNotificationIST(
         reminderId,
         reminder.title,

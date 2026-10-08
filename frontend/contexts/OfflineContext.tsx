@@ -48,6 +48,8 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const syncingRef = useRef(false);
+  const nextAutomaticAttempt = useRef(0);
+  const automaticFailures = useRef(0);
 
   // Format last sync time for display
   const formatLastSync = useCallback(() => {
@@ -66,7 +68,8 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
   }, [lastSyncTime]);
 
   // Trigger manual or automatic sync
-  const triggerSync = useCallback(async () => {
+  const runSync = useCallback(async (automatic = false) => {
+    if (automatic && (AppState.currentState !== 'active' || Date.now() < nextAutomaticAttempt.current)) return;
     if (syncingRef.current || !getAuthToken()) {
       console.log('Sync already in progress, skipping...');
       return;
@@ -80,17 +83,23 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     try {
       const result = await syncService.fullSync((progress) => {
         setSyncProgress(progress);
-      });
+      }, true, automatic);
 
       if (result.success) {
+        automaticFailures.current = 0;
+        nextAutomaticAttempt.current = Date.now() + 30000;
+        setSyncError(await syncService.getPendingSyncError());
         const syncTime = await syncService.getLastSyncTime();
         setLastSyncTime(syncTime);
         console.log('Sync completed successfully');
       } else {
+        automaticFailures.current += 1;
+        nextAutomaticAttempt.current = Date.now() + Math.min(900000, 30000 * 2 ** Math.min(automaticFailures.current - 1, 5));
         setSyncError(result.error || 'Sync failed');
         console.error('Sync failed:', result.error);
       }
     } catch (error: any) {
+      nextAutomaticAttempt.current = Date.now() + 60000;
       setSyncError(error.message || 'Sync failed');
       console.error('Sync error:', error);
     } finally {
@@ -100,6 +109,8 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     }
   }, []);
 
+  const triggerSync = useCallback(() => runSync(false), [runSync]);
+
   // Initialize database and load last sync time
   useEffect(() => {
     let startupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,6 +119,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
       try {
         console.log('Initializing offline database...');
         await syncService.initialize();
+        setSyncError(await syncService.getPendingSyncError());
         
         const syncTime = await syncService.getLastSyncTime();
         setLastSyncTime(syncTime);
@@ -123,7 +135,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
           if (shouldSync) {
             console.log('Data is stale - triggering auto-sync...');
             // Let navigation and the first screen settle before background sync.
-            if (active) startupTimer = setTimeout(() => void triggerSync(), 15000);
+            if (active) startupTimer = setTimeout(() => void runSync(true), 15000);
           } else {
             console.log('Data is fresh - skipping auto-sync');
           }
@@ -136,7 +148,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
 
     void initializeOffline();
     return () => { active = false; clearTimeout(startupTimer); };
-  }, [triggerSync]);
+  }, [runSync]);
 
   // Network state listener
   useEffect(() => {
@@ -148,7 +160,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
       // When coming back online, auto-sync
       if (online && wasOffline && isInitialized) {
         console.log('Network restored - triggering sync...');
-        triggerSync();
+        void runSync(true);
       }
     });
 
@@ -158,31 +170,43 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     });
 
     return () => unsubscribe();
-  }, [isOnline, isInitialized, triggerSync]);
+  }, [isOnline, isInitialized, runSync]);
 
   // Retry pending writes even when the connection never emits another transition.
   // Foreground retries also cover reconnects while iOS suspended the app.
   useEffect(() => {
     if (!isInitialized) return;
     const retryPending = async (refreshStale = false) => {
-      if (AppState.currentState !== 'active' || !getAuthToken() || syncingRef.current) return;
+      if (AppState.currentState !== 'active' || !getAuthToken() || syncingRef.current || Date.now() < nextAutomaticAttempt.current) return;
       try {
-        if (!await syncService.isOnline()) return;
-        const pending = await syncService.hasPendingOperations();
+        const pending = await syncService.hasPendingOperations(true);
         if (pending || (refreshStale && (!lastSyncTime || Date.now() - lastSyncTime.getTime() > 5 * 60 * 1000))) {
-          await triggerSync();
+          await runSync(true);
         }
       } catch (error) {
         console.warn('Offline retry failed:', error);
       }
     };
     void retryPending();
-    const timer = setInterval(() => void retryPending(), 30000);
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const startTimer = () => {
+      if (!timer) timer = setInterval(() => void retryPending(), 30000);
+    };
+    if (AppState.currentState === 'active') startTimer();
+    let wasBackgrounded = AppState.currentState === 'background';
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') void retryPending(true);
+      if (state === 'active') {
+        startTimer();
+        if (wasBackgrounded) void retryPending(true);
+        wasBackgrounded = false;
+      } else {
+        clearInterval(timer);
+        timer = undefined;
+      }
+      if (state === 'background') wasBackgrounded = true;
     });
     return () => { clearInterval(timer); subscription.remove(); };
-  }, [isInitialized, lastSyncTime, triggerSync]);
+  }, [isInitialized, lastSyncTime, runSync]);
 
   return (
     <OfflineContext.Provider

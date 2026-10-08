@@ -1,10 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useOffline } from '../contexts/OfflineContext';
 import { colors, radii } from '../constants/theme';
 
 export const OfflineBanner: React.FC = () => {
+  const insets = useSafeAreaInsets();
+  const bannerInset = { paddingTop: insets.top + 6 };
   const { isOnline, isSyncing, syncProgress, syncError, triggerSync, formatLastSync } = useOffline();
   const [showSyncComplete, setShowSyncComplete] = React.useState(false);
   const [wasJustSyncing, setWasJustSyncing] = React.useState(false);
@@ -27,7 +30,7 @@ export const OfflineBanner: React.FC = () => {
   // Show brief sync complete message
   if (showSyncComplete && !isSyncing && !syncError) {
     return (
-      <View style={styles.syncCompleteContainer}>
+      <View style={[styles.syncCompleteContainer, bannerInset]}>
         <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
         <Text style={styles.syncingText}>Sync complete</Text>
       </View>
@@ -37,7 +40,7 @@ export const OfflineBanner: React.FC = () => {
   // Show syncing progress banner
   if (isSyncing && syncProgress) {
     return (
-      <View style={styles.syncingContainer}>
+      <View style={[styles.syncingContainer, bannerInset]}>
         <ActivityIndicator size="small" color="#FFFFFF" />
         <Text style={styles.syncingText}>{syncProgress.stage}</Text>
       </View>
@@ -47,7 +50,7 @@ export const OfflineBanner: React.FC = () => {
   // Show offline banner with last sync time
   if (!isOnline) {
     return (
-      <View style={styles.offlineContainer}>
+      <View style={[styles.offlineContainer, bannerInset]}>
         <View style={styles.offlineContent}>
           <Ionicons name="cloud-offline" size={16} color="#FFFFFF" />
           <View style={styles.offlineTextContainer}>
@@ -61,7 +64,7 @@ export const OfflineBanner: React.FC = () => {
 
   if (syncError) {
     return (
-      <TouchableOpacity style={styles.offlineContainer} onPress={triggerSync}
+      <TouchableOpacity style={[styles.offlineContainer, bannerInset]} onPress={triggerSync}
         accessibilityRole="button" accessibilityLabel={`Sync failed: ${syncError}. Tap to retry`}>
         <Text style={styles.offlineText}>Sync failed — tap to retry</Text>
         <Text style={styles.lastSyncText} numberOfLines={2}>{syncError}</Text>
