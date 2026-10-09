@@ -41,6 +41,17 @@ class SyncAndMatchingTests(unittest.TestCase):
         result = load(cursor)['update_lead'](42, {'name': 'Property'}, {'id': 7, 'role': 'admin'})
         self.assertEqual(result['id'], 42)
 
+    def test_legacy_asking_price_is_saved_as_floor_pricing_with_aligned_range(self):
+        cursor = Mock()
+        cursor.fetchone.side_effect = [{'created_by': 7}, {'id': 42, 'budget_min': 17, 'budget_max': 17}]
+        load(cursor)['update_lead'](42, {
+            'name': 'Property', 'budget_min': 17, 'budget_max': 17,
+            'floor_pricing': [{'floor': 'TF+Terr', 'price': '17'}],
+        }, {'id': 7, 'role': 'admin'})
+        calls = [(call.args[0], call.args[1]) for call in cursor.execute.call_args_list]
+        self.assertTrue(any('INSERT INTO inventory_floor_pricing' in sql and args == (42, 'TF+Terr', 17.0) for sql, args in calls))
+        self.assertTrue(any('UPDATE leads SET budget_min = %s, budget_max = %s' in sql and args == (17.0, 17.0, 42) for sql, args in calls))
+
     def test_missing_inventory_still_returns_404(self):
         cursor = Mock()
         cursor.fetchone.return_value = None

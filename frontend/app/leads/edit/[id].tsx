@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { api } from '../../../services/api';
+import { loadInventoryEditPricing, buildInventoryEditPricing } from '../../../utils/inventoryEditPricing';
 import { useAuth } from '../../../contexts/AuthContext';
 import { canViewSensitiveData, maskPhone, maskAddress } from '../../../constants/leadOptions';
 import * as Location from 'expo-location';
@@ -109,6 +110,7 @@ export default function EditLeadScreen() {
   
   // Floor-wise Pricing (for Inventory)
   const [floorPrices, setFloorPrices] = useState<FloorPrice[]>([]);
+  const [propertyPrice, setPropertyPrice] = useState('');
   
   // Other
   const [parking, setParking] = useState('');
@@ -245,15 +247,9 @@ export default function EditLeadScreen() {
         corner: data.corner === 1 || data.corner === true || requiredAmenities.includes('corner'),
       });
       
-      // Load floor pricing if available
-      if (data.floor_pricing && Array.isArray(data.floor_pricing)) {
-        setFloorPrices(
-          data.floor_pricing.map((fp: any) => ({
-            floor: fp.floor_label || fp.floor || '',
-            price: (fp.floor_amount || fp.price || '').toString()
-          }))
-        );
-      }
+      const pricing = loadInventoryEditPricing(data);
+      setFloorPrices(pricing.floorPrices);
+      setPropertyPrice(pricing.propertyPrice);
     } catch (error: any) {
       console.error('Failed to load lead:', error);
       Alert.alert('Error', error?.message || 'Failed to load lead details');
@@ -395,7 +391,7 @@ export default function EditLeadScreen() {
         updateData.location = location;
         updateData.address = address.trim();
         updateData.building_facing = facing;
-        updateData.floor_pricing = floorPrices.filter(fp => fp.floor && fp.price);
+        Object.assign(updateData, buildInventoryEditPricing(floorPrices, propertyPrice));
         
         // Possession On - combine month and year
         updateData.possession_on = toPossessionDate(possessionMonth, possessionYear);
@@ -419,7 +415,7 @@ export default function EditLeadScreen() {
       );
     } catch (err) {
       console.error('Update lead error:', err);
-      Alert.alert('Error', 'Failed to update lead');
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update lead');
     } finally {
       setSaving(false);
     }
@@ -668,7 +664,7 @@ export default function EditLeadScreen() {
         {/* Budget/Pricing */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            {isInventory ? 'Floor-wise Pricing' : 'Budget'}
+            {isInventory ? 'Inventory Pricing' : 'Budget'}
           </Text>
           
           <CustomDropdown
@@ -703,6 +699,15 @@ export default function EditLeadScreen() {
 
           {isInventory && (
             <>
+              {floorPrices.length === 0 && (
+                <FormInput
+                  label="Property Price"
+                  value={propertyPrice}
+                  onChangeText={setPropertyPrice}
+                  placeholder="Overall asking price"
+                  keyboardType="decimal-pad"
+                />
+              )}
               {floorPrices.map((fp, index) => (
                 <View key={index} style={styles.floorPriceRow}>
                   <View style={styles.floorPriceField}>

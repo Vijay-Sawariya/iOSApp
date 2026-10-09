@@ -77,3 +77,40 @@ test('cached and live inventories use identical ordering, with deterministic tie
   assert.deepEqual(Array.from(sortInventory([a, c, b]), item => item.id), [1, 3, 2]);
   assert.deepEqual(cached, [b, c, a]);
 });
+
+
+const { loadInventoryEditPricing, buildInventoryEditPricing } = load(path.join(__dirname, '../utils/inventoryEditPricing.ts'));
+const plain = value => JSON.parse(JSON.stringify(value));
+test('legacy TF+Terr price prefills edit and migrates through the current floor payload', () => {
+  const legacy = { floor: 'TF+Terr', floor_pricing: [], budget_max: '16.50', unit: 'CR' };
+  const form = loadInventoryEditPricing(legacy);
+  assert.deepEqual(plain(form), { floorPrices: [{ floor: 'TF+Terr', price: '16.5' }], propertyPrice: '' });
+  const saved = buildInventoryEditPricing(form.floorPrices, form.propertyPrice);
+  assert.deepEqual(plain(saved), { floor_pricing: [{ floor: 'TF+Terr', price: '16.5' }], budget_min: 16.5, budget_max: 16.5 });
+  form.floorPrices[0].price = '17';
+  const edited = buildInventoryEditPricing(form.floorPrices, form.propertyPrice);
+  const reopened = loadInventoryEditPricing({ ...legacy, ...edited });
+  assert.equal(reopened.floorPrices[0].price, '17');
+});
+
+test('floor rows stay authoritative; multi-floor or unassigned overall prices are not duplicated', () => {
+  const existing = loadInventoryEditPricing({ ...lead, budget_max: 99 });
+  assert.equal(existing.floorPrices[0].price, '10');
+  for (const floor of ['GF,FF', '', null]) {
+    const form = loadInventoryEditPricing({ floor, floor_pricing: [], budget_min: 16.5 });
+    assert.equal(form.floorPrices.length, 0);
+    assert.equal(form.propertyPrice, '16.5');
+    assert.equal(buildInventoryEditPricing(form.floorPrices, form.propertyPrice).budget_max, 16.5);
+  }
+});
+
+test('saving recomputes budgets and rejects incomplete prices instead of silently dropping them', () => {
+  const saved = buildInventoryEditPricing([{ floor: 'GF', price: '3' }, { floor: 'FF', price: '2' }], '99');
+  assert.equal(saved.budget_min, 2);
+  assert.equal(saved.budget_max, 3);
+  assert.equal(buildInventoryEditPricing([], '').budget_max, null);
+  for (const price of ['', 'invalid', '-1', 'Infinity']) {
+    assert.throws(() => buildInventoryEditPricing([{ floor: 'GF', price }], ''), /positive price/);
+  }
+  assert.throws(() => buildInventoryEditPricing([{ floor: '', price: '2' }], ''), /Select a floor/);
+});
