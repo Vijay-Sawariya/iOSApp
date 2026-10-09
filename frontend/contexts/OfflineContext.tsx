@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { isNetworkReachable } from '../services/networkState';
-import { syncService } from '../services/syncService';
+import { syncService, AUTOMATIC_SYNC_INTERVAL_MS } from '../services/syncService';
 import { getAuthToken } from '../services/api';
 import { AppState, AppStateStatus } from 'react-native';
 
@@ -15,6 +15,7 @@ interface OfflineContextType {
   isOnline: boolean;
   isInitialized: boolean;
   isSyncing: boolean;
+  isAutomaticSync: boolean;
   lastSyncTime: Date | null;
   syncProgress: SyncProgress | null;
   syncError: string | null;
@@ -26,6 +27,7 @@ const OfflineContext = createContext<OfflineContextType>({
   isOnline: true,
   isInitialized: false,
   isSyncing: false,
+  isAutomaticSync: false,
   lastSyncTime: null,
   syncProgress: null,
   syncError: null,
@@ -43,6 +45,8 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
   const [isOnline, setIsOnline] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAutomaticSync, setIsAutomaticSync] = useState(false);
+  const onlineRef = useRef(true);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -76,6 +80,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     }
 
     syncingRef.current = true;
+    setIsAutomaticSync(automatic);
     setIsSyncing(true);
     setSyncError(null);
     setSyncProgress({ stage: 'Starting sync...', progress: 0, total: 5 });
@@ -127,11 +132,11 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
         setIsInitialized(true);
         console.log('Offline database initialized, last sync:', syncTime);
 
-        // Only auto-sync on startup if data is stale (more than 30 minutes old)
+        // Only auto-sync on startup if data is stale (at least 5 hours old)
         // or if never synced before
         const online = await syncService.isOnline();
         if (online) {
-          const shouldSync = !syncTime || (Date.now() - syncTime.getTime() > 30 * 60 * 1000);
+          const shouldSync = !syncTime || (Date.now() - syncTime.getTime() >= AUTOMATIC_SYNC_INTERVAL_MS);
           if (shouldSync) {
             console.log('Data is stale - triggering auto-sync...');
             // Let navigation and the first screen settle before background sync.
@@ -152,25 +157,27 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
 
   // Network state listener
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+    let offlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const updateNetwork = (state: NetInfoState) => {
+      // Unknown reachability during resume is not a confirmed disconnection.
+      if (state.isConnected === null) return;
       const online = isNetworkReachable(state);
-      const wasOffline = !isOnline;
-      setIsOnline(online);
-      
-      // When coming back online, auto-sync
-      if (online && wasOffline && isInitialized) {
-        console.log('Network restored - triggering sync...');
-        void runSync(true);
+      clearTimeout(offlineTimer);
+      if (!online) {
+        offlineTimer = setTimeout(() => {
+          onlineRef.current = false;
+          setIsOnline(false);
+        }, 3000);
+        return;
       }
-    });
-
-    // Initial check
-    NetInfo.fetch().then((state) => {
-      setIsOnline(isNetworkReachable(state));
-    });
-
-    return () => unsubscribe();
-  }, [isOnline, isInitialized, runSync]);
+      const wasOffline = !onlineRef.current;
+      onlineRef.current = true;
+      setIsOnline(true);
+      if (wasOffline && isInitialized) void runSync(true);
+    };
+    const unsubscribe = NetInfo.addEventListener(updateNetwork);
+    return () => { unsubscribe(); clearTimeout(offlineTimer); };
+  }, [isInitialized, runSync]);
 
   // Retry pending writes even when the connection never emits another transition.
   // Foreground retries also cover reconnects while iOS suspended the app.
@@ -180,7 +187,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
       if (AppState.currentState !== 'active' || !getAuthToken() || syncingRef.current || Date.now() < nextAutomaticAttempt.current) return;
       try {
         const pending = await syncService.hasPendingOperations(true);
-        if (pending || (refreshStale && (!lastSyncTime || Date.now() - lastSyncTime.getTime() > 5 * 60 * 1000))) {
+        if (pending || (refreshStale && (!lastSyncTime || Date.now() - lastSyncTime.getTime() >= AUTOMATIC_SYNC_INTERVAL_MS))) {
           await runSync(true);
         }
       } catch (error) {
@@ -190,7 +197,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     void retryPending();
     let timer: ReturnType<typeof setInterval> | undefined;
     const startTimer = () => {
-      if (!timer) timer = setInterval(() => void retryPending(), 30000);
+      if (!timer) timer = setInterval(() => void retryPending(true), 30000);
     };
     if (AppState.currentState === 'active') startTimer();
     let wasBackgrounded = AppState.currentState === 'background';
@@ -214,6 +221,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
         isOnline,
         isInitialized,
         isSyncing,
+        isAutomaticSync,
         lastSyncTime,
         syncProgress,
         syncError,

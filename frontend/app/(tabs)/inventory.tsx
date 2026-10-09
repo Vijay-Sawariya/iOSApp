@@ -1,4 +1,5 @@
 import InventoryUpdateModal from '../../components/InventoryUpdateModal';
+import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
 import TeamInboxBell from '../../components/TeamInboxBell';
 import { canViewLeadContacts } from '../../utils/contactAccess';
 import React, { useState, useCallback, useMemo } from 'react';
@@ -32,7 +33,8 @@ import MatchingLeadsModal from '../../components/MatchingLeadsModal';
 import {
   Lead,
   getTypeColor,
-  formatFloorPricing,
+  formatInventoryPricing,
+  getInventoryPrices,
   normalizeSearchText,
   LOCATIONS,
   FLOORS,
@@ -44,7 +46,7 @@ import {
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
 import AssignLeadButton from '../../components/AssignLeadButton';
-import { canShowInventory, isUnavailableInventory, formatInventoryCopy } from '../../utils/inventory';
+import { canShowInventory, isUnavailableInventory, formatInventoryCopy, sortInventory } from '../../utils/inventory';
 import { colors, radii, shadows } from '../../constants/theme';
 
 // Filter arrays
@@ -230,18 +232,25 @@ export default function InventoryLeadsScreen() {
             .trim()
             .toLowerCase() === 'cold_calling')
       : data;
-    setLeads(visibleData);
-    applyCurrentFiltersRef.current(visibleData);
+    const ordered = sortInventory(visibleData);
+    setLeads(ordered);
+    applyCurrentFiltersRef.current(ordered);
   };
+
+  // Keep the current cards stable while reading farther down the list. Apply
+  // the latest background snapshot at the top or on an explicit refresh.
+  const inventoryUpdates = useMemo(() => createDeferredListUpdates<Lead[]>(
+    data => displayInventoryRef.current(data)
+  ), []);
 
   const loadLeads = async (forceNetwork = false) => {
     if (!forceNetwork && leads.length === 0) setLoadingLeads(true);
     try {
       const data = await offlineApi.getInventoryLeads({
         forceNetwork,
-        onBackgroundRefresh: (fresh) => displayInventoryRef.current(fresh),
+        onBackgroundRefresh: (fresh) => inventoryUpdates.receive(fresh, forceNetwork),
       });
-      displayInventoryRef.current(data);
+      inventoryUpdates.receive(data, forceNetwork);
     } catch (error) {
       console.error('Failed to load inventory leads:', error);
       setLoadError(error instanceof Error ? error.message : 'Failed to load inventory');
@@ -257,7 +266,7 @@ export default function InventoryLeadsScreen() {
   useFocusEffect(
     useCallback(() => {
       const unsubscribe = offlineApi.subscribeToInventoryUpdates((fresh) => {
-        displayInventoryRef.current(fresh);
+        inventoryUpdates.receive(fresh);
       });
       void loadLeadsRef.current();
       loadClients(); // Load clients when screen focuses
@@ -427,31 +436,8 @@ export default function InventoryLeadsScreen() {
       }
       
       filtered = filtered.filter((lead) => {
-        // Get floor pricing array
-        const floorPricing = lead.floor_pricing;
-        if (!floorPricing || floorPricing.length === 0) {
-          // No floor pricing data - skip this lead if budget filter is active
-          return false;
-        }
-        
-        let pricesToCheck: number[] = [];
-        
-        if (floors.length === 0) {
-          // No floor selected - check ALL floors' prices
-          pricesToCheck = floorPricing.map(fp => fp.floor_amount);
-        } else {
-          // Floors selected - only check those specific floors' prices
-          pricesToCheck = floorPricing
-            .filter(fp => {
-              const fpLabel = fp.floor_label.toLowerCase();
-              return floors.some(selectedFloor => 
-                fpLabel.includes(selectedFloor.toLowerCase()) || 
-                selectedFloor.toLowerCase().includes(fpLabel)
-              );
-            })
-            .map(fp => fp.floor_amount);
-        }
-        
+        const pricesToCheck = getInventoryPrices(lead, floors);
+
         if (pricesToCheck.length === 0) {
           // No matching floor prices found
           return false;
@@ -817,7 +803,7 @@ export default function InventoryLeadsScreen() {
   const renderLeadCard = ({ item }: { item: Lead }) => {
     const typeColor = getTypeColor(item.lead_type);
     const isHot = item.lead_temperature === 'Hot';
-    const floorPricing = formatFloorPricing(item.floor_pricing, item.unit);
+    const floorPricing = formatInventoryPricing(item);
     const hasMapUrl = item.Property_locationUrl && item.Property_locationUrl.trim() !== '';
 
     // Check if user can view sensitive data for this lead
@@ -846,8 +832,6 @@ export default function InventoryLeadsScreen() {
     const isSharingImages = imageAction?.leadId === item.id && imageAction.type === 'share';
     const imageActionInProgress = imageAction?.leadId === item.id;
     const imageCount = inventoryFileCounts[item.id]?.images || 0;
-    const pdfCount = inventoryFileCounts[item.id]?.pdfs || 0;
-    const hasFiles = imageCount > 0 || pdfCount > 0;
     const hasImages = imageCount > 0;
     const lastWhatsappLabel = item.last_message_sent_on
       ? `WhatsApp ${new Date(item.last_message_sent_on).toLocaleDateString()}`
@@ -1001,12 +985,6 @@ export default function InventoryLeadsScreen() {
                 {lastWhatsappLabel}
               </Text>
             </View>
-            {hasFiles && (
-              <View style={styles.tag}>
-                <Ionicons name="images-outline" size={12} color="#6B7280" />
-                <Text style={styles.tagText}>{imageCount} img / {pdfCount} pdf</Text>
-              </View>
-            )}
             {item.floor && (
               <View style={[styles.tag, styles.floorTag]}>
                 <Ionicons name="layers-outline" size={12} color="#6366F1" />
@@ -1285,6 +1263,13 @@ export default function InventoryLeadsScreen() {
       <View style={styles.contentArea}>
         {/* Leads List with Header Components */}
         <FlatList
+          onScroll={event => inventoryUpdates.onScroll(event.nativeEvent.contentOffset.y)}
+          onScrollBeginDrag={inventoryUpdates.beginInteraction}
+          onScrollEndDrag={event => inventoryUpdates.endInteraction(event.nativeEvent.contentOffset.y)}
+          onMomentumScrollBegin={inventoryUpdates.beginInteraction}
+          onMomentumScrollEnd={event => inventoryUpdates.endInteraction(event.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           extraData={selectedIds}
           data={filteredLeads}
           renderItem={renderLeadCard}

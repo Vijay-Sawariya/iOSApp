@@ -159,26 +159,21 @@ export default function LeadDetailScreen() {
         setLoading(false);
       }
       if (!localLead && !liveLead) {
-        localLead = await syncService.getLead(Number(leadId));
-        if (request !== leadRequest.current) return;
-      }
-
-      // A lead may have been loaded in a client/inventory list without its
-      // dedicated detail cache being created yet.
-      if (!localLead) {
-        const [clientsResult, inventoryResult] = await Promise.allSettled([
-          cacheService.getClientLeads(),
-          cacheService.getInventoryLeads(),
+        // SQLite may be busy persisting a sync. Let any available list snapshot
+        // paint the screen immediately instead of waiting behind that write.
+        const showCachedLead = (data: any) => {
+          if (request !== leadRequest.current || !data || localLead || liveLead) return;
+          localLead = data;
+          setLead(data);
+          setLoading(false);
+        };
+        await Promise.allSettled([
+          syncService.getLead(Number(leadId)).then(showCachedLead),
+          cacheService.getClientLeads().then(items => showCachedLead(
+            items?.find((item: any) => String(item.id) === leadId))),
+          cacheService.getInventoryLeads().then(items => showCachedLead(
+            items?.find((item: any) => String(item.id) === leadId))),
         ]);
-        if (request !== leadRequest.current) return;
-        const clients = clientsResult.status === 'fulfilled' ? clientsResult.value || [] : [];
-        const inventory = inventoryResult.status === 'fulfilled' ? inventoryResult.value || [] : [];
-        localLead = [...clients, ...inventory].find((item: any) => String(item.id) === leadId) || null;
-      }
-
-      if (localLead && !liveLead) {
-        setLead(localLead);
-        setLoading(false);
       }
 
       const networkResult = await networkResultPromise;

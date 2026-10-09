@@ -15,6 +15,7 @@ test('idle with an empty queue does not sync; timers stop in background and pend
   let sequence = 0, checks = 0, syncs = 0, pending = false, listener, cleanup;
   const appState = { currentState: 'active', addEventListener: (_, fn) => { listener = fn; return { remove() {} }; } };
   const context = {
+    AUTOMATIC_SYNC_INTERVAL_MS: 5 * 60 * 60 * 1000,
     useEffect: fn => { cleanup = fn(); }, isInitialized: true, lastSyncTime: new Date(),
     AppState: appState, getAuthToken: () => 'test', syncingRef: { current: false }, nextAutomaticAttempt: { current: 0 },
     syncService: { hasPendingOperations: async () => { checks++; return pending; } },

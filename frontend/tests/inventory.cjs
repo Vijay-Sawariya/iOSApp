@@ -44,3 +44,36 @@ test('internal copy includes address and locality only in its reference line', (
   assert.equal(internal.slice(internal.indexOf('\n\n')), shared.slice(shared.indexOf('\n\n')));
   assert.ok(!formatInventoryCopy({ ...lead, address: null }, 1, true).includes('null'));
 });
+
+const { formatInventoryPricing, getInventoryPrices } = load(path.join(__dirname, '../constants/leadOptions.ts'));
+const { sortInventory } = load(path.join(__dirname, '../utils/inventory.ts'));
+
+test('inventory shows its overall asking price when no floor prices exist', () => {
+  const property = { id: 42, floor: 'TF+Terr', unit: 'CR', budget_max: '16.50', floor_pricing: [] };
+  assert.equal(formatInventoryPricing(property), '₹16.50 Cr');
+  assert.deepEqual(Array.from(getInventoryPrices(property)), [16.5]);
+  assert.deepEqual(Array.from(getInventoryPrices(property, ['TF+Terr'])), [16.5]);
+  assert.ok(formatInventoryCopy(property).includes('Ask: ₹16.5 Cr Negotiable'));
+});
+
+test('valid floor prices take precedence; missing or invalid prices do not become zero asks', () => {
+  const property = { ...lead, budget_max: 16.5 };
+  assert.equal(formatInventoryPricing(property), 'Kothi: ₹10 Lac');
+  assert.deepEqual(Array.from(getInventoryPrices(property, ['GF'])), []);
+  for (const value of [null, undefined, '', 'invalid', 0, -1]) {
+    const missing = { unit: 'CR', budget_max: value, floor_pricing: [{ floor_label: 'GF', floor_amount: value }] };
+    assert.equal(formatInventoryPricing(missing), null);
+    assert.deepEqual(Array.from(getInventoryPrices(missing)), []);
+    assert.equal(formatInventoryPricing({ ...missing, budget_min: 2 }), '₹2.00 Cr');
+  }
+});
+
+test('cached and live inventories use identical ordering, with deterministic ties', () => {
+  const a = { id: 1, created_at: '2026-06-01 12:00:00', updated_on: '2026-10-05 12:00:00' };
+  const b = { id: 2, created_at: '2026-08-01 12:00:00', updated_on: '2026-10-04 12:00:00' };
+  const c = { ...b, id: 3 };
+  const cached = [b, c, a];
+  assert.deepEqual(Array.from(sortInventory(cached), item => item.id), [1, 3, 2]);
+  assert.deepEqual(Array.from(sortInventory([a, c, b]), item => item.id), [1, 3, 2]);
+  assert.deepEqual(cached, [b, c, a]);
+});

@@ -4,6 +4,8 @@ import * as db from './database';
 import { getAuthToken, fetchWithTimeout } from './api';
 import { API_URL } from '../constants/config';
 
+export const AUTOMATIC_SYNC_INTERVAL_MS = 5 * 60 * 60 * 1000;
+
 interface SyncProgress {
   stage: string;
   progress: number;
@@ -257,6 +259,13 @@ class SyncService {
       const totalSteps = quickMode ? 4 : 5;
 
       await this.pushPendingOperations(onProgress, automatic);
+
+      // Upload queued edits promptly without downloading every list on each
+      // reconnect/retry. Only a completed full refresh advances this timestamp.
+      const lastSync = automatic ? await this.getLastSyncTime() : null;
+      if (lastSync && Date.now() - lastSync.getTime() < AUTOMATIC_SYNC_INTERVAL_MS) {
+        return { success: true };
+      }
       
       // Step 1: Fetch client leads
       onProgress?.({ stage: 'Syncing client leads...', progress: 0, total: totalSteps });
@@ -303,6 +312,8 @@ class SyncService {
       console.error('Sync failed:', error);
       this.isSyncing = false;
       return { success: false, error: error.message || 'Sync failed' };
+    } finally {
+      this.isSyncing = false;
     }
   }
 

@@ -224,6 +224,35 @@ export const formatFloorPricing = (pricing?: FloorPricing[], unit?: string | nul
   return pricing.map(p => `${p.floor_label}: ₹${p.floor_amount}${unitStr}`).join(' | ');
 };
 
+// Inventory can have either floor prices or a single asking price in budget_max.
+const positivePrice = (value: unknown): number | null => {
+  const price = Number(value);
+  return Number.isFinite(price) && price > 0 ? price : null;
+};
+
+export const getInventoryAskingPrice = (lead: Pick<Lead, 'budget_max' | 'budget_min'>): number | null =>
+  positivePrice(lead.budget_max) ?? positivePrice(lead.budget_min);
+
+export const getInventoryPrices = (lead: Lead, floors: string[] = []): number[] => {
+  const pricing = (lead.floor_pricing || []).filter(row => positivePrice(row.floor_amount) !== null);
+  if (!pricing.length) {
+    const askingPrice = getInventoryAskingPrice(lead);
+    return askingPrice === null ? [] : [askingPrice];
+  }
+  return pricing.filter(row => !floors.length || floors.some(floor => {
+    const label = normalizeSearchText(row.floor_label);
+    const selected = normalizeSearchText(floor);
+    return label.includes(selected) || selected.includes(label);
+  })).map(row => Number(row.floor_amount));
+};
+
+export const formatInventoryPricing = (lead: Lead): string | null => {
+  const pricing = (lead.floor_pricing || []).filter(row => positivePrice(row.floor_amount) !== null);
+  if (pricing.length) return formatFloorPricing(pricing, lead.unit);
+  const price = getInventoryAskingPrice(lead);
+  return price === null ? null : `₹${price.toFixed(2)}${formatUnit(lead.unit)}`;
+};
+
 // Lead interface
 export interface Lead {
   id: number;

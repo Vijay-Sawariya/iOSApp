@@ -1,4 +1,4 @@
-import { Lead, normalizeSearchText } from '../constants/leadOptions';
+import { Lead, normalizeSearchText, getInventoryAskingPrice } from '../constants/leadOptions';
 
 const closedStatuses = new Set(['sold', 'notavailable', 'unavailable']);
 export const isUnavailableInventory = (lead: Lead) =>
@@ -32,9 +32,9 @@ export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): st
   const unitValue = (lead.unit || '').trim().toUpperCase();
   const unit = ['CR', 'CRORE', 'CRORES'].includes(unitValue) ? 'Cr' : ['L', 'LAC', 'LAKH', 'LAKHS'].includes(unitValue) ? 'Lac' : ['K', 'TH', 'THOUSAND'].includes(unitValue) ? 'Th' : unitValue;
   const price = (value: string | number) => `₹${amount(value)}${unit ? ` ${unit}` : ''} Negotiable`;
-  const prices = (lead.floor_pricing || []).filter(p => p.floor_amount != null).map(p => `${floorLabel(p.floor_label)}: ${price(p.floor_amount)}`);
+  const prices = (lead.floor_pricing || []).filter(p => Number.isFinite(Number(p.floor_amount)) && Number(p.floor_amount) > 0).map(p => `${floorLabel(p.floor_label)}: ${price(p.floor_amount)}`);
   if (!prices.length) {
-    const budget = lead.budget_max ?? lead.budget_min;
+    const budget = getInventoryAskingPrice(lead);
     prices.push(`Ask: ${budget != null ? price(budget) : 'On Request Negotiable'}`);
   }
   return [
@@ -45,4 +45,16 @@ export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): st
     lead.car_parking_number != null ? `Parking: ${lead.car_parking_number} ${Number(lead.car_parking_number) === 1 ? 'Car' : 'Cars'}` : null,
     ...prices,
   ].filter(Boolean).join('\n\n');
+};
+
+// Match the server order for both cached and live snapshots, including ties.
+export const sortInventory = (leads: Lead[]): Lead[] => {
+  const time = (value?: string | null) => {
+    if (!value) return 0;
+    const parsed = Date.parse(value.includes('T') ? value : value.replace(' ', 'T'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  return [...leads].sort((a, b) =>
+    time(b.updated_on || b.created_at) - time(a.updated_on || a.created_at) ||
+    time(b.created_at) - time(a.created_at) || b.id - a.id);
 };

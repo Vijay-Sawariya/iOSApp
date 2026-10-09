@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const path = require('node:path');
 
-function setup(operations, send) {
+function setup(operations, send, lastSync = null) {
   let pending = structuredClone(operations);
   const errors = [];
   const db = {
@@ -20,7 +20,9 @@ function setup(operations, send) {
       });
     },
     removeLocalLead: async () => {}, saveLeads: async () => {}, saveFloorPricing: async () => {},
-    saveBuilders: async () => {}, updateLastSyncTime: async () => {},
+    saveBuilders: async () => {},
+    getLastSyncTime: async () => lastSync,
+    updateLastSyncTime: async () => { lastSync = new Date(); },
   };
   const exports = {};
   const policy = {};
@@ -113,4 +115,48 @@ test('transient retries back off and legacy 404 items stay preserved for manual 
     assert.equal(policy.canAutomaticallyRetry(previous, 1000 + delay), true);
   }
   assert.equal(policy.canAutomaticallyRetry('API error: 404'), false);
+});
+
+
+test('automatic reconnects reuse a recent full sync, while manual refresh bypasses freshness', async () => {
+  const urls = [];
+  const s = setup([], async url => { urls.push(url); return ok([]); }, new Date());
+  assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+  assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+  assert.equal(urls.length, 0);
+  assert.equal((await s.service.fullSync()).success, true);
+  assert.equal(urls.length, 3);
+});
+
+test('queued edits upload promptly without redownloading fresh lists', async () => {
+  const calls = [];
+  const s = setup([operation(1, 'update', 42, { id: 42, data: { name: 'edited' } })], async (url, request) => {
+    calls.push(request.method);
+    return ok({ id: 42 });
+  }, new Date());
+  assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+  assert.deepEqual(calls, ['PUT']);
+  assert.equal(s.pending().length, 0);
+});
+
+test('stale and never-synced data refresh once, then reuse the completed snapshot', async () => {
+  for (const lastSync of [null, new Date(Date.now() - 5 * 60 * 60 * 1000)]) {
+    let calls = 0;
+    const s = setup([], async () => { calls++; return ok([]); }, lastSync);
+    assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+    assert.equal(calls, 3);
+    assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+    assert.equal(calls, 3);
+  }
+});
+
+
+test('automatic full sync waits five hours even across repeated reconnects', async () => {
+  for (const ageMinutes of [30, 60, 240, 299]) {
+    let requests = 0;
+    const s = setup([], async () => { requests++; return ok([]); }, new Date(Date.now() - ageMinutes * 60 * 1000));
+    assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+    assert.equal((await s.service.fullSync(undefined, true, true)).success, true);
+    assert.equal(requests, 0, `Unexpected full sync after ${ageMinutes} minutes`);
+  }
 });

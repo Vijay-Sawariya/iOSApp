@@ -8,13 +8,13 @@ import { colors, radii } from '../constants/theme';
 export const OfflineBanner: React.FC = () => {
   const insets = useSafeAreaInsets();
   const bannerInset = { paddingTop: insets.top + 6 };
-  const { isOnline, isSyncing, syncProgress, syncError, triggerSync, formatLastSync } = useOffline();
+  const { isOnline, isSyncing, isAutomaticSync, syncProgress, syncError, triggerSync, formatLastSync } = useOffline();
   const [showSyncComplete, setShowSyncComplete] = React.useState(false);
   const [wasJustSyncing, setWasJustSyncing] = React.useState(false);
 
   // Track when syncing ends to show brief "complete" message
   React.useEffect(() => {
-    if (isSyncing) {
+    if (isSyncing && !isAutomaticSync) {
       setWasJustSyncing(true);
     } else if (wasJustSyncing) {
       // Syncing just finished - show complete briefly
@@ -25,7 +25,7 @@ export const OfflineBanner: React.FC = () => {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [isSyncing, wasJustSyncing, syncError]);
+  }, [isSyncing, isAutomaticSync, wasJustSyncing, syncError]);
 
   // Show brief sync complete message
   if (showSyncComplete && !isSyncing && !syncError) {
@@ -38,7 +38,7 @@ export const OfflineBanner: React.FC = () => {
   }
 
   // Show syncing progress banner
-  if (isSyncing && syncProgress) {
+  if (isSyncing && !isAutomaticSync && syncProgress) {
     return (
       <View style={[styles.syncingContainer, bannerInset]}>
         <ActivityIndicator size="small" color="#FFFFFF" />
