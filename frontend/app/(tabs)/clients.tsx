@@ -1,3 +1,5 @@
+import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
+import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import { canViewLeadContacts } from '../../utils/contactAccess';
 import AssignLeadButton from '../../components/AssignLeadButton';
 import React, { useState, useCallback, useMemo } from 'react';
@@ -22,13 +24,13 @@ import { offlineApi } from '../../services/offlineApi';
 import { api } from '../../services/api';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
-import { 
-  LOCATIONS, 
-  FLOORS, 
-  LEAD_SOURCES, 
-  normalizeSearchText, 
-  canViewSensitiveData, 
-  maskPhone, 
+import {
+  LOCATIONS,
+  FLOORS,
+  LEAD_SOURCES,
+  normalizeSearchText,
+  canViewSensitiveData,
+  maskPhone,
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -108,9 +110,9 @@ export default function ClientLeadsScreen() {
   const [createdByFilter, setCreatedByFilter] = useState<string | null>(null);
   const [showClosedLost, setShowClosedLost] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'date' | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const { expanded: showFilters, toggle: toggleFilters, listRef } = useFilterPanel();
   const { user } = useAuth();
-  
+
   // Location/Floor filter states
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
@@ -165,7 +167,7 @@ export default function ClientLeadsScreen() {
     const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
     const greeting = getGreeting();
     const senderName = user?.full_name || 'Team';
-    
+
     const message = `*Hi Sir, ${greeting}*
 
 Have you already finalised a property or still exploring?
@@ -190,14 +192,14 @@ www.sagarhome.com`;
   };
 
   // Memoized filtered lists for modals
-  const filteredLocations = useMemo(() => 
-    LOCATION_OPTIONS.filter(loc => 
+  const filteredLocations = useMemo(() =>
+    LOCATION_OPTIONS.filter(loc =>
       loc.toLowerCase().includes(locationSearch.toLowerCase())
     ), [locationSearch]
   );
-  
-  const filteredFloors = useMemo(() => 
-    FLOOR_OPTIONS.filter(floor => 
+
+  const filteredFloors = useMemo(() =>
+    FLOOR_OPTIONS.filter(floor =>
       floor.toLowerCase().includes(floorSearch.toLowerCase())
     ), [floorSearch]
   );
@@ -218,14 +220,18 @@ www.sagarhome.com`;
     applyCurrentFiltersRef.current(data);
   };
 
+  const clientUpdates = useMemo(() => createDeferredListUpdates<Lead[]>(
+    data => displayClientsRef.current(data)
+  ), []);
+
   const loadLeads = async (forceNetwork = false) => {
     if (!forceNetwork && leads.length === 0) setLoadingLeads(true);
     try {
       const data = await offlineApi.getClientLeads({
         forceNetwork,
-        onBackgroundRefresh: (fresh) => displayClientsRef.current(fresh),
+        onBackgroundRefresh: (fresh) => clientUpdates.receive(fresh, forceNetwork),
       });
-      displayClientsRef.current(data);
+      clientUpdates.receive(data, forceNetwork);
     } catch (error) {
       console.error('Failed to load client leads:', error);
       setLoadError(error instanceof Error ? error.message : 'Failed to load clients');
@@ -241,17 +247,17 @@ www.sagarhome.com`;
   useFocusEffect(
     useCallback(() => {
       const unsubscribe = offlineApi.subscribeToClientUpdates((fresh) => {
-        displayClientsRef.current(fresh);
+        clientUpdates.receive(fresh);
       });
       void loadLeadsRef.current();
       return unsubscribe;
-    }, [])
+    }, [clientUpdates])
   );
 
   const applyFilters = (
-    data: Lead[], 
-    search: string, 
-    temp: string | null, 
+    data: Lead[],
+    search: string,
+    temp: string | null,
     sort: 'name' | 'date' | null,
     locations: string[] = selectedLocations,
     floors: string[] = selectedFloors,
@@ -276,7 +282,7 @@ www.sagarhome.com`;
     if (statTile && statTile !== 'total') {
       filtered = filtered.filter((lead) => lead.lead_type === statTile);
     }
-    
+
     if (search) {
       const normalizedSearch = normalizeSearchText(search);
       filtered = filtered.filter(
@@ -302,11 +308,11 @@ www.sagarhome.com`;
       if (!isNaN(searchBudget)) {
         const budgetMinVal = searchBudget * 0.9; // -10%
         const budgetMaxVal = searchBudget * 1.1; // +10%
-        
+
         filtered = filtered.filter((lead) => {
           const leadBudgetMin = lead.budget_min || 0;
           const leadBudgetMax = lead.budget_max || Infinity;
-          
+
           // Check if lead's budget range overlaps with search range
           return leadBudgetMax >= budgetMinVal && leadBudgetMin <= budgetMaxVal;
         });
@@ -317,7 +323,7 @@ www.sagarhome.com`;
     if (temp) {
       filtered = filtered.filter((lead) => lead.lead_temperature === temp);
     }
-    
+
     // Lead Source filter
     if (sourceFilter) {
       filtered = filtered.filter((lead) => lead.lead_source === sourceFilter);
@@ -328,9 +334,9 @@ www.sagarhome.com`;
       filtered = filtered.filter((lead) => {
         if (!lead.location) return false;
         const leadLocations = lead.location.split(',').map(l => l.trim().toLowerCase());
-        return locations.some(selectedLoc => 
-          leadLocations.some(leadLoc => 
-            leadLoc.includes(selectedLoc.toLowerCase()) || 
+        return locations.some(selectedLoc =>
+          leadLocations.some(leadLoc =>
+            leadLoc.includes(selectedLoc.toLowerCase()) ||
             selectedLoc.toLowerCase().includes(leadLoc)
           )
         );
@@ -342,9 +348,9 @@ www.sagarhome.com`;
       filtered = filtered.filter((lead) => {
         if (!lead.floor) return false;
         const leadFloors = lead.floor.split(',').map(f => f.trim().toLowerCase());
-        return floors.some(selectedFloor => 
-          leadFloors.some(leadFloor => 
-            leadFloor.includes(selectedFloor.toLowerCase()) || 
+        return floors.some(selectedFloor =>
+          leadFloors.some(leadFloor =>
+            leadFloor.includes(selectedFloor.toLowerCase()) ||
             selectedFloor.toLowerCase().includes(leadFloor)
           )
         );
@@ -429,13 +435,13 @@ www.sagarhome.com`;
   };
 
   const toggleLocation = (loc: string) => {
-    setSelectedLocations(prev => 
+    setSelectedLocations(prev =>
       prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]
     );
   };
 
   const toggleFloor = (floor: string) => {
-    setSelectedFloors(prev => 
+    setSelectedFloors(prev =>
       prev.includes(floor) ? prev.filter(f => f !== floor) : [...prev, floor]
     );
   };
@@ -545,10 +551,10 @@ www.sagarhome.com`;
   // Helper function to format and check followup status
   const getFollowupStatus = (item: Lead) => {
     if (!item.next_action_date) return null;
-    
+
     const now = new Date();
     const actionDate = new Date(item.next_action_date);
-    
+
     // If we have time, add it to the action date for precise comparison
     if (item.next_action_time) {
       const [hours, minutes] = item.next_action_time.split(':');
@@ -556,14 +562,14 @@ www.sagarhome.com`;
     } else {
       actionDate.setHours(23, 59, 59, 999); // End of day if no time specified
     }
-    
+
     // Format date
-    const dateStr = actionDate.toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric' 
+    const dateStr = actionDate.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
     });
-    
+
     // Format time if available
     let timeStr = '';
     if (item.next_action_time) {
@@ -573,11 +579,11 @@ www.sagarhome.com`;
       const hour12 = hour % 12 || 12;
       timeStr = ` ${hour12}:${minutes} ${ampm}`;
     }
-    
+
     // Check if date/time has passed AND status is Pending
     const isPassed = now > actionDate;
     const isPending = item.next_action_status === 'Pending';
-    
+
     if (isPassed && isPending) {
       return { type: 'missed', label: `Missed: ${dateStr}${timeStr}` };
     } else {
@@ -589,7 +595,7 @@ www.sagarhome.com`;
     const budgetText = formatBudget(item);
     const typeColor = getLeadTypeColor(item.lead_type);
     const isHot = item.lead_temperature === 'Hot';
-    
+
     // Check if user can view sensitive data for this lead
     const canManageLead = canViewSensitiveData(
       user?.role,
@@ -598,32 +604,32 @@ www.sagarhome.com`;
       item.current_assignee_id || item.assigned_to
     );
     const canViewData = canViewLeadContacts(item, user?.id);
-    
+
     // Determine what to display for phone (location is visible to everyone)
     const displayPhone = canViewData ? item.phone : maskPhone(item.phone);
-    
+
     // Get followup status
     const followupStatus = getFollowupStatus(item);
-    
+
     // Get aging info
     const agingStyles = getAgingStyles(item.aging_color);
-    
+
     return (
       <View style={styles.leadCard}>
         {/* Aging & Temperature Banner */}
         <View style={styles.agingBanner}>
           {/* Aging Indicator */}
           <View style={[styles.agingBadge, { backgroundColor: agingStyles.bg }]}>
-            <Ionicons 
-              name="time-outline" 
-              size={14} 
-              color={agingStyles.text} 
+            <Ionicons
+              name="time-outline"
+              size={14}
+              color={agingStyles.text}
             />
             <Text style={[styles.agingText, { color: agingStyles.text }]}>
               {item.aging_label || 'Never contacted'}
             </Text>
           </View>
-          
+
           {/* Temperature Indicator */}
           <View style={[styles.tempBadge, { backgroundColor: getTemperatureColor(item.lead_temperature) + '20' }]}>
             <View style={[styles.tempDot, { backgroundColor: getTemperatureColor(item.lead_temperature) }]} />
@@ -632,17 +638,17 @@ www.sagarhome.com`;
             </Text>
           </View>
         </View>
-        
+
         {/* Missed/Due Followup Banner */}
         {followupStatus && (
           <View style={[
             styles.followupBanner,
             followupStatus.type === 'missed' ? styles.followupMissed : styles.followupUpcoming,
           ]}>
-            <Ionicons 
-              name={followupStatus.type === 'missed' ? "warning" : "time-outline"} 
-              size={14} 
-              color={followupStatus.type === 'missed' ? "#DC2626" : "#059669"} 
+            <Ionicons
+              name={followupStatus.type === 'missed' ? "warning" : "time-outline"}
+              size={14}
+              color={followupStatus.type === 'missed' ? "#DC2626" : "#059669"}
             />
             <Text style={[
               styles.followupText,
@@ -652,7 +658,7 @@ www.sagarhome.com`;
             </Text>
           </View>
         )}
-        
+
         {/* Main content - tappable to view details */}
         <TouchableOpacity
           style={styles.leadContent}
@@ -702,13 +708,13 @@ www.sagarhome.com`;
               <Text style={[styles.infoText, canViewData && styles.linkText]}>{displayPhone}</Text>
               {canViewData && (
                 <>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.whatsappButton}
                     onPress={() => Linking.openURL(`tel:${item.phone}`)}
                   >
                     <Ionicons name="call" size={16} color="#3B82F6" />
                   </TouchableOpacity>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.whatsappButton}
                     onPress={() => handleWhatsAppShare(item)}
                   >
@@ -834,14 +840,17 @@ www.sagarhome.com`;
         <View style={styles.blueHeader}>
           <Text style={styles.headerTitle}>Clients</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.headerIconBtn}
-              onPress={() => setShowFilters(!showFilters)}
+              onPress={toggleFilters}
+              accessibilityRole="button"
+              accessibilityLabel="Search criteria"
+              accessibilityState={{ expanded: showFilters }}
             >
-              <Ionicons 
-                name="options-outline" 
-                size={22} 
-                color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'} 
+              <Ionicons
+                name="options-outline"
+                size={22}
+                color={hasActiveFilters() ? '#FFD700' : '#FFFFFF'}
               />
             </TouchableOpacity>
           </View>
@@ -850,348 +859,359 @@ www.sagarhome.com`;
 
       {/* White Content Area */}
       <View style={styles.contentArea}>
-        {/* Stats Bar - Clickable Tiles */}
-        <View style={styles.statsBar}>
-          <TouchableOpacity 
-            style={[styles.statItem, selectedStatTile === 'total' && styles.statItemActive]}
-            onPress={() => handleStatTileClick('total')}
-          >
-            <Text style={[styles.statNumber, selectedStatTile === 'total' && styles.statNumberActive]}>{stats.total}</Text>
-            <Text style={[styles.statLabel, selectedStatTile === 'total' && styles.statLabelActive]}>Total</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statItem, selectedStatTile === 'buyer' && styles.statItemActive]}
-            onPress={() => handleStatTileClick('buyer')}
-          >
-            <Text style={[styles.statNumber, selectedStatTile === 'buyer' && styles.statNumberActive]}>{stats.buyers}</Text>
-            <Text style={[styles.statLabel, selectedStatTile === 'buyer' && styles.statLabelActive]}>Buyers</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statItem, selectedStatTile === 'tenant' && styles.statItemActive]}
-            onPress={() => handleStatTileClick('tenant')}
-          >
-            <Text style={[styles.statNumber, selectedStatTile === 'tenant' && styles.statNumberActive]}>{stats.tenants}</Text>
-            <Text style={[styles.statLabel, selectedStatTile === 'tenant' && styles.statLabelActive]}>Tenants</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#9CA3AF" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search clients..."
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={handleSearch}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch('')}>
-              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Result Count */}
-        {(searchQuery || hasActiveFilters()) && (
-          <View style={styles.resultCountContainer}>
-            <Text style={styles.resultCountText}>
-              Showing {filteredLeads.length} of {leads.length} results
-            </Text>
-            {hasActiveFilters() && (
-              <TouchableOpacity onPress={clearAllFilters} style={styles.resultClearFiltersBtn}>
-                <Text style={styles.resultClearFiltersText}>Clear Filters</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <View style={styles.filterContainer}>
-            {/* Phone and Budget in same row */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Created by:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        <FlatList
+          onScroll={event => clientUpdates.onScroll(event.nativeEvent.contentOffset.y)}
+          onScrollBeginDrag={clientUpdates.beginInteraction}
+          onScrollEndDrag={event => clientUpdates.endInteraction(event.nativeEvent.contentOffset.y)}
+          onMomentumScrollBegin={clientUpdates.beginInteraction}
+          onMomentumScrollEnd={event => clientUpdates.endInteraction(event.nativeEvent.contentOffset.y)}
+          scrollEventThrottle={16}
+          ref={listRef}
+          {...filterScrollProps}
+          ListHeaderComponent={
+            <View style={{ marginHorizontal: -16, marginTop: -16 }}>
+              {/* Stats Bar - Clickable Tiles */}
+              <View style={styles.statsBar}>
                 <TouchableOpacity
-                  style={[styles.filterChip, createdByFilter === null && styles.filterChipActive]}
-                  onPress={() => setCreatedByFilter(null)}
+                  style={[styles.statItem, selectedStatTile === 'total' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('total')}
                 >
-                  <Text style={[styles.filterChipText, createdByFilter === null && styles.filterChipTextActive]}>All</Text>
+                  <Text style={[styles.statNumber, selectedStatTile === 'total' && styles.statNumberActive]}>{stats.total}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'total' && styles.statLabelActive]}>Total</Text>
                 </TouchableOpacity>
-                {creatorOptions.map((creator) => (
-                  <TouchableOpacity
-                    key={creator.id}
-                    style={[styles.filterChip, createdByFilter === creator.id && styles.filterChipActive]}
-                    onPress={() => setCreatedByFilter(createdByFilter === creator.id ? null : creator.id)}
-                  >
-                    <Text style={[styles.filterChipText, createdByFilter === creator.id && styles.filterChipTextActive]}>{creator.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* Phone and Budget in same row */}
-            <View style={styles.filterRow}>
-              <View style={styles.filterHalf}>
-                <Text style={styles.filterLabel}>{'Phone:'}</Text>
-                <View style={styles.compactInputContainer}>
-                  <Ionicons name="call-outline" size={16} color="#6B7280" />
-                  <TextInput
-                    style={styles.compactInput}
-                    placeholder="Search phone..."
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="phone-pad"
-                    value={phoneFilter}
-                    onChangeText={setPhoneFilter}
-                    onBlur={() => applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch)}
-                  />
-                  {phoneFilter.length > 0 && (
-                    <TouchableOpacity onPress={() => {
-                      setPhoneFilter('');
-                      applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, '', budgetSearch);
-                    }}>
-                      <Ionicons name="close-circle" size={16} color="#9CA3AF" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <TouchableOpacity
+                  style={[styles.statItem, selectedStatTile === 'buyer' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('buyer')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'buyer' && styles.statNumberActive]}>{stats.buyers}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'buyer' && styles.statLabelActive]}>Buyers</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.statItem, selectedStatTile === 'tenant' && styles.statItemActive]}
+                  onPress={() => handleStatTileClick('tenant')}
+                >
+                  <Text style={[styles.statNumber, selectedStatTile === 'tenant' && styles.statNumberActive]}>{stats.tenants}</Text>
+                  <Text style={[styles.statLabel, selectedStatTile === 'tenant' && styles.statLabelActive]}>Tenants</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.filterHalf}>
-                <Text style={styles.filterLabel}>{'Budget (±10%):'}</Text>
-                <View style={styles.compactInputContainer}>
-                  <Ionicons name="cash-outline" size={16} color="#6B7280" />
-                  <TextInput
-                    style={styles.compactInput}
-                    placeholder="e.g. 5000000"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="numeric"
-                    value={budgetSearch}
-                    onChangeText={setBudgetSearch}
-                    onBlur={() => applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch)}
-                  />
-                  {budgetSearch.length > 0 && (
-                    <TouchableOpacity onPress={() => {
-                      setBudgetSearch('');
-                      applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, '');
-                    }}>
-                      <Ionicons name="close-circle" size={16} color="#9CA3AF" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            </View>
 
-            {/* Location Selector with Inline Search */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>{'Location:'}</Text>
-              <View style={styles.locationSearchContainer}>
-                <Ionicons name="location-outline" size={18} color="#6B7280" />
+              {/* Search Bar */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#9CA3AF" />
                 <TextInput
-                  style={styles.locationSearchInput}
-                  placeholder="Type to search locations..."
+                  style={styles.searchInput}
+                  placeholder="Search clients..."
                   placeholderTextColor="#9CA3AF"
-                  value={locationSearch}
-                  onChangeText={setLocationSearch}
-                  autoCapitalize="none"
-                  autoCorrect={false}
+                  value={searchQuery}
+                  onChangeText={handleSearch}
                 />
-                {locationSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setLocationSearch('')}>
-                    <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => handleSearch('')}>
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
                   </TouchableOpacity>
                 )}
               </View>
-              
-              {/* Inline filtered locations dropdown */}
-              {locationSearch.length > 0 && filteredLocations.length > 0 && (
-                <View style={styles.locationDropdown}>
-                  <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                    {filteredLocations.slice(0, 8).map((loc) => (
-                      <TouchableOpacity
-                        key={loc}
-                        style={[
-                          styles.locationDropdownItem,
-                          selectedLocations.includes(loc) && styles.locationDropdownItemSelected
-                        ]}
-                        onPress={() => {
-                          // Calculate new locations first, then apply filters with the new state directly
-                          const newLocations = selectedLocations.includes(loc)
-                            ? selectedLocations.filter(l => l !== loc)
-                            : [...selectedLocations, loc];
-                          setSelectedLocations(newLocations);
-                          setLocationSearch('');
-                          // Apply filters directly with the updated locations
-                          applyFilters(leads, searchQuery, temperatureFilter, sortBy, newLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch);
-                        }}
-                      >
-                        <Text style={styles.locationDropdownText}>{loc}</Text>
-                        {selectedLocations.includes(loc) && (
-                          <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                    {filteredLocations.length > 8 && (
-                      <TouchableOpacity 
-                        style={styles.locationDropdownMore}
-                        onPress={() => setShowLocationPicker(true)}
-                      >
-                        <Text style={styles.locationDropdownMoreText}>
-                          {`+${filteredLocations.length - 8} more - tap to see all`}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-              
-              {/* Selected locations tags */}
-              {selectedLocations.length > 0 && (
-                <View style={styles.selectedTags}>
-                  {selectedLocations.map(loc => (
-                    <TouchableOpacity
-                      key={loc}
-                      style={styles.selectedTag}
-                      onPress={() => {
-                        toggleLocation(loc);
-                        handleApplyLocationFloorFilters();
-                      }}
-                    >
-                      <Text style={styles.selectedTagText}>{loc}</Text>
-                      <Ionicons name="close" size={14} color="#6B7280" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
 
-            {/* Floor Selector with Inline Dropdown */}
-            <View style={[styles.filterSection, { zIndex: 400 }]}>
-              <Text style={styles.filterLabel}>Floor Preference:</Text>
-              <View style={styles.multiSelectContainer}>
-                <TouchableOpacity 
-                  style={styles.compactInputContainer}
-                  onPress={() => setShowFloorDropdown(!showFloorDropdown)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="layers-outline" size={16} color="#6B7280" />
-                  <Text style={[styles.compactInputText, selectedFloors.length === 0 && styles.placeholderText]} numberOfLines={1}>
-                    {selectedFloors.length > 0 ? selectedFloors.join(', ') : 'Select floors...'}
+              {/* Result Count */}
+              {(searchQuery || hasActiveFilters()) && (
+                <View style={styles.resultCountContainer}>
+                  <Text style={styles.resultCountText}>
+                    Showing {filteredLeads.length} of {leads.length} results
                   </Text>
-                  {selectedFloors.length > 0 && (
-                    <TouchableOpacity onPress={(e) => {
-                      e.stopPropagation();
-                      setSelectedFloors([]);
-                      applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, [], selectedStatTile, phoneFilter, budgetSearch);
-                    }}>
-                      <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                  {hasActiveFilters() && (
+                    <TouchableOpacity onPress={clearAllFilters} style={styles.resultClearFiltersBtn}>
+                      <Text style={styles.resultClearFiltersText}>Clear Filters</Text>
                     </TouchableOpacity>
                   )}
-                  <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
-                </TouchableOpacity>
-                {/* Floor dropdown */}
-                {showFloorDropdown && (
-                  <View style={styles.multiSelectDropdown}>
-                    <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                      {FLOOR_OPTIONS.map((floor) => (
+                </View>
+              )}
+
+              {/* Filter Panel */}
+              {showFilters && (
+                <View style={styles.filterContainer}>
+                  {/* Phone and Budget in same row */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Created by:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.filterChip, createdByFilter === null && styles.filterChipActive]}
+                        onPress={() => setCreatedByFilter(null)}
+                      >
+                        <Text style={[styles.filterChipText, createdByFilter === null && styles.filterChipTextActive]}>All</Text>
+                      </TouchableOpacity>
+                      {creatorOptions.map((creator) => (
                         <TouchableOpacity
-                          key={floor}
-                          style={[
-                            styles.multiSelectDropdownItem,
-                            selectedFloors.includes(floor) && styles.multiSelectDropdownItemSelected
-                          ]}
-                          onPress={() => {
-                            const newFloors = selectedFloors.includes(floor)
-                              ? selectedFloors.filter(f => f !== floor)
-                              : [...selectedFloors, floor];
-                            setSelectedFloors(newFloors);
-                            setShowFloorDropdown(false);
-                            applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, newFloors, selectedStatTile, phoneFilter, budgetSearch);
-                          }}
+                          key={creator.id}
+                          style={[styles.filterChip, createdByFilter === creator.id && styles.filterChipActive]}
+                          onPress={() => setCreatedByFilter(createdByFilter === creator.id ? null : creator.id)}
                         >
-                          <Text style={styles.multiSelectDropdownText}>{floor}</Text>
-                          {selectedFloors.includes(floor) && (
-                            <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
-                          )}
+                          <Text style={[styles.filterChipText, createdByFilter === creator.id && styles.filterChipTextActive]}>{creator.name}</Text>
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
                   </View>
-                )}
-              </View>
-            </View>
 
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Temperature:</Text>
-              <View style={styles.filterOptions}>
-                {['Hot', 'Warm', 'Cold'].map((temp) => (
-                  <TouchableOpacity
-                    key={temp}
-                    style={[
-                      styles.filterChip,
-                      temperatureFilter === temp && styles.filterChipActive,
-                      { backgroundColor: temperatureFilter === temp ? getTemperatureColor(temp) : '#F3F4F6' }
-                    ]}
-                    onPress={() => handleTemperatureFilter(temperatureFilter === temp ? null : temp)}
-                  >
-                    <Text style={[
-                      styles.filterChipText,
-                      temperatureFilter === temp && styles.filterChipTextActive
-                    ]}>{temp}</Text>
-                  </TouchableOpacity>
-                ))}
-                {/* Closed/Lost - filters by status, not temperature */}
-                <TouchableOpacity
-                  style={[
-                    styles.filterChip,
-                    showClosedLost && styles.filterChipActive,
-                    { backgroundColor: showClosedLost ? '#6B7280' : '#F3F4F6' }
-                  ]}
-                  onPress={handleClosedLostFilter}
-                >
-                  <Text style={[
-                    styles.filterChipText,
-                    showClosedLost && styles.filterChipTextActive
-                  ]}>Closed/Lost</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                  {/* Phone and Budget in same row */}
+                  <View style={styles.filterRow}>
+                    <View style={styles.filterHalf}>
+                      <Text style={styles.filterLabel}>{'Phone:'}</Text>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="call-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="Search phone..."
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="phone-pad"
+                          value={phoneFilter}
+                          onChangeText={setPhoneFilter}
+                          onBlur={() => applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch)}
+                        />
+                        {phoneFilter.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setPhoneFilter('');
+                            applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, '', budgetSearch);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.filterHalf}>
+                      <Text style={styles.filterLabel}>{'Budget (±10%):'}</Text>
+                      <View style={styles.compactInputContainer}>
+                        <Ionicons name="cash-outline" size={16} color="#6B7280" />
+                        <TextInput
+                          style={styles.compactInput}
+                          placeholder="e.g. 5000000"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="numeric"
+                          value={budgetSearch}
+                          onChangeText={setBudgetSearch}
+                          onBlur={() => applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch)}
+                        />
+                        {budgetSearch.length > 0 && (
+                          <TouchableOpacity onPress={() => {
+                            setBudgetSearch('');
+                            applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, selectedFloors, selectedStatTile, phoneFilter, '');
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  </View>
 
-            {/* Lead Source Filter */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Lead Source:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterOptionsScroll}>
-                <View style={styles.filterOptions}>
-                  {LEAD_SOURCES.map((source) => (
-                    <TouchableOpacity
-                      key={source}
-                      style={[
-                        styles.filterChip,
-                        leadSourceFilter === source && styles.filterChipActive,
-                        { backgroundColor: leadSourceFilter === source ? '#8B5CF6' : '#F3F4F6' }
-                      ]}
-                      onPress={() => handleLeadSourceFilter(leadSourceFilter === source ? null : source)}
-                    >
-                      <Text style={[
-                        styles.filterChipText,
-                        leadSourceFilter === source && styles.filterChipTextActive
-                      ]}>{source}</Text>
+                  {/* Location Selector with Inline Search */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>{'Location:'}</Text>
+                    <View style={styles.locationSearchContainer}>
+                      <Ionicons name="location-outline" size={18} color="#6B7280" />
+                      <TextInput
+                        style={styles.locationSearchInput}
+                        placeholder="Type to search locations..."
+                        placeholderTextColor="#9CA3AF"
+                        value={locationSearch}
+                        onChangeText={setLocationSearch}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {locationSearch.length > 0 && (
+                        <TouchableOpacity onPress={() => setLocationSearch('')}>
+                          <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Inline filtered locations dropdown */}
+                    {locationSearch.length > 0 && filteredLocations.length > 0 && (
+                      <View style={styles.locationDropdown}>
+                        <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                          {filteredLocations.slice(0, 8).map((loc) => (
+                            <TouchableOpacity
+                              key={loc}
+                              style={[
+                                styles.locationDropdownItem,
+                                selectedLocations.includes(loc) && styles.locationDropdownItemSelected
+                              ]}
+                              onPress={() => {
+                                // Calculate new locations first, then apply filters with the new state directly
+                                const newLocations = selectedLocations.includes(loc)
+                                  ? selectedLocations.filter(l => l !== loc)
+                                  : [...selectedLocations, loc];
+                                setSelectedLocations(newLocations);
+                                setLocationSearch('');
+                                // Apply filters directly with the updated locations
+                                applyFilters(leads, searchQuery, temperatureFilter, sortBy, newLocations, selectedFloors, selectedStatTile, phoneFilter, budgetSearch);
+                              }}
+                            >
+                              <Text style={styles.locationDropdownText}>{loc}</Text>
+                              {selectedLocations.includes(loc) && (
+                                <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                          {filteredLocations.length > 8 && (
+                            <TouchableOpacity
+                              style={styles.locationDropdownMore}
+                              onPress={() => setShowLocationPicker(true)}
+                            >
+                              <Text style={styles.locationDropdownMoreText}>
+                                {`+${filteredLocations.length - 8} more - tap to see all`}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    {/* Selected locations tags */}
+                    {selectedLocations.length > 0 && (
+                      <View style={styles.selectedTags}>
+                        {selectedLocations.map(loc => (
+                          <TouchableOpacity
+                            key={loc}
+                            style={styles.selectedTag}
+                            onPress={() => {
+                              toggleLocation(loc);
+                              handleApplyLocationFloorFilters();
+                            }}
+                          >
+                            <Text style={styles.selectedTagText}>{loc}</Text>
+                            <Ionicons name="close" size={14} color="#6B7280" />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Floor Selector with Inline Dropdown */}
+                  <View style={[styles.filterSection, { zIndex: 400 }]}>
+                    <Text style={styles.filterLabel}>Floor Preference:</Text>
+                    <View style={styles.multiSelectContainer}>
+                      <TouchableOpacity
+                        style={styles.compactInputContainer}
+                        onPress={() => setShowFloorDropdown(!showFloorDropdown)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="layers-outline" size={16} color="#6B7280" />
+                        <Text style={[styles.compactInputText, selectedFloors.length === 0 && styles.placeholderText]} numberOfLines={1}>
+                          {selectedFloors.length > 0 ? selectedFloors.join(', ') : 'Select floors...'}
+                        </Text>
+                        {selectedFloors.length > 0 && (
+                          <TouchableOpacity onPress={(e) => {
+                            e.stopPropagation();
+                            setSelectedFloors([]);
+                            applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, [], selectedStatTile, phoneFilter, budgetSearch);
+                          }}>
+                            <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+                          </TouchableOpacity>
+                        )}
+                        <Ionicons name={showFloorDropdown ? "chevron-up" : "chevron-down"} size={18} color="#6B7280" />
+                      </TouchableOpacity>
+                      {/* Floor dropdown */}
+                      {showFloorDropdown && (
+                        <View style={styles.multiSelectDropdown}>
+                          <ScrollView style={styles.multiSelectDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {FLOOR_OPTIONS.map((floor) => (
+                              <TouchableOpacity
+                                key={floor}
+                                style={[
+                                  styles.multiSelectDropdownItem,
+                                  selectedFloors.includes(floor) && styles.multiSelectDropdownItemSelected
+                                ]}
+                                onPress={() => {
+                                  const newFloors = selectedFloors.includes(floor)
+                                    ? selectedFloors.filter(f => f !== floor)
+                                    : [...selectedFloors, floor];
+                                  setSelectedFloors(newFloors);
+                                  setShowFloorDropdown(false);
+                                  applyFilters(leads, searchQuery, temperatureFilter, sortBy, selectedLocations, newFloors, selectedStatTile, phoneFilter, budgetSearch);
+                                }}
+                              >
+                                <Text style={styles.multiSelectDropdownText}>{floor}</Text>
+                                {selectedFloors.includes(floor) && (
+                                  <Ionicons name="checkmark-circle" size={18} color="#3B82F6" />
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Temperature:</Text>
+                    <View style={styles.filterOptions}>
+                      {['Hot', 'Warm', 'Cold'].map((temp) => (
+                        <TouchableOpacity
+                          key={temp}
+                          style={[
+                            styles.filterChip,
+                            temperatureFilter === temp && styles.filterChipActive,
+                            { backgroundColor: temperatureFilter === temp ? getTemperatureColor(temp) : '#F3F4F6' }
+                          ]}
+                          onPress={() => handleTemperatureFilter(temperatureFilter === temp ? null : temp)}
+                        >
+                          <Text style={[
+                            styles.filterChipText,
+                            temperatureFilter === temp && styles.filterChipTextActive
+                          ]}>{temp}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      {/* Closed/Lost - filters by status, not temperature */}
+                      <TouchableOpacity
+                        style={[
+                          styles.filterChip,
+                          showClosedLost && styles.filterChipActive,
+                          { backgroundColor: showClosedLost ? '#6B7280' : '#F3F4F6' }
+                        ]}
+                        onPress={handleClosedLostFilter}
+                      >
+                        <Text style={[
+                          styles.filterChipText,
+                          showClosedLost && styles.filterChipTextActive
+                        ]}>Closed/Lost</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Lead Source Filter */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Lead Source:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterOptionsScroll}>
+                      <View style={styles.filterOptions}>
+                        {LEAD_SOURCES.map((source) => (
+                          <TouchableOpacity
+                            key={source}
+                            style={[
+                              styles.filterChip,
+                              leadSourceFilter === source && styles.filterChipActive,
+                              { backgroundColor: leadSourceFilter === source ? '#8B5CF6' : '#F3F4F6' }
+                            ]}
+                            onPress={() => handleLeadSourceFilter(leadSourceFilter === source ? null : source)}
+                          >
+                            <Text style={[
+                              styles.filterChipText,
+                              leadSourceFilter === source && styles.filterChipTextActive
+                            ]}>{source}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
+
+                  {hasActiveFilters() && (
+                    <TouchableOpacity style={styles.clearFiltersBtn} onPress={clearAllFilters}>
+                      <Ionicons name="refresh" size={16} color="#EF4444" />
+                      <Text style={styles.clearFiltersText}>Clear All Filters</Text>
                     </TouchableOpacity>
-                  ))}
+                  )}
                 </View>
-              </ScrollView>
-            </View>
-            
-            {hasActiveFilters() && (
-              <TouchableOpacity style={styles.clearFiltersBtn} onPress={clearAllFilters}>
-                <Ionicons name="refresh" size={16} color="#EF4444" />
-                <Text style={styles.clearFiltersText}>Clear All Filters</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+              )}
 
-        {/* Leads List */}
-        <FlatList
+            </View>
+          }
           data={filteredLeads}
           renderItem={renderLead}
           keyExtractor={(item) => item.id.toString()}
@@ -1236,7 +1256,7 @@ www.sagarhome.com`;
         animationType="slide"
         onRequestClose={() => setShowLocationPicker(false)}
       >
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
@@ -1745,7 +1765,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     ...shadows.card,
-    maxHeight: 400,
   },
   filterRow: {
     flexDirection: 'row',

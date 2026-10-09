@@ -1,3 +1,4 @@
+import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import InventoryUpdateModal from '../../components/InventoryUpdateModal';
 import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
 import TeamInboxBell from '../../components/TeamInboxBell';
@@ -94,7 +95,7 @@ export default function InventoryLeadsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [imageAction, setImageAction] = useState<{ leadId: number; type: 'download' | 'share' } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const { expanded: showFilters, toggle: toggleFilters, listRef } = useFilterPanel();
   const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
   const { user } = useAuth();
   const normalizedRole = user?.role?.trim().toLowerCase();
@@ -1247,7 +1248,10 @@ export default function InventoryLeadsScreen() {
             {/* Filter Button */}
             <TouchableOpacity 
               style={styles.headerIconBtn}
-              onPress={() => setShowFilters(!showFilters)}
+              onPress={toggleFilters}
+              accessibilityRole="button"
+              accessibilityLabel="Search criteria"
+              accessibilityState={{ expanded: showFilters }}
             >
               <Ionicons 
                 name="options-outline" 
@@ -1261,15 +1265,18 @@ export default function InventoryLeadsScreen() {
 
       {/* Content Area */}
       <View style={styles.contentArea}>
-        {/* Leads List with Header Components */}
+        {/* Keep native visible-position anchoring off: collapsing the filter
+            header can otherwise leave a negative scroll offset and a blank gap.
+            Background replacements are already deferred by inventoryUpdates. */}
         <FlatList
+          ref={listRef}
+          {...filterScrollProps}
           onScroll={event => inventoryUpdates.onScroll(event.nativeEvent.contentOffset.y)}
           onScrollBeginDrag={inventoryUpdates.beginInteraction}
           onScrollEndDrag={event => inventoryUpdates.endInteraction(event.nativeEvent.contentOffset.y)}
           onMomentumScrollBegin={inventoryUpdates.beginInteraction}
           onMomentumScrollEnd={event => inventoryUpdates.endInteraction(event.nativeEvent.contentOffset.y)}
           scrollEventThrottle={16}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           extraData={selectedIds}
           data={filteredLeads}
           renderItem={renderLeadCard}

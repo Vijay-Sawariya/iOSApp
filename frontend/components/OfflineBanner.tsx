@@ -10,25 +10,24 @@ export const OfflineBanner: React.FC = () => {
   const bannerInset = { paddingTop: insets.top + 6 };
   const { isOnline, isSyncing, isAutomaticSync, syncProgress, syncError, triggerSync, formatLastSync } = useOffline();
   const [showSyncComplete, setShowSyncComplete] = React.useState(false);
-  const [wasJustSyncing, setWasJustSyncing] = React.useState(false);
+  const wasManualSyncing = React.useRef(false);
 
-  // Track when syncing ends to show brief "complete" message
   React.useEffect(() => {
-    if (isSyncing && !isAutomaticSync) {
-      setWasJustSyncing(true);
-    } else if (wasJustSyncing) {
-      // Syncing just finished - show complete briefly
-      setShowSyncComplete(!syncError);
-      const timer = setTimeout(() => {
-        setShowSyncComplete(false);
-        setWasJustSyncing(false);
-      }, 1500);
-      return () => clearTimeout(timer);
+    if (isSyncing) {
+      wasManualSyncing.current = !isAutomaticSync;
+      setShowSyncComplete(false);
+      return;
     }
-  }, [isSyncing, isAutomaticSync, wasJustSyncing, syncError]);
+    if (!wasManualSyncing.current) return;
+    wasManualSyncing.current = false;
+    if (isAutomaticSync || syncError) return;
+    setShowSyncComplete(true);
+    const timer = setTimeout(() => setShowSyncComplete(false), 1500);
+    return () => clearTimeout(timer);
+  }, [isSyncing, isAutomaticSync, syncError]);
 
   // Show brief sync complete message
-  if (showSyncComplete && !isSyncing && !syncError) {
+  if (showSyncComplete && !isSyncing && !isAutomaticSync && !syncError) {
     return (
       <View style={[styles.syncCompleteContainer, bannerInset]}>
         <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
@@ -62,7 +61,7 @@ export const OfflineBanner: React.FC = () => {
     );
   }
 
-  if (syncError) {
+  if (syncError && !isAutomaticSync) {
     return (
       <TouchableOpacity style={[styles.offlineContainer, bannerInset]} onPress={triggerSync}
         accessibilityRole="button" accessibilityLabel={`Sync failed: ${syncError}. Tap to retry`}>
@@ -78,25 +77,26 @@ export const OfflineBanner: React.FC = () => {
 
 // Separate component for a Sync Now button that can be placed anywhere
 export const SyncButton: React.FC = () => {
-  const { isOnline, isSyncing, triggerSync, formatLastSync } = useOffline();
+  const { isOnline, isSyncing, isAutomaticSync, triggerSync, formatLastSync } = useOffline();
+  const isManualSyncing = isSyncing && !isAutomaticSync;
 
   if (!isOnline) return null;
 
   return (
     <TouchableOpacity
-      style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+      style={[styles.syncButton, isManualSyncing && styles.syncButtonDisabled]}
       onPress={triggerSync}
       disabled={isSyncing}
     >
-      {isSyncing ? (
+      {isManualSyncing ? (
         <ActivityIndicator size="small" color="#3B82F6" />
       ) : (
         <Ionicons name="sync" size={16} color="#3B82F6" />
       )}
       <Text style={styles.syncButtonText}>
-        {isSyncing ? 'Syncing...' : `Sync Now`}
+        {isManualSyncing ? 'Syncing...' : `Sync Now`}
       </Text>
-      {!isSyncing && (
+      {!isManualSyncing && (
         <Text style={styles.syncTimeText}>{formatLastSync()}</Text>
       )}
     </TouchableOpacity>

@@ -1,3 +1,4 @@
+import { filterScrollProps, useFilterPanel } from '../hooks/useFilterPanel';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -60,7 +61,7 @@ export default function EnquiriesScreen() {
   const [counts, setCounts] = useState<any>({});
   const [historicalTotal, setHistoricalTotal] = useState<number | null>(null);
   const [category, setCategory] = useState<'all' | 'kothi' | 'floor'>('all');
-  const [showSearchCriteria, setShowSearchCriteria] = useState(false);
+  const { expanded: showSearchCriteria, toggle: toggleFilters, scrollRef } = useFilterPanel();
   const [searchCriteria, setSearchCriteria] = useState<LegacySearchCriteria>(EMPTY_SEARCH);
   const [submittedCriteria, setSubmittedCriteria] = useState<LegacySearchCriteria>(EMPTY_SEARCH);
   const [loading, setLoading] = useState(true);
@@ -136,6 +137,8 @@ export default function EnquiriesScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
+        {...filterScrollProps}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
@@ -147,7 +150,9 @@ export default function EnquiriesScreen() {
 
         <TouchableOpacity
           style={[styles.searchToggle, hasSubmittedCriteria && styles.searchToggleActive]}
-          onPress={() => setShowSearchCriteria((visible) => !visible)}
+          onPress={toggleFilters}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showSearchCriteria }}
         >
           <View style={styles.searchToggleCopy}>
             <Ionicons name="options-outline" size={19} color={hasSubmittedCriteria ? colors.primary : colors.ink} />

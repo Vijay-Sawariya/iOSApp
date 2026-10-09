@@ -1,3 +1,4 @@
+import { filterScrollProps, useFilterPanel } from '../hooks/useFilterPanel';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
@@ -43,7 +44,7 @@ export default function MapViewScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(true);
+  const { expanded: showFilters, toggle: toggleFilters, listRef } = useFilterPanel();
 
   // Filters
   const [typeFilter, setTypeFilter] = useState<string>('');
@@ -209,185 +210,192 @@ export default function MapViewScreen() {
             <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Map View</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.filterBtn}
-            onPress={() => setShowFilters(!showFilters)}
+            onPress={toggleFilters}
+              accessibilityRole="button"
+              accessibilityLabel="Search criteria"
+              accessibilityState={{ expanded: showFilters }}
           >
-            <Ionicons 
-              name="options-outline" 
-              size={22} 
+            <Ionicons
+              name="options-outline"
+              size={22}
               color={(typeFilter || locationFilter || addressSearch) ? '#FFD700' : '#FFFFFF'}
             />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
 
-      {/* Stats Bar */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Ionicons name="location" size={18} color="#10B981" />
-          <Text style={styles.statsText}>
-            {pinnedCount} pinned locations
-          </Text>
-        </View>
-        {filteredLeads.length - pinnedCount > 0 && (
-          <Text style={styles.statsSubtext}>
-            {filteredLeads.length - pinnedCount} searched locations
-          </Text>
-        )}
-      </View>
-
-      {/* Filters Panel */}
-      {showFilters && (
-        <View style={styles.filtersPanel}>
-          <Text style={styles.filterLabel}>Property Type:</Text>
-          <View style={styles.typeFilters}>
-            {[
-              { label: 'All', value: '' },
-              { label: 'Sale', value: 'seller' },
-              { label: 'Rent', value: 'landlord' },
-              { label: 'Builder', value: 'builder' },
-            ].map(opt => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.typeChip,
-                  typeFilter === opt.value && styles.typeChipActive
-                ]}
-                onPress={() => setTypeFilter(opt.value)}
-              >
-                <Text style={[
-                  styles.typeChipText,
-                  typeFilter === opt.value && styles.typeChipTextActive
-                ]}>{opt.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.filterLabel}>Location:</Text>
-          <View style={styles.locationSearchContainer}>
-            <Ionicons name="search" size={18} color="#6B7280" />
-            <TextInput
-              style={styles.locationSearchInput}
-              placeholder="Search locations..."
-              placeholderTextColor="#9CA3AF"
-              value={locationSearch}
-              onChangeText={setLocationSearch}
-            />
-            {locationSearch && (
-              <TouchableOpacity onPress={() => setLocationSearch('')}>
-                <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {locationSearch && filteredLocations.length > 0 && (
-            <View style={styles.locationDropdown}>
-              <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {filteredLocations.map(loc => (
-                  <TouchableOpacity
-                    key={loc}
-                    style={[
-                      styles.locationItem,
-                      locationFilter === loc && styles.locationItemActive
-                    ]}
-                    onPress={() => {
-                      changeLocation(loc);
-                    }}
-                  >
-                    <Text style={styles.locationItemText}>{loc}</Text>
-                    {locationFilter === loc && (
-                      <Ionicons name="checkmark" size={18} color="#3B82F6" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {locationFilter && (
-            <View style={styles.selectedLocationTag}>
-              <Ionicons name="location" size={14} color="#3B82F6" />
-              <Text style={styles.selectedLocationText}>{locationFilter}</Text>
-              <TouchableOpacity onPress={() => changeLocation('')}>
-                <Ionicons name="close-circle" size={16} color="#3B82F6" />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <Text style={styles.filterLabel}>Address:</Text>
-          <View style={styles.locationSearchContainer}>
-            <Ionicons name="search" size={18} color="#6B7280" />
-            <TextInput
-              style={styles.locationSearchInput}
-              placeholder={locationFilter ? `Search address in ${locationFilter}` : 'Search address across inventory...'}
-              placeholderTextColor="#9CA3AF"
-              value={addressSearch}
-              autoCorrect={false}
-              onFocus={() => setShowAddressSuggestions(true)}
-              onChangeText={(value) => {
-                setAddressSearch(value);
-                setSelectedAddress(null);
-                setShowAddressSuggestions(true);
-              }}
-            />
-            {addressSearch.length > 0 && (
-              <TouchableOpacity accessibilityLabel="Clear address search" onPress={() => {
-                setAddressSearch('');
-                setSelectedAddress(null);
-                setShowAddressSuggestions(false);
-              }}>
-                <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-              </TouchableOpacity>
-            )}
-          </View>
-          {showAddressSuggestions && (addressSearch.trim().length > 0 || Boolean(locationFilter)) && (
-            <View style={styles.locationDropdown}>
-              <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {addressSuggestions.slice(0, 30).map(suggestion => (
-                  <TouchableOpacity
-                    key={JSON.stringify([suggestion.address, suggestion.location])}
-                    style={styles.locationItem}
-                    onPress={() => {
-                      setAddressSearch(suggestion.address);
-                      setSelectedAddress(suggestion);
-                      setShowAddressSuggestions(false);
-                      Keyboard.dismiss();
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.locationItemText}>{suggestion.address}</Text>
-                      <Text style={styles.locationText}>{suggestion.location}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-                {addressSuggestions.length > 30 && (
-                  <Text style={[styles.locationText, { padding: 12 }]}>Keep typing to narrow {addressSuggestions.length} matching addresses.</Text>
-                )}
-                {addressSuggestions.length === 0 && (
-                  <Text style={[styles.locationText, { padding: 12 }]}>No inventory addresses match your search.</Text>
-                )}
-              </ScrollView>
-            </View>
-          )}
-
-          {(typeFilter || locationFilter || addressSearch) && (
-            <TouchableOpacity 
-              style={styles.clearFiltersBtn}
-              onPress={() => {
-                setTypeFilter('');
-                changeLocation('');
-              }}
-            >
-              <Text style={styles.clearFiltersBtnText}>Clear All Filters</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Properties List */}
       <View style={styles.listContainer}>
-        {loading ? (
+          <FlatList
+            ref={listRef}
+            {...filterScrollProps}
+            ListHeaderComponent={<View style={{ marginHorizontal: -16, marginTop: -16 }}>
+              {/* Stats Bar */}
+              <View style={styles.statsBar}>
+                <View style={styles.statItem}>
+                  <Ionicons name="location" size={18} color="#10B981" />
+                  <Text style={styles.statsText}>
+                    {pinnedCount} pinned locations
+                  </Text>
+                </View>
+                {filteredLeads.length - pinnedCount > 0 && (
+                  <Text style={styles.statsSubtext}>
+                    {filteredLeads.length - pinnedCount} searched locations
+                  </Text>
+                )}
+              </View>
+
+              {/* Filters Panel */}
+              {showFilters && (
+                <View style={styles.filtersPanel}>
+                  <Text style={styles.filterLabel}>Property Type:</Text>
+                  <View style={styles.typeFilters}>
+                    {[
+                      { label: 'All', value: '' },
+                      { label: 'Sale', value: 'seller' },
+                      { label: 'Rent', value: 'landlord' },
+                      { label: 'Builder', value: 'builder' },
+                    ].map(opt => (
+                      <TouchableOpacity
+                        key={opt.value}
+                        style={[
+                          styles.typeChip,
+                          typeFilter === opt.value && styles.typeChipActive
+                        ]}
+                        onPress={() => setTypeFilter(opt.value)}
+                      >
+                        <Text style={[
+                          styles.typeChipText,
+                          typeFilter === opt.value && styles.typeChipTextActive
+                        ]}>{opt.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={styles.filterLabel}>Location:</Text>
+                  <View style={styles.locationSearchContainer}>
+                    <Ionicons name="search" size={18} color="#6B7280" />
+                    <TextInput
+                      style={styles.locationSearchInput}
+                      placeholder="Search locations..."
+                      placeholderTextColor="#9CA3AF"
+                      value={locationSearch}
+                      onChangeText={setLocationSearch}
+                    />
+                    {locationSearch && (
+                      <TouchableOpacity onPress={() => setLocationSearch('')}>
+                        <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {locationSearch && filteredLocations.length > 0 && (
+                    <View style={styles.locationDropdown}>
+                      <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {filteredLocations.map(loc => (
+                          <TouchableOpacity
+                            key={loc}
+                            style={[
+                              styles.locationItem,
+                              locationFilter === loc && styles.locationItemActive
+                            ]}
+                            onPress={() => {
+                              changeLocation(loc);
+                            }}
+                          >
+                            <Text style={styles.locationItemText}>{loc}</Text>
+                            {locationFilter === loc && (
+                              <Ionicons name="checkmark" size={18} color="#3B82F6" />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {locationFilter && (
+                    <View style={styles.selectedLocationTag}>
+                      <Ionicons name="location" size={14} color="#3B82F6" />
+                      <Text style={styles.selectedLocationText}>{locationFilter}</Text>
+                      <TouchableOpacity onPress={() => changeLocation('')}>
+                        <Ionicons name="close-circle" size={16} color="#3B82F6" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  <Text style={styles.filterLabel}>Address:</Text>
+                  <View style={styles.locationSearchContainer}>
+                    <Ionicons name="search" size={18} color="#6B7280" />
+                    <TextInput
+                      style={styles.locationSearchInput}
+                      placeholder={locationFilter ? `Search address in ${locationFilter}` : 'Search address across inventory...'}
+                      placeholderTextColor="#9CA3AF"
+                      value={addressSearch}
+                      autoCorrect={false}
+                      onFocus={() => setShowAddressSuggestions(true)}
+                      onChangeText={(value) => {
+                        setAddressSearch(value);
+                        setSelectedAddress(null);
+                        setShowAddressSuggestions(true);
+                      }}
+                    />
+                    {addressSearch.length > 0 && (
+                      <TouchableOpacity accessibilityLabel="Clear address search" onPress={() => {
+                        setAddressSearch('');
+                        setSelectedAddress(null);
+                        setShowAddressSuggestions(false);
+                      }}>
+                        <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {showAddressSuggestions && (addressSearch.trim().length > 0 || Boolean(locationFilter)) && (
+                    <View style={styles.locationDropdown}>
+                      <ScrollView style={styles.locationDropdownScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {addressSuggestions.slice(0, 30).map(suggestion => (
+                          <TouchableOpacity
+                            key={JSON.stringify([suggestion.address, suggestion.location])}
+                            style={styles.locationItem}
+                            onPress={() => {
+                              setAddressSearch(suggestion.address);
+                              setSelectedAddress(suggestion);
+                              setShowAddressSuggestions(false);
+                              Keyboard.dismiss();
+                            }}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.locationItemText}>{suggestion.address}</Text>
+                              <Text style={styles.locationText}>{suggestion.location}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                        {addressSuggestions.length > 30 && (
+                          <Text style={[styles.locationText, { padding: 12 }]}>Keep typing to narrow {addressSuggestions.length} matching addresses.</Text>
+                        )}
+                        {addressSuggestions.length === 0 && (
+                          <Text style={[styles.locationText, { padding: 12 }]}>No inventory addresses match your search.</Text>
+                        )}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {(typeFilter || locationFilter || addressSearch) && (
+                    <TouchableOpacity
+                      style={styles.clearFiltersBtn}
+                      onPress={() => {
+                        setTypeFilter('');
+                        changeLocation('');
+                      }}
+                    >
+                      <Text style={styles.clearFiltersBtnText}>Clear All Filters</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+            </View>}
+            ListEmptyComponent={loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#3B82F6" />
             <Text style={styles.loadingText}>Loading properties...</Text>
@@ -400,19 +408,18 @@ export default function MapViewScreen() {
               <Text style={styles.retryBtnText}>Retry</Text>
             </TouchableOpacity>
           </View>
-        ) : filteredLeads.length === 0 ? (
+        ) : (
           <View style={styles.emptyContainer}>
             <Ionicons name="map-outline" size={64} color="#D1D5DB" />
             <Text style={styles.emptyText}>No properties with map location</Text>
             <Text style={styles.emptySubtext}>
-              {leads.length > 0 
+              {leads.length > 0
                 ? 'No properties match the selected location or address'
                 : 'Try adjusting your filters'}
             </Text>
           </View>
-        ) : (
-          <FlatList
-            data={filteredLeads}
+        )}
+            data={loading || error ? [] : filteredLeads}
             renderItem={renderPropertyCard}
             keyExtractor={(item) => item.id.toString()}
             contentContainerStyle={styles.listContent}
@@ -421,7 +428,6 @@ export default function MapViewScreen() {
             }
             showsVerticalScrollIndicator={false}
           />
-        )}
       </View>
     </View>
   );

@@ -83,29 +83,27 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     setIsAutomaticSync(automatic);
     setIsSyncing(true);
     setSyncError(null);
-    setSyncProgress({ stage: 'Starting sync...', progress: 0, total: 5 });
+    setSyncProgress(automatic ? null : { stage: 'Starting sync...', progress: 0, total: 5 });
 
     try {
-      const result = await syncService.fullSync((progress) => {
-        setSyncProgress(progress);
-      }, true, automatic);
+      const result = await syncService.fullSync(automatic ? undefined : setSyncProgress, true, automatic);
 
       if (result.success) {
         automaticFailures.current = 0;
         nextAutomaticAttempt.current = Date.now() + 30000;
-        setSyncError(await syncService.getPendingSyncError());
+        setSyncError(automatic ? null : await syncService.getPendingSyncError());
         const syncTime = await syncService.getLastSyncTime();
         setLastSyncTime(syncTime);
         console.log('Sync completed successfully');
       } else {
         automaticFailures.current += 1;
         nextAutomaticAttempt.current = Date.now() + Math.min(900000, 30000 * 2 ** Math.min(automaticFailures.current - 1, 5));
-        setSyncError(result.error || 'Sync failed');
+        if (!automatic) setSyncError(result.error || 'Sync failed');
         console.error('Sync failed:', result.error);
       }
     } catch (error: any) {
       nextAutomaticAttempt.current = Date.now() + 60000;
-      setSyncError(error.message || 'Sync failed');
+      if (!automatic) setSyncError(error.message || 'Sync failed');
       console.error('Sync error:', error);
     } finally {
       syncingRef.current = false;
@@ -124,7 +122,7 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
       try {
         console.log('Initializing offline database...');
         await syncService.initialize();
-        setSyncError(await syncService.getPendingSyncError());
+        // Persisted queue failures remain available to a manual sync; startup is silent.
         
         const syncTime = await syncService.getLastSyncTime();
         setLastSyncTime(syncTime);

@@ -1,3 +1,4 @@
+import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -30,7 +31,7 @@ export default function BuildersScreen() {
   const [filteredBuilders, setFilteredBuilders] = useState<Builder[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const { expanded: showFilters, toggle: toggleFilters, listRef } = useFilterPanel();
   const [sortBy, setSortBy] = useState<'name' | 'company' | null>(null);
   const { isOnline } = useOffline();
   const companyCount = new Set(builders.map((builder) => builder.company_name).filter(Boolean)).size;
@@ -53,7 +54,7 @@ export default function BuildersScreen() {
 
   const applyFilters = (data: Builder[], search: string, sort: 'name' | 'company' | null) => {
     let filtered = [...data];
-    
+
     if (search) {
       filtered = filtered.filter(
         (builder) =>
@@ -63,13 +64,13 @@ export default function BuildersScreen() {
           builder.address?.toLowerCase().includes(search.toLowerCase())
       );
     }
-    
+
     if (sort === 'name') {
       filtered.sort((a, b) => a.builder_name.localeCompare(b.builder_name));
     } else if (sort === 'company') {
       filtered.sort((a, b) => (a.company_name || '').localeCompare(b.company_name || ''));
     }
-    
+
     setFilteredBuilders(filtered);
   };
 
@@ -147,7 +148,7 @@ export default function BuildersScreen() {
           )}
         </View>
       </TouchableOpacity>
-      
+
       {/* Action Buttons */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
@@ -177,7 +178,10 @@ export default function BuildersScreen() {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerIconBtn}
-              onPress={() => setShowFilters(!showFilters)}
+              onPress={toggleFilters}
+              accessibilityRole="button"
+              accessibilityLabel="Search criteria"
+              accessibilityState={{ expanded: showFilters }}
             >
               <Ionicons
                 name="options-outline"
@@ -191,64 +195,70 @@ export default function BuildersScreen() {
 
       {/* White Content Area */}
       <View style={styles.contentArea}>
-        {/* Stats Bar */}
-        <View style={styles.statsBar}>
-          <View style={[styles.statItem, styles.statItemActive]}>
-            <Text style={[styles.statNumber, styles.statNumberActive]}>{filteredBuilders.length}</Text>
-            <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{companyCount}</Text>
-            <Text style={styles.statLabel}>Companies</Text>
-          </View>
-        </View>
-
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#6B7280" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search builders..."
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={handleSearch}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => handleSearch('')}>
-              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {showFilters && (
-          <View style={styles.filterContainer}>
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Sort by:</Text>
-              <View style={styles.filterOptions}>
-                <TouchableOpacity
-                  style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
-                  onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
-                >
-                  <Ionicons name="person" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
-                  <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.filterChip, sortBy === 'company' && styles.filterChipActive]}
-                  onPress={() => handleSort(sortBy === 'company' ? null : 'company')}
-                >
-                  <Ionicons name="business" size={14} color={sortBy === 'company' ? '#FFFFFF' : '#6B7280'} />
-                  <Text style={[styles.filterChipText, sortBy === 'company' && styles.filterChipTextActive]}> Company</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            {(sortBy || searchQuery) && (
-              <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
-                <Text style={styles.clearFiltersText}>Clear Filters</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
         <FlatList
+          ref={listRef}
+          {...filterScrollProps}
+          ListHeaderComponent={
+            <View style={{ marginHorizontal: -16, marginTop: -16 }}>
+              {/* Stats Bar */}
+              <View style={styles.statsBar}>
+                <View style={[styles.statItem, styles.statItemActive]}>
+                  <Text style={[styles.statNumber, styles.statNumberActive]}>{filteredBuilders.length}</Text>
+                  <Text style={[styles.statLabel, styles.statLabelActive]}>Total</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statNumber}>{companyCount}</Text>
+                  <Text style={styles.statLabel}>Companies</Text>
+                </View>
+              </View>
+
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#6B7280" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search builders..."
+                  placeholderTextColor="#9CA3AF"
+                  value={searchQuery}
+                  onChangeText={handleSearch}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => handleSearch('')}>
+                    <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {showFilters && (
+                <View style={styles.filterContainer}>
+                  <View style={styles.filterSection}>
+                    <Text style={styles.filterLabel}>Sort by:</Text>
+                    <View style={styles.filterOptions}>
+                      <TouchableOpacity
+                        style={[styles.filterChip, sortBy === 'name' && styles.filterChipActive]}
+                        onPress={() => handleSort(sortBy === 'name' ? null : 'name')}
+                      >
+                        <Ionicons name="person" size={14} color={sortBy === 'name' ? '#FFFFFF' : '#6B7280'} />
+                        <Text style={[styles.filterChipText, sortBy === 'name' && styles.filterChipTextActive]}> Name</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.filterChip, sortBy === 'company' && styles.filterChipActive]}
+                        onPress={() => handleSort(sortBy === 'company' ? null : 'company')}
+                      >
+                        <Ionicons name="business" size={14} color={sortBy === 'company' ? '#FFFFFF' : '#6B7280'} />
+                        <Text style={[styles.filterChipText, sortBy === 'company' && styles.filterChipTextActive]}> Company</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  {(sortBy || searchQuery) && (
+                    <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+                      <Text style={styles.clearFiltersText}>Clear Filters</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+            </View>
+          }
           data={filteredBuilders}
           renderItem={renderBuilder}
           keyExtractor={(item) => item.id}
