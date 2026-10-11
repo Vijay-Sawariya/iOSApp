@@ -104,7 +104,7 @@ export default function AddLeadScreen() {
   const [phone, setPhone] = useState(params.phone || '');
   
   // Lead Classification - default based on form type
-  const [leadType, setLeadType] = useState(params.monthlyEntryId && params.initialLeadType === 'landlord' ? 'landlord' : isClientForm ? 'buyer' : 'seller');
+  const [leadType, setLeadType] = useState(params.monthlyEntryId ? 'builder' : isClientForm ? 'buyer' : 'seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('New');
   const [inventoryStatuses, setInventoryStatuses] = useState<string[]>(['Available']);

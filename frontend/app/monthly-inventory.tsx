@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -16,7 +16,7 @@ const categories: Record<string, string> = {
   'Commercial sale': 'commercial_sale', 'Commercial rent': 'commercial_rent',
 };
 
-function BookCard({ item, onPdf }: { item: MonthlyEntry; onPdf: (id: number) => void }) {
+function BookCard({ item, onPdf, onDelete, deleting }: { item: MonthlyEntry; onPdf: (id: number) => void; onDelete: (id: number) => void; deleting: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const leadId = item.converted_lead_id || item.matching_lead_id;
   return <View style={styles.card}>
@@ -41,9 +41,12 @@ function BookCard({ item, onPdf }: { item: MonthlyEntry; onPdf: (id: number) => 
       {!!leadId && <TouchableOpacity accessibilityRole="button" style={styles.action} onPress={() => router.push(`/leads/${leadId}` as any)}>
         <Ionicons name="open-outline" size={15} color={colors.primary} /><Text style={styles.actionText}>View Lead</Text>
       </TouchableOpacity>}
-      {!item.converted_lead_id && <TouchableOpacity accessibilityRole="button" style={[styles.action, styles.primary]} onPress={() => router.push({ pathname: '/leads/add', params: conversionParams(item) } as any)}>
+      {!leadId && <TouchableOpacity accessibilityRole="button" style={[styles.action, styles.primary]} onPress={() => router.push({ pathname: '/leads/add', params: conversionParams(item) } as any)}>
         <Ionicons name="swap-horizontal" size={15} color={colors.white} /><Text style={[styles.actionText, { color: colors.white }]}>Convert</Text>
       </TouchableOpacity>}
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Soft delete inventory" disabled={deleting} style={styles.action} onPress={() => onDelete(item.id)}>
+        {deleting ? <ActivityIndicator size="small" color={colors.danger} /> : <><Ionicons name="trash-outline" size={15} color={colors.danger} /><Text style={[styles.actionText, { color: colors.danger }]}>Delete</Text></>}
+      </TouchableOpacity>
     </View>
   </View>;
 }
@@ -65,6 +68,7 @@ export default function MonthlyInventoryScreen() {
   const [error, setError] = useState('');
   const [pdfId, setPdfId] = useState<number | null>(null);
   const [pdfError, setPdfError] = useState('');
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const requestVersion = useRef(0);
   const load = useCallback(async (nextPage = 1) => {
     if (!allowed) return;
@@ -87,6 +91,18 @@ export default function MonthlyInventoryScreen() {
     void load();
     return () => { requestVersion.current++; };
   }, [load]));
+  const confirmDelete = (id: number) => {
+    if (deletingId !== null) return;
+    Alert.alert('Delete book inventory?', 'This hides matching inventory from all books in this category and skips it in future imports. Existing main inventory leads are kept.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        setDeletingId(id);
+        try { await api.deleteMonthlyInventory(id); await load(); }
+        catch (e) { Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.'); }
+        finally { setDeletingId(null); }
+      } },
+    ]);
+  };
   const pdfUrl = `${API_URL}/api/monthly-inventory/pdfs/${pdfId}`;
   const heading = <View style={styles.header}>
     <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={24} color={colors.ink} /></TouchableOpacity>
@@ -111,7 +127,7 @@ export default function MonthlyInventoryScreen() {
         {!!error && <View style={styles.errorBox}><Text style={styles.error}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => void load()}><Text style={styles.actionText}>Retry</Text></TouchableOpacity></View>}
       </View>}
       ListEmptyComponent={<View style={styles.empty}>{loading ? <ActivityIndicator color={colors.primary} /> : !error && <Text style={styles.muted}>No inventory found for these filters.</Text>}</View>}
-      renderItem={({ item }) => <BookCard item={item} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
+      renderItem={({ item }) => <BookCard item={item} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
       ListFooterComponent={hasMore ? <TouchableOpacity accessibilityRole="button" disabled={loading || loadingMore} style={styles.loadMore} onPress={() => void load(page + 1)}>
         {loadingMore ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.actionText}>Load more</Text>}
       </TouchableOpacity> : null} />

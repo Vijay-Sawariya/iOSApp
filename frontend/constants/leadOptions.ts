@@ -267,6 +267,7 @@ export interface Lead {
   property_type: string | null;
   unit: string | null;
   area_size: string | null;
+  area_unit?: string | null;
   bedroom_dimensions?: string | null;
   bedroom_dimension?: string | null;
   bedroom_size?: string | null;

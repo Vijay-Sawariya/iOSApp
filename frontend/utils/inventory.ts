@@ -22,7 +22,8 @@ const floorLabel = (floor: string) => floorNames[floor.replace(/\s/g, '').toUppe
 const amount = (value: string | number) => Number.isFinite(Number(value)) ? String(Number(Number(value).toFixed(2))) : String(value);
 
 export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): string => {
-  const size = `${lead.area_size ? amount(lead.area_size) : 'NA'} Sq. Yds.`;
+  const areaLabel = ({ YD: 'Sq. Yds.', SQFT: 'Sq. Ft.', SQM: 'Sq. M.', ACRE: 'Acres' } as Record<string, string>)[lead.area_unit || 'YD'] || lead.area_unit;
+  const size = `${lead.area_size ? amount(lead.area_size) : 'NA'} ${areaLabel}`;
   const location = lead.location?.trim() || 'NA';
   const floor = (lead.floor || lead.property_type || '').split(/[,|]/).filter(Boolean).map(floorLabel).join(' | ');
   const bedrooms = (lead.bhk || '').split(/[,|]/).map(value => {

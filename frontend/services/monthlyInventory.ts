@@ -16,10 +16,10 @@ export function bookFloors(raw: string): string {
 export function conversionParams(entry: MonthlyEntry): Record<string, string> {
   const rent = entry.category.endsWith('_rent');
   return {
-    monthlyEntryId: String(entry.id), initialLeadType: rent ? 'landlord' : 'seller', type: 'inventory',
-    name: entry.owner_name || '', phone: (entry.phone || '').split(',')[0].trim(), location: entry.location || '',
+    monthlyEntryId: String(entry.id), initialLeadType: 'builder', type: 'inventory',
+    name: (entry.owner_name || '').toLowerCase().replace(/(^|[\s('-])(\p{L})/gu, (_, prefix, letter) => prefix + letter.toUpperCase()), phone: (entry.phone || '').split(',')[0].trim(), location: entry.location || '',
     address: entry.address || '', floor: bookFloors(entry.floor), bhk: (entry.configuration || '').replace(/(\d+)BR/gi, '$1 BHK').replace(/\+/g, ','),
     areaSize: entry.area_size == null ? '' : String(entry.area_size), areaUnit: entry.area_unit || 'YD',
-    unit: rent ? 'K' : 'CR', notes: entry.note || '', propertyType: entry.category.startsWith('commercial_') ? 'Commercial' : 'Builder Floor',
+    unit: rent ? 'K' : 'CR', notes: '', propertyType: entry.category.startsWith('commercial_') ? 'Commercial' : 'Builder Floor',
   };
 }

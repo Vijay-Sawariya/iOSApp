@@ -226,6 +226,11 @@ export const api = {
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not load monthly inventory. Please retry when connected.'));
     return response.json();
   },
+  deleteMonthlyInventory: async (id: number) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/${id}/delete`, { method: 'POST', headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not delete this inventory.'));
+    return response.json();
+  },
   convertMonthlyInventory: async (id: number, data: any) => {
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/${id}/convert`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),

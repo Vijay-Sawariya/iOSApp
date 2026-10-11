@@ -20,8 +20,8 @@ LeadCreate = model_scope['LeadCreate']
 USER = {'id': 7, 'username': 'vsawariya'}
 ENTRY = dict(id=10, book_id=1, book_month='2026-10-01', category='residential_sale', owner_name='Owner',
              address='C-5', location='Anand Niketan', area_size='400', area_unit='YD', floor='BMT+GF+FF',
-             configuration='4BR', phone='9811111111', note='Original note', converted_lead_id=None)
-PAYLOAD = dict(name='Owner', phone='9811111111', location='Anand Niketan', address='C-5', lead_type='seller',
+             configuration='4BR', phone='9811111111', note='Original note', converted_lead_id=None, is_deleted=0, identity_hash='a'*64)
+PAYLOAD = dict(name='ANKUR ARORA', phone='9811111111', location='Anand Niketan', address='C-5', lead_type='seller',
                property_type='Builder Floor', unit='CR', area_size='400', floor='BMT+GF,FF', bhk='4 BHK',
                floor_pricing=[{'floor': 'BMT+GF', 'price': '5'}, {'floor': 'FF', 'price': '3'}])
 
@@ -30,6 +30,7 @@ class Database:
     def __init__(self):
         self.entry = dict(ENTRY)
         self.leads = []
+        self.exclusions = []
         self.prices = []
         self.saved = None
         self.commits = 0
@@ -43,14 +44,14 @@ class Database:
         self.sql = connection.cursor()
 
     def begin(self):
-        self.saved = copy.deepcopy((self.entry, self.leads, self.prices))
+        self.saved = copy.deepcopy((self.entry, self.leads, self.prices, self.exclusions))
 
     def commit(self):
         self.commits += 1
 
     def rollback(self):
         self.rollbacks += 1
-        self.entry, self.leads, self.prices = self.saved
+        self.entry, self.leads, self.prices, self.exclusions = self.saved
 
     def cursor(self):
         return self
@@ -67,6 +68,12 @@ class Database:
             self.leads.append(dict(zip(fields, args), id=100))
         elif query.startswith('INSERT INTO inventory_floor_pricing'):
             self.prices.append(args)
+        elif query.startswith('INSERT INTO monthly_inventory_exclusions'):
+            if args[:2] not in self.exclusions: self.exclusions.append(args[:2])
+        elif 'SET e.is_deleted=1' in query:
+            self.entry['is_deleted'] = 1
+        elif query.startswith('SELECT e.identity_hash'):
+            self.result = self.entry
         elif query.startswith('UPDATE monthly_inventory_entries'):
             self.entry['converted_lead_id'] = args[0]
         elif 'FOR UPDATE' in query:
@@ -78,9 +85,9 @@ class Database:
         elif 'FROM leads' in query:
             self.result = sorted(self.leads, key=lambda l: -l['id'])
         elif 'COUNT(*)' in query:
-            self.result = {'total': 1}
+            self.result = {'total': 0 if self.entry['is_deleted'] else 1}
         elif 'CASE WHEN' in query:
-            self.result = [dict(self.entry, entry_status='First book')]
+            self.result = [] if self.entry['is_deleted'] else [dict(self.entry, entry_status='First book')]
         elif 'SELECT id,book_month,category FROM monthly_inventory_pdfs' in query:
             self.result = [dict(id=8, book_month=ENTRY['book_month'], category=ENTRY['category'])]
         elif 'DISTINCT DATE_FORMAT' in query:
@@ -120,6 +127,7 @@ class MonthlyTests(unittest.TestCase):
             self.assertEqual(self.client.get('/api/monthly-inventory').status_code, 403)
             self.assertEqual(self.client.get('/api/monthly-inventory/pdfs/8').status_code, 403)
             self.assertEqual(self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD).status_code, 403)
+            self.assertEqual(self.client.post('/api/monthly-inventory/10/delete').status_code, 403)
         self.assertEqual(self.db.queries, [])
 
     def test_conversion_is_atomic_and_retry_is_idempotent(self):
@@ -131,9 +139,11 @@ class MonthlyTests(unittest.TestCase):
         self.assertEqual(self.db.entry['converted_lead_id'], 100)
         self.assertEqual(self.db.prices, [(100, 'BMT+GF', 5), (100, 'FF', 3)])
         lead = self.db.leads[0]
-        self.assertEqual((lead['source_type'], lead['area_size'], lead['created_by']), ('Inventory', '400 YD', 7))
+        self.assertEqual((lead['source_type'], lead['area_size'], lead['created_by']), ('Inventory', '400', 7))
         self.assertEqual((lead['budget_min'], lead['budget_max']), (3, 5))
-        self.assertIn('entry #10\nOriginal book entry:\nOriginal note', lead['notes'])
+        self.assertEqual(lead['notes'], '')
+        self.assertEqual(lead['name'], 'Ankur Arora')
+        self.assertEqual(lead['area_unit'], 'YD')
 
     def test_failed_pricing_or_status_rolls_back_main_lead(self):
         for failure in ('INSERT INTO inventory_floor_pricing', 'UPDATE monthly_inventory_entries'):
@@ -179,6 +189,30 @@ class MonthlyTests(unittest.TestCase):
         self.assertFalse(data['has_more'])
         self.assertEqual(self.client.get('/api/monthly-inventory?month=2026-99').status_code, 422)
         self.assertEqual(self.client.get('/api/monthly-inventory?page=0').status_code, 422)
+
+    def test_soft_delete_hides_card_blocks_conversion_and_keeps_main_lead(self):
+        self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD)
+        for _ in range(2):
+            response = self.client.post('/api/monthly-inventory/10/delete')
+            self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.db.exclusions), 1)
+        self.assertEqual(len(self.db.leads), 1)
+        self.assertEqual(self.client.get('/api/monthly-inventory').json()['items'], [])
+        self.assertEqual(self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD).status_code, 404)
+
+    def test_delete_failure_rolls_back_exclusion(self):
+        self.db.fail = 'SET e.is_deleted=1'
+        with self.assertRaises(RuntimeError):
+            books.soft_delete(self.db, 10, USER)
+        self.assertEqual(self.db.exclusions, [])
+        self.assertFalse(self.db.entry['is_deleted'])
+
+    def test_custom_notes_and_area_unit_saved_separately(self):
+        response = self.client.post('/api/monthly-inventory/10/convert', json=dict(PAYLOAD, notes='Call tomorrow', area_unit='SQFT'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.db.leads[0]['notes'], 'Call tomorrow')
+        self.assertEqual(self.db.leads[0]['area_size'], '400')
+        self.assertEqual(self.db.leads[0]['area_unit'], 'SQFT')
 
     def test_pdf_stream_preserves_all_chunks_and_is_private(self):
         response = self.client.get('/api/monthly-inventory/pdfs/8')

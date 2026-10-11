@@ -100,6 +100,7 @@ export default function EditLeadScreen() {
   const [bhk, setBhk] = useState('');
   const [selectedFloors, setSelectedFloors] = useState<string[]>([]);
   const [areaSize, setAreaSize] = useState('');
+  const [areaUnit, setAreaUnit] = useState('YD');
   const [facing, setFacing] = useState('');
   const [selectedFacings, setSelectedFacings] = useState<string[]>([]); // For Clients multi-select
   
@@ -203,6 +204,7 @@ export default function EditLeadScreen() {
         setSelectedFloors(data.floor.split(',').map((f: string) => f.trim()).filter(Boolean));
       }
       setAreaSize(data.area_size?.toString() || '');
+      setAreaUnit(data.area_unit || 'YD');
       setFacing(data.building_facing || '');
       // For clients, parse comma-separated facings
       if (data.building_facing && isClientType(data.lead_type)) {
@@ -633,7 +635,7 @@ export default function EditLeadScreen() {
           />
 
           <FormInput
-            label="Area Size (sq.yds)"
+            label={`Area Size (${areaUnit})`}
             value={areaSize}
             onChangeText={setAreaSize}
             placeholder="Enter area"

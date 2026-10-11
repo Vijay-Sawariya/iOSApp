@@ -18,22 +18,23 @@ test('book floors preserve basement/ground and terrace combinations', () => {
   assert.equal(bookFloors(''), '');
 });
 
-test('sale conversion prefills full original note and one primary phone', () => {
-  const params = conversionParams({ id: 10, category: 'residential_sale', owner_name: 'Owner', phone: '9811111111, 9822222222',
+test('sale conversion keeps original note out of Lead Notes and one primary phone', () => {
+  const params = conversionParams({ id: 10, category: 'residential_sale', owner_name: 'ANKUR ARORA', phone: '9811111111, 9822222222',
     location: 'Anand Niketan', address: 'C-5', area_size: '400.00', area_unit: 'YD', floor: 'BMT+GF+FF', configuration: '4BR+2BR', note: 'Original 9822222222' });
   assert.equal(params.monthlyEntryId, '10');
+  assert.equal(params.name, 'Ankur Arora');
   assert.equal(params.phone, '9811111111');
-  assert.equal(params.initialLeadType, 'seller');
+  assert.equal(params.initialLeadType, 'builder');
   assert.equal(params.unit, 'CR');
   assert.equal(params.propertyType, 'Builder Floor');
   assert.equal(params.floor, 'BMT+GF,FF');
   assert.equal(params.bhk, '4 BHK,2 BHK');
-  assert.equal(params.notes, 'Original 9822222222');
+  assert.equal(params.notes, '');
 });
 
-test('commercial rent conversion uses landlord and thousands and retains area unit', () => {
+test('commercial rent conversion uses Builder and thousands and retains area unit', () => {
   const params = conversionParams({ id: 12, category: 'commercial_rent', area_size: 1200, area_unit: 'SQFT' });
-  assert.equal(params.initialLeadType, 'landlord');
+  assert.equal(params.initialLeadType, 'builder');
   assert.equal(params.unit, 'K');
   assert.equal(params.propertyType, 'Commercial');
   assert.equal(params.areaUnit, 'SQFT');

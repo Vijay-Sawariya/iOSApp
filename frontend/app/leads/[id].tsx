@@ -540,7 +540,7 @@ export default function LeadDetailScreen() {
     if (lead.property_type) propDetails.push(lead.property_type);
     if (lead.bhk) propDetails.push(lead.bhk);
     if (lead.floor) propDetails.push(lead.floor);
-    if (lead.area_size) propDetails.push(`${lead.area_size} sq yds`);
+    if (lead.area_size) propDetails.push(`${lead.area_size} ${lead.area_unit || 'YD'}`);
     if (lead.property_status) propDetails.push(lead.property_status);
     if (propDetails.length > 0) {
       details += `🏠 ${propDetails.join(' | ')}\n`;
@@ -1044,7 +1044,7 @@ export default function LeadDetailScreen() {
         {renderDetailRow('business', 'Type', lead.property_type)}
         {renderDetailRow('bed', 'BHK', lead.bhk)}
         {renderDetailRow('layers', 'Floor', lead.floor)}
-        {renderDetailRow('resize', 'Covered Area', lead.area_size ? `${safeStr(lead.area_size)} sq.yds` : null)}
+        {renderDetailRow('resize', 'Covered Area', lead.area_size ? `${safeStr(lead.area_size)} ${lead.area_unit || 'YD'}` : null)}
         {isInventoryLead() ? renderDetailRow('expand', 'Bedroom Dimensions', bedroomDimensions) : null}
         {renderDetailRow('car', 'Parking', lead.car_parking_number)}
         {renderDetailRow('arrow-up', 'Lift', lead.lift_available)}
