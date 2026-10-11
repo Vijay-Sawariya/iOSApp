@@ -70,6 +70,9 @@ const toPossessionDate = (month: string, year: string): string | null => {
 export default function AddLeadScreen() {
   const params = useLocalSearchParams<{
     type?: string;
+    monthlyEntryId?: string;
+    initialLeadType?: string;
+    areaUnit?: string;
     legacyId?: string;
     legacySource?: string;
     name?: string;
@@ -101,7 +104,7 @@ export default function AddLeadScreen() {
   const [phone, setPhone] = useState(params.phone || '');
   
   // Lead Classification - default based on form type
-  const [leadType, setLeadType] = useState(isClientForm ? 'buyer' : 'seller');
+  const [leadType, setLeadType] = useState(params.monthlyEntryId && params.initialLeadType === 'landlord' ? 'landlord' : isClientForm ? 'buyer' : 'seller');
   const [leadTemperature, setLeadTemperature] = useState('Hot');
   const [leadStatus, setLeadStatus] = useState('New');
   const [inventoryStatuses, setInventoryStatuses] = useState<string[]>(['Available']);
@@ -118,6 +121,7 @@ export default function AddLeadScreen() {
     (params.floor || '').split(',').map((floor) => floor.trim()).filter(Boolean)
   );
   const [areaSize, setAreaSize] = useState(params.areaSize || '');
+  const [areaUnit, setAreaUnit] = useState(params.areaUnit || 'YD');
   const [facing, setFacing] = useState('');
   const [selectedFacings, setSelectedFacings] = useState<string[]>([]); // For Clients multi-select
   
@@ -270,6 +274,10 @@ export default function AddLeadScreen() {
   };
 
   const handleSave = async () => {
+    if (params.monthlyEntryId && (user?.username !== 'vsawariya' || !isOnline)) {
+      Alert.alert('Cannot convert', 'Monthly book conversion requires vsawariya to be signed in and online.');
+      return;
+    }
     if (isClient && user?.role?.trim().toLowerCase() !== 'admin' && !isColdCallingForm) {
       Alert.alert('Cold Calling Required', 'Please add buyers and tenants from the Cold Calling screen.');
       return;
@@ -341,7 +349,9 @@ export default function AddLeadScreen() {
         }
       }
 
-      const created = await api.createLead(leadData);
+      const created = params.monthlyEntryId
+        ? await api.convertMonthlyInventory(Number(params.monthlyEntryId), { ...leadData, area_unit: areaUnit })
+        : await api.createLead(leadData);
       let legacyStatusUpdated = false;
       if (!created?.is_pending_sync && params.legacyId && params.legacySource) {
         try {
@@ -361,16 +371,20 @@ export default function AddLeadScreen() {
           ? 'Lead saved on this device and will sync when internet is available.'
           : params.legacyId && !legacyStatusUpdated
             ? 'Lead created successfully. Legacy status will need to be updated when the server is available.'
-            : 'Lead created successfully',
+            : params.monthlyEntryId ? (created.already_converted ? 'This entry was already converted. Its inventory lead is available from View Lead.' : 'Inventory lead created and book entry marked Converted.') : 'Lead created successfully',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (err) {
       console.error('Create lead error:', err);
-      Alert.alert('Error', 'Failed to create lead');
+      Alert.alert('Error', params.monthlyEntryId && err instanceof Error ? err.message : 'Failed to create lead');
     } finally {
       setSaving(false);
     }
   };
+
+  if (params.monthlyEntryId && user?.username !== 'vsawariya') {
+    return <SafeAreaView style={styles.container}><Text>Monthly book conversion is available only to vsawariya.</Text></SafeAreaView>;
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -383,7 +397,7 @@ export default function AddLeadScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="#1F2937" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{'Add New Lead'}</Text>
+          <Text style={styles.headerTitle}>{params.monthlyEntryId ? 'Convert Book Inventory' : 'Add New Lead'}</Text>
           <TouchableOpacity 
             style={[styles.saveButton, saving && styles.disabledButton]}
             onPress={handleSave}
@@ -392,7 +406,7 @@ export default function AddLeadScreen() {
             {saving ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.saveButtonText}>{'Save'}</Text>
+              <Text style={styles.saveButtonText}>{params.monthlyEntryId ? 'Convert' : 'Save'}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -401,7 +415,7 @@ export default function AddLeadScreen() {
         {!isOnline && (
           <View style={styles.offlineDraftBanner}>
             <Ionicons name="cloud-offline-outline" size={18} color="#D97706" />
-            <Text style={styles.offlineDraftText}>Offline mode: this lead will be queued for sync.</Text>
+            <Text style={styles.offlineDraftText}>{params.monthlyEntryId ? 'Connect to the internet to convert this book entry.' : 'Offline mode: this lead will be queued for sync.'}</Text>
           </View>
         )}
 
@@ -413,7 +427,7 @@ export default function AddLeadScreen() {
           <CustomDropdown
             label="Lead Type"
             value={leadType}
-            options={isColdCallingForm ? [...LEAD_TYPES] : isClientForm ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
+            options={params.monthlyEntryId ? ['seller', 'landlord', 'builder'] : isColdCallingForm ? [...LEAD_TYPES] : isClientForm ? [...CLIENT_LEAD_TYPES] : [...INVENTORY_LEAD_TYPES]}
             onSelect={setLeadType}
             displayValue={leadType.charAt(0).toUpperCase() + leadType.slice(1)}
             required
@@ -550,7 +564,7 @@ export default function AddLeadScreen() {
           <CustomDropdown
             label="Property Type"
             value={propertyType}
-            options={[...PROPERTY_TYPES]}
+            options={params.monthlyEntryId ? ['Builder Floor', 'Apartment', 'Commercial', 'Office Space', 'Shop', 'Plot', 'Villa', 'Farm House'] : [...PROPERTY_TYPES]}
             onSelect={setPropertyType}
             placeholder="Select Property Type"
           />
@@ -567,18 +581,20 @@ export default function AddLeadScreen() {
           <MultiSelectFloor
             label="Floor"
             selectedFloors={selectedFloors}
-            options={[...FLOORS]}
+            options={params.monthlyEntryId ? [...new Set([...FLOORS, ...selectedFloors])] : [...FLOORS]}
             onSelect={handleFloorSelection}
             placeholder="Select Floors"
           />
 
           <FormInput
-            label="Area Size (sq.yds)"
+            label={params.monthlyEntryId ? `Area Size (${areaUnit})` : "Area Size (sq.yds)"}
             value={areaSize}
             onChangeText={setAreaSize}
             placeholder="Enter area"
             keyboardType="decimal-pad"
           />
+
+          {params.monthlyEntryId && <CustomDropdown label="Area Unit" value={areaUnit} options={['YD', 'SQFT', 'SQM', 'ACRE']} onSelect={setAreaUnit} />}
 
           {/* Facing: Multi-select for Clients, Single for Inventory */}
           {isClient ? (

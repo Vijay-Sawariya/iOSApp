@@ -2,6 +2,7 @@ import { CACHE_KEYS, cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from './database';
 import { API_URL } from '../constants/config';
+import { MonthlyInventoryPage } from './monthlyInventory';
 
 let authToken: string | null = null;
 // Brief, session-only reuse for expensive performance reports.
@@ -218,6 +219,23 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
+  getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number }): Promise<MonthlyInventoryPage> => {
+    const query = Object.entries(filters).map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&');
+    const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });
+    notifyAuthFailure(response);
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not load monthly inventory. Please retry when connected.'));
+    return response.json();
+  },
+  convertMonthlyInventory: async (id: number, data: any) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/${id}/convert`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    notifyAuthFailure(response);
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not convert this book entry.'));
+    const result = await response.json();
+    await Promise.allSettled([invalidateLeadAccessCaches(result.id), cacheService.remove(CACHE_KEYS.DASHBOARD_STATS)]);
+    return result;
+  },
   getFeatureFlags: async (): Promise<{ is_admin: boolean; flags: Record<string, boolean> }> => {
     const response = await fetchWithTimeout(`${API_URL}/api/user/feature-flags`, {
       headers: getHeaders(),
