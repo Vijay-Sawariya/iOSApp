@@ -1,3 +1,5 @@
+import { Picker } from '@react-native-picker/picker';
+import { REMINDER_FREQUENCIES, ReminderFrequency } from '../../../services/reminderFrequency';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -100,6 +102,7 @@ export default function EditReminderScreen() {
   const [title, setTitle] = useState('');
   const [reminderType, setReminderType] = useState('Call');
   const [notes, setNotes] = useState('');
+  const [notificationFrequency, setNotificationFrequency] = useState<ReminderFrequency>('daily');
   const [status, setStatus] = useState('pending');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
@@ -136,6 +139,7 @@ export default function EditReminderScreen() {
         setTitle(reminder.title);
         setReminderType(reminder.reminder_type);
         setNotes(reminder.notes || '');
+        setNotificationFrequency(reminder.notification_frequency || 'daily');
         setStatus(reminder.status);
         // Preserve the actual assignee while the optional picker loads.
         setSelectedAssignedUser(reminder.assigned_to ? {
@@ -255,6 +259,7 @@ export default function EditReminderScreen() {
         reminder_date: reminderDateIST,
         reminder_type: reminderType,
         notes: notes || null,
+        notification_frequency: notificationFrequency,
         lead_id: selectedLead?.id || null,
         assigned_to: selectedAssignedUser?.id || null,
         status,
@@ -274,7 +279,9 @@ export default function EditReminderScreen() {
           selectedDay,
           selectedHour,
           selectedMinute,
-          selectedLead?.name
+          selectedLead?.name,
+          true,
+          notificationFrequency
         );
       } else {
         await notificationService.cancelReminderNotification(reminderId);
@@ -347,7 +354,7 @@ export default function EditReminderScreen() {
       if (action === 'snooze') await loadData();
       Alert.alert(action === 'stop' ? 'Alerts stopped' : 'Snoozed', action === 'stop'
         ? 'Hourly notifications for this reminder have been stopped.'
-        : 'The reminder and hourly alerts will resume in six hours.');
+        : 'The reminder and selected notification schedule will resume in six hours.');
     } catch (error) {
       console.error('Reminder notification action failed:', error);
       Alert.alert('Error', error instanceof Error ? error.message : 'Unable to update this reminder. Please try again.');
@@ -633,11 +640,18 @@ export default function EditReminderScreen() {
             </View>
             {status === 'pending' && (
               <Text style={styles.notificationHint}>
-                You will be notified 10 minutes before (IST)
+                Notifications follow the selected frequency (IST)
               </Text>
             )}
           </View>
 
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notification frequency</Text>
+            <Picker selectedValue={notificationFrequency} onValueChange={setNotificationFrequency} accessibilityLabel="Notification frequency">
+              {REMINDER_FREQUENCIES.map(option => <Picker.Item key={option.value} label={option.label} value={option.value} />)}
+            </Picker>
+            <Text>Repeats until completed or stopped. Times use India time (IST).</Text>
+          </View>
           {/* Notes */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notes</Text>

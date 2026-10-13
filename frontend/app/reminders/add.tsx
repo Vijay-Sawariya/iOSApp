@@ -1,3 +1,5 @@
+import { Picker } from '@react-native-picker/picker';
+import { REMINDER_FREQUENCIES, ReminderFrequency } from '../../services/reminderFrequency';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -102,6 +104,7 @@ export default function AddReminderScreen() {
   const [title, setTitle] = useState('');
   const [reminderType, setReminderType] = useState('Call');
   const [notes, setNotes] = useState('');
+  const [notificationFrequency, setNotificationFrequency] = useState<ReminderFrequency>('daily');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
   const [selectedAssignedUser, setSelectedAssignedUser] = useState<AssignableUser | null>(null);
@@ -239,6 +242,7 @@ export default function AddReminderScreen() {
         reminder_date: reminderDateIST,
         reminder_type: reminderType,
         notes: notes || null,
+        notification_frequency: notificationFrequency,
         lead_id: selectedLead?.id || null,
         assigned_to: selectedAssignedUser?.id || null,
         status: 'pending',
@@ -251,7 +255,7 @@ export default function AddReminderScreen() {
       try {
         // Schedule notification - create the notification time directly
         // The selectedHour and selectedMinute are already in IST
-        // We need to schedule the notification 10 minutes before
+        // Use the selected notification frequency.
         const notificationId = await notificationService.scheduleReminderNotificationIST(
           created.id.toString(),
           title,
@@ -261,7 +265,9 @@ export default function AddReminderScreen() {
           selectedDay,
           selectedHour,
           selectedMinute,
-          selectedLead?.name
+          selectedLead?.name,
+          true,
+          notificationFrequency
         );
         notificationScheduled = Boolean(notificationId);
       } catch (notificationError) {
@@ -272,8 +278,10 @@ export default function AddReminderScreen() {
         created?.is_pending_sync ? 'Queued Offline' : 'Success',
         created?.is_pending_sync
           ? 'Follow-up saved on this device and will sync when internet is available.'
+          : notificationFrequency === 'off'
+          ? 'Follow-up created with notifications turned off.'
           : notificationScheduled
-          ? 'Follow-up created! Notifications will begin at the due time and repeat hourly until stopped or snoozed.'
+          ? 'Follow-up created! Notifications will follow the selected frequency until completed or stopped.'
           : 'Follow-up created. Enable notifications to receive reminder alerts.',
         [
           { text: 'OK', onPress: () => router.replace('/(tabs)/reminders') }
@@ -487,10 +495,17 @@ export default function AddReminderScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.notificationHint}>
-              🔔 You&apos;ll be notified 10 minutes before (IST)
+              🔔 Notifications follow the selected frequency (IST)
             </Text>
           </View>
 
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notification frequency</Text>
+            <Picker selectedValue={notificationFrequency} onValueChange={setNotificationFrequency} accessibilityLabel="Notification frequency">
+              {REMINDER_FREQUENCIES.map(option => <Picker.Item key={option.value} label={option.label} value={option.value} />)}
+            </Picker>
+            <Text>Repeats until completed or stopped. Times use India time (IST).</Text>
+          </View>
           {/* Notes */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notes</Text>

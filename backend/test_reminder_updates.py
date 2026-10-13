@@ -64,6 +64,21 @@ class ReminderUpdateTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 404)
         self.assertEqual(len(cursor.queries), 2)
 
+    def test_frequency_is_saved_and_both_delivery_clocks_reset(self):
+        cursor = Cursor(exists=True, changed=1)
+        handler(cursor)(42, {'notification_frequency': 'four_hourly'}, {'id': 7, 'role': 'user'})
+        sql, values = cursor.queries[0]
+        self.assertIn('notification_frequency = %s', sql)
+        self.assertIn('assigned_notification_last_at = %s', sql)
+        self.assertEqual(values[:3], ['four_hourly', None, None])
+
+    def test_invalid_frequency_is_rejected(self):
+        cursor = Cursor(exists=True, changed=1)
+        with self.assertRaises(HTTPException) as error:
+            handler(cursor)(42, {'notification_frequency': 'invalid'}, {'id': 7, 'role': 'user'})
+        self.assertEqual(error.exception.status_code, 400)
+        self.assertEqual(cursor.queries, [])
+
     def test_changed_update_succeeds(self):
         cursor = Cursor(exists=True, changed=1)
         self.assertEqual(handler(cursor)(42, {'status': 'Dismissed'}, {'id': 7, 'role': 'user'})['id'], 42)

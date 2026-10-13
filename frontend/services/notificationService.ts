@@ -1,3 +1,4 @@
+import { reminderDelays } from './reminderFrequency';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Alert } from 'react-native';
@@ -34,6 +35,8 @@ export interface ScheduledNotification {
   notificationId?: string;
   notificationIds?: string[];
   scheduledTime: string;
+  frequency?: string;
+  scheduleEndsAt?: number;
 }
 
 /**
@@ -223,7 +226,7 @@ export const notificationService = {
   },
 
   /**
-   * Schedule a notification 10 minutes before the reminder time using IST components
+   * Schedule reminders using the selected frequency and IST components
    * This method correctly handles IST timezone without any Date conversion issues
    */
   scheduleReminderNotificationIST: async (
@@ -236,7 +239,8 @@ export const notificationService = {
     hour: number,   // 0-23 in IST
     minute: number,
     leadName?: string,
-    reactivateStoppedReminder: boolean = true
+    reactivateStoppedReminder: boolean = true,
+    frequency: string = 'daily'
   ): Promise<string | null> => {
     try {
       // Web doesn't support push notifications
@@ -256,22 +260,20 @@ export const notificationService = {
         await notificationService.clearStoppedReminder(reminderId);
       }
 
-      const secondsUntilDue = getSecondsUntilIST(year, month, day, hour, minute);
-      const firstDelay = secondsUntilDue > 0
-        ? secondsUntilDue
-        : Math.max(60, 3600 - ((-secondsUntilDue) % 3600));
-
-      // Cancel any existing notification for this reminder
       await notificationService.cancelReminderNotification(reminderId);
+      const now = Date.now();
+      const due = Date.UTC(year, month - 1, day, hour, minute) - IST_OFFSET_MINUTES * 60000;
+      const delays = reminderDelays(due, now, frequency);
+      if (!delays.length) return null;
 
       const notificationTitle = `🔔 Reminder: ${title}`;
       const notificationBody = leadName
-        ? `Follow-up with ${leadName}. This reminder will repeat every hour until stopped or snoozed.`
-        : body || 'This reminder will repeat every hour until stopped or snoozed.';
+        ? `Follow-up with ${leadName}. This reminder follows your notification schedule until completed or stopped.`
+        : body || 'This reminder follows your notification schedule until completed or stopped.';
       const notificationIds: string[] = [];
-      // iOS limits pending local notifications. Keep a rolling 24-hour window;
+      // iOS limits pending local notifications. Keep a rolling window of 24 occurrences;
       // editing/snoozing the reminder replaces the entire sequence.
-      for (let index = 0; index < 24; index += 1) {
+      for (let index = 0; index < delays.length; index += 1) {
         try {
           const notificationId = await Notifications.scheduleNotificationAsync({
             content: {
@@ -292,13 +294,13 @@ export const notificationService = {
             },
             trigger: {
               type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-              seconds: firstDelay + (index * 3600),
+              seconds: delays[index],
               channelId: Platform.OS === 'android' ? 'reminders' : undefined,
             },
           });
           notificationIds.push(notificationId);
         } catch (scheduleError) {
-          console.warn(`[Notification] Hourly schedule stopped after ${notificationIds.length} alerts:`, scheduleError);
+          console.warn(`[Notification] Reminder schedule stopped after ${notificationIds.length} alerts:`, scheduleError);
           break;
         }
       }
@@ -309,9 +311,9 @@ export const notificationService = {
       await notificationService.storeNotificationMapping(
         reminderId,
         notificationIds,
-        istTimeStr
+        istTimeStr, frequency, now + delays[notificationIds.length - 1] * 1000
       );
-      console.log(`[Notification] Scheduled ${notificationIds.length} hourly alerts for reminder ${reminderId}`);
+      console.log(`[Notification] Scheduled ${notificationIds.length} scheduled alerts for reminder ${reminderId}`);
       return notificationIds[0] || null;
     } catch (error) {
       console.error('Error scheduling notification:', error);
@@ -354,7 +356,9 @@ export const notificationService = {
   storeNotificationMapping: async (
     reminderId: string,
     notificationId: string | string[],
-    scheduledTime: string
+    scheduledTime: string,
+    frequency: string = 'daily',
+    scheduleEndsAt?: number
   ): Promise<void> => {
     try {
       const stored = await AsyncStorage.getItem(NOTIFICATION_STORAGE_KEY);
@@ -365,7 +369,7 @@ export const notificationService = {
       
       // Add new entry
       const notificationIds = Array.isArray(notificationId) ? notificationId : [notificationId];
-      notifications.push({ reminderId, notificationId: notificationIds[0], notificationIds, scheduledTime });
+      notifications.push({ reminderId, notificationId: notificationIds[0], notificationIds, scheduledTime, frequency, scheduleEndsAt });
       
       await AsyncStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(notifications));
     } catch (error) {
@@ -425,7 +429,7 @@ export const notificationService = {
     for (const item of existing) {
       const reminder = serverById.get(item.reminderId);
       const status = String(reminder?.status || '').toLowerCase();
-      if (!serverById.has(item.reminderId) || !['pending', 'up coming', 'snoozed'].includes(status)) {
+      if (!serverById.has(item.reminderId) || (!['pending', 'missed', 'up coming', 'snoozed'].includes(status) || reminder?.notification_frequency === 'off')) {
         await notificationService.cancelReminderNotification(item.reminderId);
       }
     }
@@ -437,21 +441,22 @@ export const notificationService = {
         continue;
       }
       const status = String(reminder.status || '').toLowerCase();
-      if (!['pending', 'up coming', 'snoozed'].includes(status)) continue;
+      if ((!['pending', 'missed', 'up coming', 'snoozed'].includes(status) || reminder?.notification_frequency === 'off')) continue;
       const value = String(reminder.reminder_date || '').replace(' ', 'T');
       const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
       if (!match) continue;
       const existingReminder = existingById.get(String(reminder.id));
       const targetMinute = value.slice(0, 16);
       const existingMinute = String(existingReminder?.scheduledTime || '').replace(' ', 'T').slice(0, 16);
-      if (existingReminder && existingMinute === targetMinute) continue;
+      if (existingReminder && existingMinute === targetMinute && existingReminder.frequency === (reminder.notification_frequency || 'daily') && (existingReminder.scheduleEndsAt || 0) > Date.now()) continue;
       await notificationService.scheduleReminderNotificationIST(
         reminderId,
         reminder.title,
         reminder.notes || reminder.reminder_type || 'Follow-up reminder',
         Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]),
         reminder.lead_name,
-        false
+        false,
+        reminder.notification_frequency || 'daily'
       );
     }
   },
@@ -470,11 +475,11 @@ export const notificationService = {
     const resumeAt = Math.ceil((Date.now() + 6 * 60 * 60 * 1000) / 60000) * 60000;
     const ist = new Date(resumeAt + IST_OFFSET_MINUTES * 60000);
     const reminderDate = ist.toISOString().slice(0, 19);
-    await api.updateReminder(reminderId, { reminder_date: reminderDate, status: 'Pending' });
+    const updated = await api.updateReminder(reminderId, { reminder_date: reminderDate, status: 'Pending' });
     await notificationService.scheduleReminderNotificationIST(
       reminderId, title, body,
       ist.getUTCFullYear(), ist.getUTCMonth() + 1, ist.getUTCDate(),
-      ist.getUTCHours(), ist.getUTCMinutes(), leadName
+      ist.getUTCHours(), ist.getUTCMinutes(), leadName, true, updated.notification_frequency || 'daily'
     );
   },
 

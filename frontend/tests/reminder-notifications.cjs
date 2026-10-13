@@ -29,7 +29,10 @@ function setup() {
       return identifier;
     },
   };
+  const frequencyExports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../services/reminderFrequency.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, { exports: frequencyExports });
   const mocks = {
+    './reminderFrequency': frequencyExports,
     'expo-notifications': notifications,
     'expo-device': { isDevice: true },
     'react-native': { Platform: { OS: 'ios' }, Alert: {} },
@@ -37,7 +40,7 @@ function setup() {
       async getItem(key) { return storage.get(key) || null; },
       async setItem(key, value) { storage.set(key, value); },
     },
-    './api': { api: { async updateReminder(id, data) { updates.push({ id, ...data }); } } },
+    './api': { api: { async updateReminder(id, data) { updates.push({ id, ...data }); return { ...data, notification_frequency: 'hourly' }; } } },
   };
   const source = fs.readFileSync(path.join(__dirname, '../services/notificationService.ts'), 'utf8');
   const exports = {};
@@ -83,4 +86,36 @@ test('default tap does not change reminder and category offers six-hour snooze',
   assert.equal(ctx.updates.length, 0);
   await ctx.notificationService.configureReminderActions();
   assert.equal(ctx.getCategory()[0].buttonTitle, 'Snooze 6 Hours');
+});
+
+for (const [frequency, interval] of [['daily',86400], ['five_minutes_before',86400], ['hourly',3600], ['four_hourly',14400]]) {
+  test(`${frequency} schedules the selected interval`, async () => {
+    const ctx = setup();
+    await ctx.notificationService.scheduleReminderNotificationIST('42', 'Call', '', 2026,9,19,10,0, undefined, true, frequency);
+    const alerts = [...ctx.scheduled.values()];
+    assert.equal(alerts.length, 24);
+    assert.equal(alerts[1].trigger.seconds-alerts[0].trigger.seconds,interval);
+    const expected = Date.parse('2026-09-19T10:00:00+05:30') - (frequency==='five_minutes_before'?300000:0);
+    assert.equal(alerts[0].trigger.seconds,Math.ceil((expected-ctx.now)/1000));
+  });
+}
+test('frequency edits reschedule, off cancels, missed reminders continue', async () => {
+  const ctx=setup();
+  const item={id:'42',status:'Missed',reminder_date:'2026-09-19T10:00:00',notification_frequency:'hourly'};
+  await ctx.notificationService.syncAssignedReminderNotifications([item]);
+  assert.equal(ctx.scheduled.size,24);
+  await ctx.notificationService.syncAssignedReminderNotifications([{...item,notification_frequency:'four_hourly'}]);
+  const alerts=[...ctx.scheduled.values()];
+  assert.equal(alerts[1].trigger.seconds-alerts[0].trigger.seconds,14400);
+  await ctx.notificationService.syncAssignedReminderNotifications([{...item,notification_frequency:'off'}]);
+  assert.equal(ctx.scheduled.size,0);
+});
+test('twice daily uses set time and 5 PM India without duplicate slots', async () => {
+ const ctx=setup();
+ await ctx.notificationService.scheduleReminderNotificationIST('42','Call','',2026,9,19,10,0,undefined,true,'twice_daily');
+ const alerts=[...ctx.scheduled.values()];
+ assert.equal(alerts[1].trigger.seconds-alerts[0].trigger.seconds,7*3600);
+ await ctx.notificationService.scheduleReminderNotificationIST('42','Call','',2026,9,19,17,0,undefined,true,'twice_daily');
+ const same=[...ctx.scheduled.values()];
+ assert.equal(same[1].trigger.seconds-same[0].trigger.seconds,86400);
 });
