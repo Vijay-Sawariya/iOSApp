@@ -1,5 +1,5 @@
-import { Picker } from '@react-native-picker/picker';
-import { REMINDER_FREQUENCIES, ReminderFrequency } from '../../services/reminderFrequency';
+import ReminderFrequencyDropdown from '../../components/ReminderFrequencyDropdown';
+import { ReminderFrequency } from '../../services/reminderFrequency';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -501,10 +501,7 @@ export default function AddReminderScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Notification frequency</Text>
-            <Picker selectedValue={notificationFrequency} onValueChange={setNotificationFrequency} accessibilityLabel="Notification frequency">
-              {REMINDER_FREQUENCIES.map(option => <Picker.Item key={option.value} label={option.label} value={option.value} />)}
-            </Picker>
-            <Text>Repeats until completed or stopped. Times use India time (IST).</Text>
+            <ReminderFrequencyDropdown value={notificationFrequency} onChange={setNotificationFrequency} />
           </View>
           {/* Notes */}
           <View style={styles.section}>
