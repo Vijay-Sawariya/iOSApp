@@ -219,6 +219,38 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
+  getEnquiryManagement: async (params: Record<string, string | number | boolean> = {}) => {
+    const query = Object.entries(params).filter(([, v]) => v !== '' && v !== false)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&');
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management?${query}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load enquiries'));
+    return response.json();
+  },
+  getEnquiryDetail: async (id: number) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/${id}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load enquiry'));
+    return response.json();
+  },
+  searchEnquiryLeads: async (id: number, query: string) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/${id}/leads?q=${encodeURIComponent(query)}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to search leads'));
+    return response.json();
+  },
+  updateEnquiry: async (id: number, action: string, payload: Record<string, unknown> = {}) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/${id}/${action}`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to update enquiry'));
+    const result = await response.json();
+    if (action === 'qualify' || action === 'link_existing') await invalidateLeadAccessCaches(result.lead_id);
+    if (['followup', 'assign', 'qualify', 'link_existing'].includes(action)) await invalidateReminderCaches();
+    return result;
+  },
+  getEnquirySyncHistory: async () => {
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/sync-history`, { headers: getHeaders() });
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load sync history'));
+    return response.json();
+  },
   getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number }): Promise<MonthlyInventoryPage> => {
     const query = Object.entries(filters).map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&');
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });

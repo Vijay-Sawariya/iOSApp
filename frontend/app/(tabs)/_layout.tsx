@@ -119,6 +119,8 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleRoutePress('/workbench')}
               visible={hasFeature('daily_workbench')}
             />
+            <MenuItem icon="chatbubbles" label="Enquiries" color={colors.primary} bgColor={colors.primarySoft}
+              onPress={() => handleRoutePress('/enquiries')} visible={hasFeature('enquiry_management')} />
             <MenuItem
               icon="archive"
               label="Legacy"

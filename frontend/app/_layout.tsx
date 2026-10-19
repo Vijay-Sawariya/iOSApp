@@ -105,7 +105,8 @@ function RootLayoutContent() {
       [/^\/builders(?:\/|$)/, 'builders_agents'],
       [/^\/reminders(?:\/|$)/, 'followups'],
       [/^\/workbench(?:\/|$)/, 'daily_workbench'],
-      [/^\/(?:legacy-inventory|enquiries)(?:\/|$)/, 'legacy_inventory'],
+      [/^\/legacy-inventory(?:\/|$)/, 'legacy_inventory'],
+      [/^\/enquiries(?:\/|$)/, 'enquiry_management'],
       [/^\/assigned(?:\/|$)/, 'assigned_leads'],
       [/^\/collaboration(?:\/|$)/, 'team_inbox'],
       [/^\/performance(?:-details)?(?:\/|$)/, 'agent_performance'],
@@ -160,6 +161,7 @@ function RootLayoutContent() {
         <Stack.Screen name="leads/edit/[id]" />
         <Stack.Screen name="workbench" />
         <Stack.Screen name="enquiries" />
+        <Stack.Screen name="enquiries/[id]" />
         <Stack.Screen name="legacy-inventory" />
         <Stack.Screen name="assigned" />
         <Stack.Screen name="collaboration" />
