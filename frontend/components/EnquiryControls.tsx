@@ -15,6 +15,8 @@ export const enquiryStyles = StyleSheet.create({
   text: { color: colors.ink, fontSize: 14, lineHeight: 21 },
   muted: { color: colors.inkMuted, fontSize: 12, lineHeight: 18 },
   badge: { color: colors.primary, backgroundColor: colors.primarySoft, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, fontSize: 12, fontWeight: '700' },
+  invalidBadge: { color: '#a32d37', backgroundColor: '#fce8e8' },
+  convertedBadge: { color: '#26724d', backgroundColor: '#e8f5ee' },
   warning: { color: '#88600b', backgroundColor: '#fff4d8', padding: 10, borderRadius: 8, fontSize: 13 },
   error: { color: '#b42318', padding: 12, backgroundColor: '#feeceb', borderRadius: 8 },
   label: { color: colors.inkMuted, fontSize: 12, fontWeight: '700' },

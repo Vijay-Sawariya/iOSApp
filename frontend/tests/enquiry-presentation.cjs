@@ -26,3 +26,14 @@ test('invalid status display does not change stored workflow values', () => {
   assert.equal(enquiryStatusLabel('Invalid'), 'Junk/Invalid');
   assert.equal(enquiryStatusLabel('Qualified'), 'Qualified');
 });
+
+test('date and time are complete even when mobile Intl provides no time parts', () => {
+  const mobile = {};
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+    exports: mobile,
+    Intl: { DateTimeFormat: function () { return { formatToParts: () => [{ type: 'day', value: '17' }, { type: 'month', value: 'Oct' }, { type: 'year', value: '2026' }] }; } },
+  });
+  assert.equal(mobile.formatEnquiryDate('2026-10-17 21:51:00'), '17 Oct 2026, 09:51 PM');
+  assert.equal(mobile.formatEnquiryDate('2026-10-18T13:35:00'), '18 Oct 2026, 01:35 PM');
+  assert.equal(mobile.formatEnquiryDate('2026-10-18T12:00:00'), '18 Oct 2026, 12:00 PM');
+});
