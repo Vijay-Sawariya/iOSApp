@@ -62,12 +62,12 @@ export default function EnquiryCardActions({ item, users, canAssign, onChanged }
     finally { if (version === searchVersion.current) setSearching(false); }
   };
   const icon = (name: keyof typeof Ionicons.glyphMap, label: string, color: string, onPress: () => void, disabled = false) =>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: disabled || busy }}
-      disabled={disabled || busy} onPress={onPress} style={{ width: 44, height: 44, borderWidth: 1, borderColor: color, borderRadius: 7, alignItems: 'center', justifyContent: 'center', opacity: disabled || busy ? .4 : 1 }}>
-      <Ionicons name={name} size={22} color={color} />
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} hitSlop={4} accessibilityState={{ disabled: disabled || busy }}
+      disabled={disabled || busy} onPress={onPress} style={{ width: 32, height: 32, borderWidth: 1, borderColor: color, borderRadius: 6, alignItems: 'center', justifyContent: 'center', opacity: disabled || busy ? .4 : 1 }}>
+      <Ionicons name={name} size={17} color={color} />
     </TouchableOpacity>;
   return <>
-    <View style={[s.row, { borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}>
+    <View style={[s.row, { borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 6 }]}>
       {!converted && icon(invalid ? 'arrow-undo-outline' : 'ban-outline', invalid ? 'Restore to New' : 'Junk / Invalid', invalid ? '#64748b' : '#ef3340', () => {
         if (invalid) { void save('restore_invalid'); return; }
         Alert.alert('Mark as Junk / Invalid?', 'This enquiry can be restored to New later.', [

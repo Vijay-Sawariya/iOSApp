@@ -5,6 +5,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { formatEnquiryDate, enquiryStatusLabel } from '../services/enquiryPresentation';
+import EnquiryFollowupSummary from '../components/EnquiryFollowupSummary';
 import EnquiryCardActions from '../components/EnquiryCardActions';
 import { colors } from '../constants/theme';
 import { EnquiryButton as Button, EnquiryField as Field, EnquirySelect as Select, EnquiryLoading, enquiryStyles as s } from '../components/EnquiryControls';
@@ -55,7 +57,7 @@ export default function EnquiriesScreen() {
         <Button title={expanded ? 'Hide filters' : 'Search and filters'} onPress={() => setExpanded(v => !v)} secondary />
         {expanded ? <View style={s.card}>
           <Field label="Name, phone, email or property" value={filters.q} onChange={v => update('q', v)} />
-          <Select label="Status" value={filters.status} choices={[{ value: '', label: 'All statuses' }, ...STATUSES]} onChange={v => update('status', v)} />
+          <Select label="Status" value={filters.status} choices={[{ value: '', label: 'All statuses' }, ...STATUSES.map(value => ({ value, label: enquiryStatusLabel(value) }))]} onChange={v => update('status', v)} />
           <Select label="Employee" value={filters.assigned} choices={employeeChoices} onChange={v => update('assigned', v)} />
           <Select label="Sort" value={filters.sort} choices={['newest', 'oldest', 'name', 'status']} onChange={v => update('sort', v)} />
           {(['due', 'duplicates'] as const).map(key => <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: filters[key] }} key={key} onPress={() => update(key, !filters[key])} style={s.row}>
@@ -70,12 +72,19 @@ export default function EnquiriesScreen() {
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
           return <View key={item.id} style={s.card}>
-            <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={s.badge}>{item.main_lead_id ? 'Qualified · Converted' : item.status}</Text></View>
+            <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={s.badge}>{item.main_lead_id ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
             <TouchableOpacity accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><Text style={[s.text, { color: colors.accent }]}>{item.phone}</Text>
             <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}
             <Text style={s.muted}>Best time to call: {bestTime ? bestTime.replace(/_/g, ' ') : 'Not provided'}</Text>
-            <Text style={s.muted}>Assigned to: {item.employee || 'Unassigned'}{`\n`}Imported: {item.imported_at}</Text>
+            <View style={[s.row, { alignItems: 'flex-start', borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}>
+              <View style={{ flex: 1, gap: 4 }}><Text style={s.muted}>Assigned to</Text><Text style={s.text}>{item.employee || 'Unassigned'}</Text></View>
+              <View style={{ flex: 1, gap: 4 }}><Text style={s.muted}>Imported</Text><Text style={s.text}>{formatEnquiryDate(item.imported_at)}</Text></View>
+            </View>
+            {item.next_followup && <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 6 }}>
+              <EnquiryFollowupSummary followup={item.next_followup} />
+              {item.followup_count > 1 && <TouchableOpacity accessibilityRole="button" onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={[s.text, { color: colors.primary }]}>View all {item.followup_count} follow-ups</Text></TouchableOpacity>}
+            </View>}
             <EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
               const updated = { ...item, ...changes };
               request.current++;

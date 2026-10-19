@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
+import { formatEnquiryDate, enquiryStatusLabel } from '../../services/enquiryPresentation';
+import EnquiryFollowupSummary from '../../components/EnquiryFollowupSummary';
 import { colors } from '../../constants/theme';
 import { AMENITIES, BHK_OPTIONS, CLIENT_STATUSES, FACINGS, FLOORS, LEAD_SOURCES, LOCATIONS, PROPERTY_TYPES, UNITS } from '../../constants/leadOptions';
 import { EnquiryButton as Button, EnquiryField as Field, EnquirySelect as Select, EnquiryLoading, EnquiryDateTime, enquiryStyles as s } from '../../components/EnquiryControls';
@@ -82,10 +84,10 @@ export default function EnquiryDetailScreen() {
       {loading && !item ? <EnquiryLoading /> : null}
       {item && <>
         <View style={s.card}>
-          <View style={s.row}><Text style={s.heading}>{item.full_name}</Text><Text style={s.badge}>{readOnly ? 'Qualified · Converted' : item.status}</Text></View>
+          <View style={s.row}><Text style={s.heading}>{item.full_name}</Text><Text style={s.badge}>{readOnly ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
           <Text style={s.text}>{item.phone}{item.email ? `\n${item.email}` : ''}</Text>
           <Text style={s.text}>{item.property_interest || 'Property not provided'}</Text>
-          <Text style={s.muted}>Source: {item.source} · Imported {item.imported_at}{`\n`}Worksheet: {item.worksheet} · Row {item.source_row}</Text>
+          <Text style={s.muted}>Source: {item.source} · Imported {formatEnquiryDate(item.imported_at)}{`\n`}Worksheet: {item.worksheet} · Row {item.source_row}</Text>
           {!!item.original?.campaign && <Text style={s.muted}>Campaign: {item.original.campaign}{`\n`}Source serial: {item.original.source_serial} · Quality: {item.original.quality_index}</Text>}
           <View style={s.row}>
             <Button title="Call" secondary onPress={() => { Linking.openURL(`tel:${item.phone}`).catch(() => Alert.alert('Unable to open dialler')); }} />
@@ -147,7 +149,7 @@ export default function EnquiryDetailScreen() {
         <View style={s.card}><Text style={s.heading}>Follow-ups</Text><Text style={s.muted}>Complete these in Reminders. Times are Asia/Kolkata.</Text>
           <Button title="Open Reminders" secondary onPress={() => router.push('/reminders' as any)} />
           {!data.followups.length && <Text style={s.muted}>No follow-ups scheduled.</Text>}
-          {data.followups.map((f: any) => <View key={f.id}><Text style={s.text}>#{f.id} · {f.due_date} {f.due_time} · {f.status}</Text><Text style={s.muted}>{f.description}</Text></View>)}
+          {data.followups.map((f: any) => <EnquiryFollowupSummary key={f.id} followup={f} />)}
         </View>
         <View style={s.card}><Text style={s.heading}>Activity and assignment history</Text>
           {!data.history.length && <Text style={s.muted}>No activity yet.</Text>}

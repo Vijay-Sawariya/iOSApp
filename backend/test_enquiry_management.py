@@ -24,6 +24,7 @@ class Database:
         self.leads = []
         self.events = []
         self.actions = []
+        self.card_followups = []
         self.queries = []
         self.flags = []
         self.telecaller = False
@@ -84,6 +85,8 @@ class Database:
             self.result = [dict(total=1, new_count=1, assigned=1, unassigned=0, due=0, qualified=0, converted=0)]
         elif sql.startswith('SELECT COUNT(*) total FROM'):
             self.result = [{'total': 1}]
+        elif sql.startswith('SELECT id,entity_id,due_date,due_time,status,description FROM actions'):
+            self.result = self.card_followups
         elif sql.startswith('SELECT e.id,e.full_name,e.phone,e.property_interest'):
             self.result = [dict(self.row, employee='Agent', possible_duplicate=0)]
 
@@ -231,6 +234,23 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(item['original'], {'questions': ['Time?'], 'answers': ['Morning']})
         self.assertNotIn('current', item)
         self.assertNotIn('qualification', item)
+
+    def test_card_followups_are_batched_and_keep_description_and_time(self):
+        description = "Outcome: Busy\nHe didn't answer my call so i have drop the whatsapp message"
+        self.db.card_followups = [
+            dict(id=51, entity_id=1, status='Pending', due_date='2026-10-20', due_time=timedelta(hours=13, minutes=35), description=description),
+            dict(id=50, entity_id=1, status='Completed', due_date='2026-10-19', due_time=None, description='Previous call'),
+        ]
+        response = self.client.get('/mobile/enquiry-management')
+        self.assertEqual(response.status_code, 200)
+        card = response.json()['items'][0]
+        self.assertEqual(card['followup_count'], 2)
+        self.assertEqual(card['next_followup']['description'], description)
+        self.assertEqual(card['next_followup']['due_time'], '13:35:00')
+        queries = [(q, a) for q, a in self.db.queries if q.startswith('SELECT id,entity_id,due_date,due_time,status,description FROM actions')]
+        self.assertEqual(len(queries), 1)
+        self.assertEqual(queries[0][1], [1])
+        self.assertIn("CASE WHEN status IN ('Pending','Missed') THEN 0 ELSE 1 END", queries[0][0])
 
     def test_time_serialization(self):
         self.assertEqual(enquiries.wire({'due_time': timedelta(hours=10, minutes=30)})['due_time'], '10:30:00')
