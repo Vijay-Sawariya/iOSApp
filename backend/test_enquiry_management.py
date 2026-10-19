@@ -120,6 +120,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.post('mark_invalid').status_code, 403)
         self.assertEqual(self.db.row['status'], 'New')
 
+    def test_feature_toggle_controls_list_and_detail_access(self):
+        self.db.flags = [{'feature_key': 'enquiry_management', 'is_enabled': 0}]
+        for path in ('/mobile/enquiry-management', '/mobile/enquiry-management/1'):
+            self.assertEqual(self.client.get(path).status_code, 403)
+        self.db.flags = [{'feature_key': 'enquiry_management', 'is_enabled': 1},
+                         {'feature_key': '__default__', 'is_enabled': 0}]
+        self.assertEqual(self.client.get('/mobile/enquiry-management').status_code, 200)
+
     def test_staff_cannot_read_or_mutate_someone_elses_enquiry(self):
         self.user = {'id': 12, 'role': 'agent'}
         self.assertEqual(self.post('mark_invalid').status_code, 404)

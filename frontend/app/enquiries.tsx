@@ -15,7 +15,8 @@ const EMPTY = { q: '', status: '', assigned: '', due: false, duplicates: false, 
 const STATUSES = ['New', 'Contacted', 'Qualified', 'Nurture', 'Disqualified', 'Invalid'];
 const WEB_PAGE = 'https://sagarhomelms.com/enquiry_management.php';
 export default function EnquiriesScreen() {
-  const { user } = useAuth();
+  const { user, hasFeature, featureFlagsLoading } = useAuth();
+  const canViewEnquiries = !featureFlagsLoading && hasFeature('enquiry_management');
   const [filters, setFilters] = useState(EMPTY);
   const [applied, setApplied] = useState(EMPTY);
   const [expanded, setExpanded] = useState(false);
@@ -28,6 +29,7 @@ export default function EnquiriesScreen() {
   const request = useRef(0);
   const scroll = useRef<ScrollView>(null);
   const load = useCallback(async (forceNetwork = false, focusedItem?: any) => {
+    if (!canViewEnquiries) return;
     const serial = ++request.current;
     setLoading(true); setError('');
     try {
@@ -38,11 +40,14 @@ export default function EnquiriesScreen() {
       }
     } catch (e: any) { if (serial === request.current) setError(e.message || 'Unable to load enquiries.'); }
     finally { if (serial === request.current) setLoading(false); }
-  }, [applied, page]);
+  }, [applied, page, canViewEnquiries]);
   useFocusEffect(useCallback(() => { load(); return () => { request.current++; }; }, [load]));
   const employeeChoices = [{ value: '', label: 'All accessible' }, { value: 'none', label: 'Unassigned' }, ...(data?.users || []).map((u: any) => ({ value: String(u.id), label: u.full_name || u.username }))];
   const update = (key: keyof typeof EMPTY, value: string | boolean) => setFilters(f => ({ ...f, [key]: value }));
   const stats: [string, string][] = [['total', 'Total enquiries'], ['new_count', 'New enquiries'], ['unassigned', 'Unassigned'], ['assigned', 'Assigned'], ['due', 'Follow-ups due'], ['qualified', 'Qualified'], ['converted', 'Converted Main Leads']];
+  if (!canViewEnquiries) return <SafeAreaView style={s.page}>
+    {featureFlagsLoading ? <EnquiryLoading /> : <Text style={s.muted}>Advertisement Enquiries access is disabled for your account.</Text>}
+  </SafeAreaView>;
   return <SafeAreaView style={s.page}>
     <View style={s.header}><TouchableOpacity accessibilityLabel="Back" onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={colors.ink} /></TouchableOpacity>
       <View style={{ flex: 1 }}><Text style={s.title}>Enquiry Management</Text><Text style={s.subtitle}>Website and Meta Ad enquiries</Text></View>
