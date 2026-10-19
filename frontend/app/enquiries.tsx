@@ -5,6 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import EnquiryCardActions from '../components/EnquiryCardActions';
 import { colors } from '../constants/theme';
 import { EnquiryButton as Button, EnquiryField as Field, EnquirySelect as Select, EnquiryLoading, enquiryStyles as s } from '../components/EnquiryControls';
 
@@ -17,19 +18,22 @@ export default function EnquiriesScreen() {
   const [applied, setApplied] = useState(EMPTY);
   const [expanded, setExpanded] = useState(false);
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(() => api.getCachedEnquiryManagement({ ...EMPTY, page: 1 }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [runs, setRuns] = useState<any[] | null>(null);
   const [syncError, setSyncError] = useState('');
   const request = useRef(0);
   const scroll = useRef<ScrollView>(null);
-  const load = useCallback(async () => {
+  const load = useCallback(async (forceNetwork = false, focusedItem?: any) => {
     const serial = ++request.current;
     setLoading(true); setError('');
     try {
-      const result = await api.getEnquiryManagement({ ...applied, page });
-      if (serial === request.current) setData(result);
+      const result = await api.getEnquiryManagement({ ...applied, page }, { forceNetwork });
+      if (serial === request.current) {
+        setData(focusedItem && !result.items.some((row: any) => row.id === focusedItem.id)
+          ? { ...result, items: [focusedItem, ...result.items] } : result);
+      }
     } catch (e: any) { if (serial === request.current) setError(e.message || 'Unable to load enquiries.'); }
     finally { if (serial === request.current) setLoading(false); }
   }, [applied, page]);
@@ -40,11 +44,11 @@ export default function EnquiriesScreen() {
   return <SafeAreaView style={s.page}>
     <View style={s.header}><TouchableOpacity accessibilityLabel="Back" onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={colors.ink} /></TouchableOpacity>
       <View style={{ flex: 1 }}><Text style={s.title}>Enquiry Management</Text><Text style={s.subtitle}>Website and Meta Ad enquiries</Text></View>
-      <TouchableOpacity accessibilityLabel="Refresh enquiries" onPress={load}><Ionicons name="refresh" size={22} color={colors.primary} /></TouchableOpacity>
+      <TouchableOpacity accessibilityLabel="Refresh enquiries" onPress={() => load(true)}><Ionicons name="refresh" size={22} color={colors.primary} /></TouchableOpacity>
     </View>
-    <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={load} />}>
+    <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={() => load(true)} />}>
       <Text style={s.muted}>Qualify enquiries before converting them to Main Leads.</Text>
-      {error ? <View style={s.card}><Text style={s.error}>{error}</Text><Button title="Retry" onPress={load} /></View> : null}
+      {error ? <View style={s.card}><Text style={s.error}>{error}</Text><Button title="Retry" onPress={() => load(true)} /></View> : null}
       {!data && loading ? <EnquiryLoading /> : null}
       {data ? <>
         <View style={s.row}>{stats.map(([key, label]) => <View key={key} style={[s.card, { width: '47%', flexGrow: 1 }]}><Text style={s.muted}>{label}</Text><Text style={s.title}>{data.stats?.[key] || 0}</Text></View>)}</View>
@@ -65,15 +69,20 @@ export default function EnquiriesScreen() {
           const questions = item.original?.questions || [];
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
-          return <TouchableOpacity key={item.id} accessibilityRole="button" disabled={loading} onPress={() => router.push(`/enquiries/${item.id}` as any)} style={s.card}>
+          return <View key={item.id} style={s.card}>
             <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={s.badge}>{item.main_lead_id ? 'Qualified · Converted' : item.status}</Text></View>
-            <Text style={s.heading}>{item.full_name}</Text><Text style={[s.text, { color: colors.accent }]}>{item.phone}</Text>
+            <TouchableOpacity accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><Text style={[s.text, { color: colors.accent }]}>{item.phone}</Text>
             <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}
             <Text style={s.muted}>Best time to call: {bestTime ? bestTime.replace(/_/g, ' ') : 'Not provided'}</Text>
             <Text style={s.muted}>Assigned to: {item.employee || 'Unassigned'}{`\n`}Imported: {item.imported_at}</Text>
-            <Text style={[s.text, { color: colors.primary }]}>View enquiry and actions →</Text>
-          </TouchableOpacity>;
+            <EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
+              const updated = { ...item, ...changes };
+              request.current++;
+              setData((current: any) => current ? { ...current, items: current.items.map((row: any) => row.id === item.id ? updated : row) } : current);
+              void load(true, updated);
+            }} />
+          </View>;
         })}
         <View style={[s.row, { justifyContent: 'space-between' }]}>
           <Button title="Previous" secondary disabled={loading || data.page <= 1} onPress={() => { setPage(data.page - 1); scroll.current?.scrollTo({ y: 0 }); }} />

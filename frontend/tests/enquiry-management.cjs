@@ -7,12 +7,14 @@ const ts = require('typescript');
 
 function setup() {
   const requests = [], removed = [];
+  let now = 100000;
+  class TestDate extends Date { static now() { return now; } }
   let response = { ok: true, status: 200, json: async () => ({ lead_id: 42 }) };
   const exports = {};
   const source = fs.readFileSync(path.join(__dirname, '../services/api.ts'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
   vm.runInNewContext(code, {
-    exports, AbortController, setTimeout, clearTimeout, console: { log() {} },
+    exports, Date: TestDate, AbortController, setTimeout, clearTimeout, console: { log() {} },
     fetch: async (url, options) => { requests.push({ url, options }); return response; },
     require: name => {
       if (name === '../constants/config') return { API_URL: 'https://api.example.test' };
@@ -21,7 +23,7 @@ function setup() {
     },
   });
   exports.setAuthToken('test-token');
-  return { ...exports, requests, removed, response: next => { response = next; } };
+  return { ...exports, requests, removed, advance: ms => { now += ms; }, response: next => { response = next; } };
 }
 
 test('enquiry listing sends encoded filters and authenticated network requests', async () => {
@@ -64,4 +66,49 @@ test('validation errors keep the server message and do not clear caches', async 
 test('existing-lead search escapes phone query text', async () => {
   const h = setup(); await h.api.searchEnquiryLeads(12, '+91 98111');
   assert.match(h.requests[0].url, /enquiry-management\/12\/leads\?q=%2B91%2098111$/);
+});
+
+test('reopening the same enquiry page reuses a short-lived session result', async () => {
+  const h = setup();
+  const first = await h.api.getEnquiryManagement({ page: 1, q: '' });
+  assert.equal(h.api.getCachedEnquiryManagement({ q: '', page: 1 }), first);
+  assert.equal(await h.api.getEnquiryManagement({ q: '', page: 1 }), first);
+  assert.equal(h.requests.length, 1);
+  h.advance(30001);
+  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), first); // visible during background refresh
+  await h.api.getEnquiryManagement({ page: 1 });
+  assert.equal(h.requests.length, 2);
+  h.advance(300001);
+  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), null);
+});
+
+test('manual refresh bypasses fresh cache and concurrent reads share one request', async () => {
+  const h = setup();
+  await Promise.all([h.api.getEnquiryManagement({ page: 1 }), h.api.getEnquiryManagement({ page: 1 })]);
+  assert.equal(h.requests.length, 1);
+  await h.api.getEnquiryManagement({ page: 1 }, { forceNetwork: true });
+  assert.equal(h.requests.length, 2);
+});
+
+test('edits and account changes invalidate enquiry results', async () => {
+  const h = setup();
+  await h.api.getEnquiryManagement({ page: 1 });
+  await h.api.updateEnquiry(1, 'mark_invalid');
+  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), null);
+  await h.api.getEnquiryManagement({ page: 1 });
+  h.setAuthToken('another-user');
+  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), null);
+});
+
+test('an old in-flight response cannot repopulate cache after an edit', async () => {
+  const h = setup(); let resolve;
+  const delayed = new Promise(r => { resolve = r; });
+  h.response({ ok: true, json: () => delayed });
+  const list = h.api.getEnquiryManagement({ page: 1 });
+  await Promise.resolve();
+  h.response({ ok: true, json: async () => ({}) });
+  await h.api.updateEnquiry(1, 'mark_invalid');
+  resolve({ items: [{ id: 1, status: 'New' }] });
+  await list;
+  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), null);
 });

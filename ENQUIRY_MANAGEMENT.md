@@ -32,3 +32,13 @@ npx eslint app/enquiries.tsx 'app/enquiries/[id].tsx' components/EnquiryControls
 ```
 
 API tests use an isolated transactional database double with real PyMySQL parameter interpolation. No live database, production import, simulator or device verification is performed by these tests.
+
+## List loading
+
+The mobile list reuses a session-only page for 30 seconds and deduplicates concurrent requests. On reopening, a page up to five minutes old can render immediately while the expired data refreshes. Pull-to-refresh and the refresh button always request live data. Successful enquiry edits and account changes clear the cache; responses started before invalidation cannot repopulate it. Contact details are never persisted to disk by this cache.
+
+The list API aggregates overdue enquiry IDs once, reuses the statistics total for an unfiltered page, and returns only card fields and Q&A. Full source snapshots and qualification data remain on the detail endpoint. Live database timings still require verification after backend deployment.
+
+## Card actions
+
+Enquiry cards match the web action row: Junk/Invalid (or Restore to New), Assignment for managers/admins, Open enquiry and Link existing lead. Assignment and lead linking open dialogs directly on the list. Invalid enquiries disable Open and Link until restored; converted enquiries show only Open and View lead. Successful changes update the card immediately, refresh counts and keep the updated enquiry visible even if it leaves the current filter.

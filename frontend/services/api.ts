@@ -8,6 +8,14 @@ let authToken: string | null = null;
 // Brief, session-only reuse for expensive performance reports.
 const performanceCache = new Map<string, { data: any; expires: number }>();
 const performanceRequests = new Map<string, Promise<any>>();
+// Short-lived, session-only cache: never persist enquiry contact details to disk.
+const enquiryPages = new Map<string, { data: any; expires: number }>();
+const enquiryRequests = new Map<string, Promise<any>>();
+let enquiryGeneration = 0;
+const enquiryQuery = (params: Record<string, string | number | boolean>) => Object.entries(params)
+  .filter(([, v]) => v !== '' && v !== false).sort(([a], [b]) => a.localeCompare(b))
+  .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&');
+const clearEnquiryPages = () => { enquiryGeneration++; enquiryPages.clear(); enquiryRequests.clear(); };
 let isOfflineMode = false;
 let authFailureHandler: (() => void | Promise<void>) | null = null;
 
@@ -37,6 +45,7 @@ export const isRequestTimeout = (error: unknown): boolean =>
 export const setAuthToken = (token: string | null) => {
   console.log('setAuthToken called with:', token ? 'token present' : 'null');
   if (authToken !== token) {
+    clearEnquiryPages();
     performanceCache.clear();
     performanceRequests.clear();
   }
@@ -219,12 +228,31 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
-  getEnquiryManagement: async (params: Record<string, string | number | boolean> = {}) => {
-    const query = Object.entries(params).filter(([, v]) => v !== '' && v !== false)
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join('&');
-    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management?${query}`, { headers: getHeaders() });
-    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load enquiries'));
-    return response.json();
+  getCachedEnquiryManagement: (params: Record<string, string | number | boolean> = {}) => {
+    const cached = enquiryPages.get(enquiryQuery(params));
+    // Show a recent page immediately while an expired result refreshes on focus.
+    return cached && cached.expires + 270000 > Date.now() ? cached.data : null;
+  },
+  getEnquiryManagement: async (params: Record<string, string | number | boolean> = {}, options: { forceNetwork?: boolean } = {}) => {
+    const query = enquiryQuery(params);
+    const cached = enquiryPages.get(query);
+    if (!options.forceNetwork && cached && cached.expires > Date.now()) return cached.data;
+    const pending = enquiryRequests.get(query);
+    if (pending) return pending;
+    const generation = enquiryGeneration;
+    const request = (async () => {
+      const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management?${query}`, { headers: getHeaders() });
+      if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load enquiries'));
+      const data = await response.json();
+      if (generation === enquiryGeneration) {
+        if (enquiryPages.size >= 20) enquiryPages.delete(enquiryPages.keys().next().value!);
+        enquiryPages.set(query, { data, expires: Date.now() + 30000 });
+      }
+      return data;
+    })();
+    enquiryRequests.set(query, request);
+    try { return await request; }
+    finally { if (enquiryRequests.get(query) === request) enquiryRequests.delete(query); }
   },
   getEnquiryDetail: async (id: number) => {
     const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/${id}`, { headers: getHeaders() });
@@ -242,6 +270,7 @@ export const api = {
     });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to update enquiry'));
     const result = await response.json();
+    clearEnquiryPages();
     if (action === 'qualify' || action === 'link_existing') await invalidateLeadAccessCaches(result.lead_id);
     if (['followup', 'assign', 'qualify', 'link_existing'].includes(action)) await invalidateReminderCaches();
     return result;

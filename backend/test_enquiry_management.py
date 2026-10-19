@@ -84,7 +84,7 @@ class Database:
             self.result = [dict(total=1, new_count=1, assigned=1, unassigned=0, due=0, qualified=0, converted=0)]
         elif sql.startswith('SELECT COUNT(*) total FROM'):
             self.result = [{'total': 1}]
-        elif sql.startswith('SELECT e.*,u.full_name employee'):
+        elif sql.startswith('SELECT e.id,e.full_name,e.phone,e.property_interest'):
             self.result = [dict(self.row, employee='Agent', possible_duplicate=0)]
 
 
@@ -105,7 +105,8 @@ class WorkflowTests(unittest.TestCase):
         self.user = dict(STAFF)
         response = self.client.get('/mobile/enquiry-management', params=dict(q="a' OR 1=1", status='New', due='true', duplicates='true', sort='name'))
         self.assertEqual(response.status_code, 200)
-        query, args = next((q, a) for q, a in self.db.queries if q.startswith('SELECT e.*,u.full_name employee'))
+        query, args = next((q, a) for q, a in self.db.queries if q.startswith('SELECT e.id,e.full_name,e.phone,e.property_interest'))
+        self.assertIn('e.status,e.assigned_to,e.main_lead_id', query)
         self.assertIn('e.assigned_to=%s', query); self.assertNotIn("a' OR", query)
         self.assertIn('ORDER BY e.full_name ASC,e.id DESC', query)
         self.assertEqual(args[0], 8)
@@ -216,6 +217,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("status IN ('Pending','Missed')", query)
         self.assertEqual(args, (8, 8, 1))
         self.assertEqual(self.db.events[-1], ('assignment', {'from': 7, 'to': 8}))
+
+    def test_list_aggregates_due_once_and_omits_source_snapshots(self):
+        self.db.row['original_json'] = json.dumps({'questions': ['Time?'], 'answers': ['Morning'], 'raw': ['large source row']})
+        self.db.row['current_json'] = json.dumps({'large': 'updated snapshot'})
+        response = self.client.get('/mobile/enquiry-management')
+        self.assertEqual(response.status_code, 200)
+        stats_query = next(q for q, a in self.db.queries if q.startswith('SELECT COUNT(*) total,'))
+        self.assertIn('SELECT DISTINCT entity_id FROM actions', stats_query)
+        self.assertNotIn('a.entity_id=e.id', stats_query)
+        self.assertFalse(any(q.startswith('SELECT COUNT(*) total FROM') for q, a in self.db.queries))
+        item = response.json()['items'][0]
+        self.assertEqual(item['original'], {'questions': ['Time?'], 'answers': ['Morning']})
+        self.assertNotIn('current', item)
+        self.assertNotIn('qualification', item)
 
     def test_time_serialization(self):
         self.assertEqual(enquiries.wire({'due_time': timedelta(hours=10, minutes=30)})['due_time'], '10:30:00')
