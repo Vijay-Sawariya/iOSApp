@@ -119,8 +119,8 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleRoutePress('/workbench')}
               visible={hasFeature('daily_workbench')}
             />
-            <MenuItem icon="chatbubbles" label="Enquiries" color={colors.primary} bgColor={colors.primarySoft}
-              onPress={() => handleRoutePress('/enquiries')} visible={hasFeature('enquiry_management')} />
+            <MenuItem icon="business" label="Builders" color={colors.amber} bgColor={colors.amberSoft}
+              onPress={() => handleRoutePress('/builders')} visible={hasFeature('builders_agents')} />
             <MenuItem
               icon="archive"
               label="Legacy"
@@ -169,13 +169,6 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               onPress={() => handleMenuItemPress('export')}
               visible={hasFeature('data_export')}
             />
-            <MenuItem 
-              icon="settings"
-              label="Settings"
-              color={colors.inkMuted}
-              bgColor={colors.surfaceMuted}
-              onPress={() => handleMenuItemPress('settings')}
-            />
             <MenuItem
               icon="chatbubbles"
               label="Team Inbox"
@@ -215,6 +208,13 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
               bgColor={colors.amberSoft}
               onPress={() => handleRoutePress('/pricing')}
               visible={!isCaller && hasFeature('inventory_pricing')}
+            />
+            <MenuItem
+              icon="settings"
+              label="Settings"
+              color={colors.inkMuted}
+              bgColor={colors.surfaceMuted}
+              onPress={() => handleMenuItemPress('settings')}
             />
           </View>
         </Pressable>
@@ -340,14 +340,14 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="builders"
+          name="enquiries"
           options={{
-            title: 'Builders',
+            title: 'Enquiries',
             headerShown: false,
-            href: hasFeature('builders_agents') ? undefined : null,
+            href: hasFeature('enquiry_management') ? undefined : null,
             tabBarIcon: ({ focused }) => (
               <TabIcon 
-                name="business" 
+                name="chatbubbles"
                 focused={focused} 
                 gradientColors={['#B7791F', '#8A5A15']}
               />
@@ -386,6 +386,10 @@ export default function TabLayout() {
               </View>
             ),
           }}
+        />
+        <Tabs.Screen
+          name="builders"
+          options={{ href: null }}
         />
         <Tabs.Screen
           name="leads"
