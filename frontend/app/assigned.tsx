@@ -1,3 +1,4 @@
+import { sortLeadsByCreatedAt } from '../utils/leadSort';
 import { canContactAssignedLead } from '../utils/contactAccess';
 import React, { useCallback, useState } from 'react';
 import {
@@ -46,9 +47,9 @@ export default function AssignedLeadsScreen() {
     try {
       const result = await api.getAssignedLeads({
         forceNetwork: force,
-        onBackgroundRefresh: (fresh) => setLeads(Array.isArray(fresh) ? fresh : []),
+        onBackgroundRefresh: (fresh) => setLeads(sortLeadsByCreatedAt(Array.isArray(fresh) ? fresh : [])),
       });
-      setLeads(Array.isArray(result) ? result : []);
+      setLeads(sortLeadsByCreatedAt(Array.isArray(result) ? result : []));
     } catch (error: any) {
       setLoadError(error instanceof Error ? error.message : 'Assigned leads could not be loaded. Please try again.');
       console.warn('Failed to load assigned leads:', error);

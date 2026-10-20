@@ -48,14 +48,4 @@ export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): st
   ].filter(Boolean).join('\n\n');
 };
 
-// Match the server order for both cached and live snapshots, including ties.
-export const sortInventory = (leads: Lead[]): Lead[] => {
-  const time = (value?: string | null) => {
-    if (!value) return 0;
-    const parsed = Date.parse(value.includes('T') ? value : value.replace(' ', 'T'));
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-  return [...leads].sort((a, b) =>
-    time(b.updated_on || b.created_at) - time(a.updated_on || a.created_at) ||
-    time(b.created_at) - time(a.created_at) || b.id - a.id);
-};
+export { sortLeadsByCreatedAt as sortInventory } from './leadSort';

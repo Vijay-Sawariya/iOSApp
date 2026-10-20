@@ -1,3 +1,4 @@
+import { sortLeadsByCreatedAt } from '../../utils/leadSort';
 import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
 import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import { canViewLeadContacts } from '../../utils/contactAccess';
@@ -359,8 +360,8 @@ www.sagarhome.com`;
 
     if (sort === 'name') {
       filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    } else if (sort === 'date') {
-      filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    } else {
+      filtered = sortLeadsByCreatedAt(filtered);
     }
 
     if (createdByFilter) {

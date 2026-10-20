@@ -68,13 +68,13 @@ test('valid floor prices take precedence; missing or invalid prices do not becom
   }
 });
 
-test('cached and live inventories use identical ordering, with deterministic ties', () => {
+test('cached and live inventories sort by creation date despite newer edits, with deterministic ties', () => {
   const a = { id: 1, created_at: '2026-06-01 12:00:00', updated_on: '2026-10-05 12:00:00' };
   const b = { id: 2, created_at: '2026-08-01 12:00:00', updated_on: '2026-10-04 12:00:00' };
   const c = { ...b, id: 3 };
   const cached = [b, c, a];
-  assert.deepEqual(Array.from(sortInventory(cached), item => item.id), [1, 3, 2]);
-  assert.deepEqual(Array.from(sortInventory([a, c, b]), item => item.id), [1, 3, 2]);
+  assert.deepEqual(Array.from(sortInventory(cached), item => item.id), [3, 2, 1]);
+  assert.deepEqual(Array.from(sortInventory([a, c, b]), item => item.id), [3, 2, 1]);
   assert.deepEqual(cached, [b, c, a]);
 });
 
