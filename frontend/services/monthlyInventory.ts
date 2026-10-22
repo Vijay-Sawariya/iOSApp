@@ -24,3 +24,10 @@ export function conversionParams(entry: MonthlyEntry): Record<string, string> {
     unit: rent ? 'K' : 'CR', notes: '', propertyType: entry.category.startsWith('commercial_') ? 'Commercial' : 'Builder Floor',
   };
 }
+
+// Empty numeric query parameters are rejected by the API; preserve explicit zero.
+export function monthlyInventoryQuery(filters: Record<string, string | number | undefined>): string {
+  return Object.entries(filters)
+    .filter(([, value]) => value !== undefined && String(value).trim() !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join('&');
+}

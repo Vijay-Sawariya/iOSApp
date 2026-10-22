@@ -2,7 +2,7 @@ import { CACHE_KEYS, cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from './database';
 import { API_URL } from '../constants/config';
-import { MonthlyInventoryPage } from './monthlyInventory';
+import { MonthlyInventoryPage, monthlyInventoryQuery } from './monthlyInventory';
 
 let authToken: string | null = null;
 // Brief, session-only reuse for expensive performance reports.
@@ -281,7 +281,7 @@ export const api = {
     return response.json();
   },
   getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {
-    const query = Object.entries(filters).map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&');
+    const query = monthlyInventoryQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });
     notifyAuthFailure(response);
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not load monthly inventory. Please retry when connected.'));

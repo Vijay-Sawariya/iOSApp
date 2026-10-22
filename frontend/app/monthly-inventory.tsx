@@ -78,6 +78,7 @@ export default function MonthlyInventoryScreen() {
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('All months');
   const [category, setCategory] = useState('All categories');
+  const [criteriaExpanded, setCriteriaExpanded] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const emptyCriteria = { location: '', address: '', owner_name: '', phone: '', floor: '', min_area: '', max_area: '' };
@@ -147,7 +148,12 @@ export default function MonthlyInventoryScreen() {
     <FlatList data={items} keyExtractor={item => String(item.id)} contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.primary} />}
       ListHeaderComponent={<View style={styles.filters}>
-        <Text style={styles.cardTitle}>Search criteria</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Search criteria" accessibilityState={{ expanded: criteriaExpanded }}
+          style={styles.criteriaToggle} onPress={() => setCriteriaExpanded(previous => !previous)}>
+          <Text style={styles.cardTitle}>Search criteria</Text>
+          <Ionicons name={criteriaExpanded ? 'chevron-up' : 'chevron-down'} size={22} color={colors.primary} />
+        </TouchableOpacity>
+        {criteriaExpanded && <View style={styles.criteriaPanel}>
         <View style={styles.filterRow}>
           <View style={styles.filter}><CustomDropdown label="Book month" value={month} options={['All months', ...months]} onSelect={setMonth} /></View>
           <View style={styles.filter}><CustomDropdown label="Category" value={category} options={Object.keys(categories)} onSelect={setCategory} /></View>
@@ -170,6 +176,7 @@ export default function MonthlyInventoryScreen() {
             style={styles.search} returnKeyType="search" onSubmitEditing={applySearch} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Search" style={styles.searchButton} onPress={applySearch}><Ionicons name="search" size={20} color={colors.white} /></TouchableOpacity>
         </View>
+        </View>}
         <Text style={styles.muted}>{total} inventories · Pull down to refresh</Text>
         {!!error && <View style={styles.errorBox}><Text style={styles.error}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => void load()}><Text style={styles.actionText}>Retry</Text></TouchableOpacity></View>}
       </View>}
@@ -198,6 +205,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 8, backgroundColor: colors.surface },
   back: { padding: 8 }, title: { fontSize: 19, fontWeight: '700', color: colors.ink, flexShrink: 1 },
   list: { padding: 16, paddingBottom: 32 }, filters: { gap: 12, marginBottom: 16 },
+  criteriaToggle: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  criteriaPanel: { gap: 12 },
   criteriaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   criteriaField: { width: '47%', flexGrow: 1, gap: 6 },
   criteriaInput: { minHeight: 44, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.sm, backgroundColor: colors.surfaceRaised, color: colors.ink },

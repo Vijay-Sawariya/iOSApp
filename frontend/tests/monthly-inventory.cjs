@@ -40,3 +40,9 @@ test('commercial rent conversion uses Builder and thousands and retains area uni
   assert.equal(params.areaUnit, 'SQFT');
   assert.equal(params.areaSize, '1200');
 });
+
+test('monthly queries omit empty areas on opening and preserve zero bounds', () => {
+  const query = exportsObject.monthlyInventoryQuery({ page: 1, min_area: '', max_area: '', location: '', floor: undefined });
+  assert.equal(query, 'page=1');
+  assert.equal(exportsObject.monthlyInventoryQuery({ min_area: '0', max_area: '250', address: 'C & D' }), 'min_area=0&max_area=250&address=C%20%26%20D');
+});

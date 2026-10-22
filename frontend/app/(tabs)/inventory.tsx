@@ -967,9 +967,9 @@ export default function InventoryLeadsScreen() {
           )}</View>
             <View style={{ width: '100%' }}>          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
-            <View style={styles.infoRow}>
+            <View style={[styles.infoRow, { alignItems: 'center', marginBottom: 0 }]}>
               <Ionicons name="call" size={14} color={canViewData ? "#3B82F6" : "#9CA3AF"} />
-              <Text style={[styles.infoText, canViewData && styles.linkText]}>{displayPhone}</Text>
+              <Text style={[styles.infoText, { flex: 0, flexShrink: 1 }, canViewData && styles.linkText]}>{displayPhone}</Text>
               {canViewData && (
                 <>
                   <TouchableOpacity
