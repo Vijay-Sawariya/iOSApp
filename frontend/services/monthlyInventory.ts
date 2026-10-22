@@ -1,4 +1,5 @@
 export type MonthlyEntry = {
+  inventory_status?: 'Available' | 'Sold' | 'Hold' | 'Invalid';
   id: number; book_month: string; category: string; location: string; address: string;
   area_size: string | number | null; area_unit: string; floor: string; configuration: string;
   owner_name: string; phone: string; note: string; entry_status: string; needs_review: boolean;

@@ -42,3 +42,16 @@ The list API aggregates overdue enquiry IDs once, reuses the statistics total fo
 ## Card actions
 
 Enquiry cards match the web action row: Junk/Invalid (or Restore to New), Assignment for managers/admins, Open enquiry and Link existing lead. Assignment and lead linking open dialogs directly on the list. Invalid enquiries disable Open and Link until restored; converted enquiries show only Open and View lead. Successful changes update the card immediately, refresh counts and keep the updated enquiry visible even if it leaves the current filter.
+
+
+## October 21 parity update
+
+- The list's Follow-up action opens a conversation/history dialog. Outcome and remarks can be saved without a date; only a future date creates a reminder.
+- Unassigned enquiries require an active employee in that dialog. Assignment, pending reminder ownership and conversation/reminder creation commit together.
+- Selecting an existing lead prefills its current owner. Existing lead ownership is never changed by linking.
+- Opening the enquiry list as a manager/admin assigns unassigned repeat-phone enquiries only when all assigned matches agree on one active user; conflicts remain manual.
+- Existing enquiry reminders include the enquirer's name and a Linked Enquiry contact panel. Other users' enquiry contact details remain protected.
+- Sync runs on the existing production web/cPanel scheduler at 08:00 and 22:30 Asia/Kolkata; the phone does not run the Google import. Configure the web scheduler separately.
+- iOS continues using Expo native scheduled notifications, including foreground banners and background delivery for downloaded reminders. New server changes while the app is suspended require APNs/server push or a subsequent app refresh; this release does not provision APNs credentials.
+
+Deploy the Python backend and mobile build together. No production deployment or App Store submission is performed by this change.

@@ -186,11 +186,13 @@ def register_routes(router, get_db, get_current_user, lead_model):
         return user
 
     @router.get('/monthly-inventory')
-    def list_books(month: str = '', category: str = '', search: str = '', page: int = Query(1, ge=1), user=Depends(authorized)):
+    def list_books(month: str = '', category: str = '', search: str = '', page: int = Query(1, ge=1), location: str = '', address: str = '', owner_name: str = '', phone: str = '', floor: str = '', min_area: float = Query(None, ge=0), max_area: float = Query(None, ge=0), user=Depends(authorized)):
         if month and not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', month):
             raise HTTPException(422, 'Select a valid month.')
         if category and category not in CATEGORIES:
             raise HTTPException(422, 'Select a valid category.')
+        if min_area is not None and max_area is not None and min_area > max_area:
+            raise HTTPException(422, 'Minimum area must not exceed maximum area.')
         with monthly_db() as conn:
             cursor = conn.cursor()
             where, args = ['e.is_deleted=0'], []
@@ -201,6 +203,14 @@ def register_routes(router, get_db, get_current_user, lead_model):
             if search.strip():
                 where.append("CONCAT_WS(' ',e.owner_name,e.phone,e.address,e.location,e.note) LIKE %s")
                 args.append('%' + search.strip()[:200] + '%')
+            for column, value in [('location', location), ('address', address), ('owner_name', owner_name), ('phone', phone), ('floor', floor)]:
+                if value.strip():
+                    where.append(f'e.{column} LIKE %s')
+                    args.append('%' + value.strip()[:200] + '%')
+            for operator, value in [('>=', min_area), ('<=', max_area)]:
+                if value is not None:
+                    where.append(f"NULLIF(e.area_size,'') {operator} %s")
+                    args.append(value)
             base = ' FROM monthly_inventory_entries e JOIN monthly_inventory_books b ON b.id=e.book_id' + (' WHERE ' + ' AND '.join(where) if where else '')
             previous = '(SELECT MAX(pb.book_month) FROM monthly_inventory_books pb WHERE pb.category=b.category AND pb.book_month<b.book_month)'
             repeated = f'EXISTS (SELECT 1 FROM monthly_inventory_entries pe JOIN monthly_inventory_books pb ON pb.id=pe.book_id WHERE pb.category=b.category AND pb.book_month={previous} AND pe.identity_hash=e.identity_hash)'
@@ -222,6 +232,28 @@ def register_routes(router, get_db, get_current_user, lead_model):
             cursor.execute("SELECT DISTINCT DATE_FORMAT(book_month,'%Y-%m') AS month FROM monthly_inventory_books ORDER BY month DESC")
             return {'items': rows, 'total': total, 'page': page, 'has_more': page*40 < total,
                     'months': [m['month'] for m in cursor.fetchall()]}
+
+    @router.post('/monthly-inventory/{entry_id}/status')
+    def update_status(entry_id: int, payload: dict = Body(...), user=Depends(authorized)):
+        status = payload.get('inventory_status')
+        if status not in ('Available', 'Sold', 'Hold', 'Invalid'):
+            raise HTTPException(422, 'Select a valid inventory status.')
+        with monthly_db() as conn:
+            c = conn.cursor()
+            c.execute("SHOW COLUMNS FROM monthly_inventory_entries LIKE 'inventory_status'")
+            if not c.fetchone():
+                raise HTTPException(503, 'Install the web monthly inventory status migration first.')
+            conn.begin()
+            try:
+                c.execute('SELECT id FROM monthly_inventory_entries WHERE id=%s AND is_deleted=0 FOR UPDATE', (entry_id,))
+                if not c.fetchone():
+                    raise HTTPException(404, 'Inventory entry not found.')
+                c.execute('UPDATE monthly_inventory_entries SET inventory_status=%s,status_changed_at=NOW(),status_changed_by=%s WHERE id=%s', (status, user['id'], entry_id))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return {'inventory_status': status}
 
     @router.post('/monthly-inventory/{entry_id}/delete')
     def delete_book(entry_id: int, user=Depends(authorized)):

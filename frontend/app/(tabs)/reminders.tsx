@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +27,9 @@ interface Reminder {
   status: string;
   notes: string | null;
   lead_id: number | null;
+  entity_type?: string;
+  entity_id?: number;
+  can_view_sensitive?: boolean;
   user_id?: number | null;
   assigned_to?: number | null;
   lead_name?: string;
@@ -422,16 +426,16 @@ export default function RemindersScreen() {
             {item.lead_name && (
               <View style={styles.clientRow}>
                 <Ionicons name="person" size={12} color="#6B7280" />
-                <Text style={styles.clientText}>{item.lead_name}</Text>
+                <TouchableOpacity accessibilityLabel={item.entity_type === 'sheet_enquiry' ? 'Open linked enquiry' : 'Open linked lead'} onPress={() => item.entity_type === 'sheet_enquiry' ? router.push(`/enquiries/${item.entity_id}` as any) : item.lead_id && router.push(`/leads/${item.lead_id}` as any)}><Text style={styles.clientText}>{item.entity_type === 'sheet_enquiry' ? 'Linked Enquiry' : 'Linked Lead'} · {item.lead_name}</Text></TouchableOpacity>
                 {item.lead_phone && (
                   <Text style={styles.clientPhone}>
                     {' • '}
-                    {canViewSensitiveData(
+                    {(item.entity_type === 'sheet_enquiry' ? item.can_view_sensitive : canViewSensitiveData(
                       user?.role,
                       user?.id,
                       item.lead_created_by,
                       item.lead_current_assignee_id
-                    )
+                    ))
                       ? item.lead_phone
                       : maskPhone(item.lead_phone)}
                   </Text>
@@ -439,6 +443,7 @@ export default function RemindersScreen() {
               </View>
             )}
 
+            {item.entity_type === 'sheet_enquiry' && item.can_view_sensitive && !!item.lead_phone && <View style={{ flexDirection: 'row', gap: 16, paddingVertical: 8 }}><TouchableOpacity onPress={() => Linking.openURL(`tel:${item.lead_phone}`)} accessibilityLabel="Call enquirer"><Ionicons name="call-outline" size={22} color={colors.primary} /></TouchableOpacity><TouchableOpacity onPress={() => { const digits = (item.lead_phone || '').replace(/\D/g, ''); Linking.openURL(`https://wa.me/${digits.length === 10 ? '91' : ''}${digits}`); }} accessibilityLabel="WhatsApp enquirer"><Ionicons name="logo-whatsapp" size={22} color="#159457" /></TouchableOpacity></View>}
             {assignedToName && (
               <View style={styles.metaRow}>
                 <Ionicons name="person-circle-outline" size={12} color="#6B7280" />

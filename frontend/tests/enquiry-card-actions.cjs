@@ -18,7 +18,7 @@ function host(overrides = {}, canAssign = true) {
   };
   const exports = {};
   const item = { id: 1, status: 'New', assigned_to: 8, full_name: 'Client', ...overrides };
-  const controls = { EnquiryButton: 'Button', EnquiryField: 'Field', EnquirySelect: 'Select', enquiryStyles: {} };
+  const controls = { EnquiryButton: 'Button', EnquiryField: 'Field', EnquirySelect: 'Select', EnquiryDateTime: 'DateTime', enquiryStyles: {} };
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../components/EnquiryCardActions.tsx'), 'utf8'), {
     compilerOptions: { jsx: ts.JsxEmit.React, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
@@ -29,8 +29,11 @@ function host(overrides = {}, canAssign = true) {
     if (name === 'expo-router') return { router: { push: route => routes.push(route) } };
     if (name === '../services/api') return { api: {
       updateEnquiry: async (...args) => { calls.push(args); return { lead_id: 21 }; },
-      searchEnquiryLeads: async (...args) => { calls.push(['search', ...args]); return [{ id: 21, name: 'Existing', phone: '9811111111' }]; },
+      getReminders: async () => [],
+      getEnquiryDetail: async () => ({ history: [], followups: [] }),
+      searchEnquiryLeads: async (...args) => { calls.push(['search', ...args]); return [{ id: 21, name: 'Existing', phone: '9811111111', assigned_to: 8 }]; },
     } };
+    if (name === '../services/notificationService') return { notificationService: { requestPermissions: async () => true, syncAssignedReminderNotifications: async () => {} } };
     if (name === '../constants/theme') return { colors: {} };
     if (name === './EnquiryControls') return controls;
     throw Error(name);
@@ -97,4 +100,19 @@ test('link dialog searches, selects and links without visiting detail', async ()
   const call = h.calls.find(c => c[1] === 'link_existing');
   assert.equal(call[2].lead_id, 21); assert.equal(call[2].assigned_to, 8);
   assert.equal(h.changes[0].main_lead_id, 21); assert.equal(h.routes.length, 0);
+});
+
+
+test('follow-up modal saves conversation without scheduling and requires owner for unassigned enquiry', async () => {
+  const h = host({ assigned_to: null });
+  h.icon('Follow-up details').props.onPress(); await settle(); h.render();
+  let button = h.find(n => n.type === 'Button' && n.props.title === 'Save outcome');
+  assert.equal(!!button.props.disabled, true);
+  h.find(n => n.type === 'Select' && n.props.label === 'Outcome *').props.onChange('Connected');
+  h.find(n => n.type === 'Select' && n.props.label === 'Assignment').props.onChange('8');
+  h.find(n => n.type === 'Field' && n.props.label === 'Remarks').props.onChange('Discussed requirements'); h.render();
+  button = h.find(n => n.type === 'Button' && n.props.title === 'Save outcome');
+  assert.equal(!!button.props.disabled, false); button.props.onPress(); await settle();
+  const saved = h.calls.find(c => c[1] === 'followup');
+  assert.equal(saved[2].due_at, ''); assert.equal(saved[2].assigned_to, 8); assert.equal(saved[2].outcome, 'Connected');
 });

@@ -88,8 +88,9 @@ export default function EnquiriesScreen() {
             </View>
             {item.next_followup && <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 6 }}>
               <EnquiryFollowupSummary followup={item.next_followup} />
-              {item.followup_count > 1 && <TouchableOpacity accessibilityRole="button" onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={[s.text, { color: colors.primary }]}>View all {item.followup_count} follow-ups</Text></TouchableOpacity>}
+              {item.followup_count > 1 && <Text style={s.muted}>{item.followup_count} follow-ups · Open Follow-up details below for history</Text>}
             </View>}
+            {item.last_conversation && <View style={s.card}><Text style={s.text}>Last conversation · {item.last_conversation.outcome}</Text><Text style={s.muted}>{item.last_conversation.remarks}</Text><Text style={s.muted}>{formatEnquiryDate(item.last_conversation.created_at)}</Text></View>}
             <EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
               const updated = { ...item, ...changes };
               request.current++;
@@ -106,7 +107,7 @@ export default function EnquiriesScreen() {
       </> : null}
       {user?.role?.trim().toLowerCase() === 'admin' && <View style={s.card}>
         <Text style={s.heading}>Sheet synchronisation</Text>
-        <Text style={s.muted}>Preview and import use the existing LMS sheet configuration. The web page may ask you to sign in. Imported enquiries appear here after refresh.</Text>
+        <Text style={s.muted}>Preview and import use the existing LMS sheet configuration. The web page may ask you to sign in. Server imports run daily at 8:00 AM and 10:30 PM India time once cPanel scheduling is configured. Imported enquiries appear here after refresh.</Text>
         <Button title="Open preview / sync in LMS" secondary onPress={() => { Linking.openURL(WEB_PAGE).catch(() => setSyncError('Unable to open the LMS page.')); }} />
         <Button title="Load sync history" secondary onPress={async () => { try { setSyncError(''); setRuns(await api.getEnquirySyncHistory()); } catch (e: any) { setSyncError(e.message); } }} />
         {!!syncError && <Text style={s.error}>{syncError}</Text>}

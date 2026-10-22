@@ -80,7 +80,7 @@ export function EnquiryDateTime({ value, onChange }: { value: string; onChange: 
   const date = Number.isNaN(selected.getTime()) ? new Date() : selected;
   const save = (next: Date) => onChange(new Date(next.getTime() + 330 * 60000).toISOString().slice(0, 16));
   return <View style={{ gap: 8 }}>
-    <EnquiryField label="Date and time (Asia/Kolkata) · YYYY-MM-DDTHH:mm *" value={value} onChange={onChange} />
+    <EnquiryField label="Next follow-up (optional, Asia/Kolkata) · YYYY-MM-DDTHH:mm" value={value} onChange={onChange} />
     {Platform.OS !== 'web' && <View style={enquiryStyles.row}>
       <EnquiryButton title="Choose date" secondary onPress={() => setMode('date')} />
       <EnquiryButton title="Choose time" secondary onPress={() => setMode('time')} />

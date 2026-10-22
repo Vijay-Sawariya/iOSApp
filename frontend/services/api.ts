@@ -280,11 +280,17 @@ export const api = {
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load sync history'));
     return response.json();
   },
-  getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number }): Promise<MonthlyInventoryPage> => {
+  getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {
     const query = Object.entries(filters).map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&');
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });
     notifyAuthFailure(response);
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not load monthly inventory. Please retry when connected.'));
+    return response.json();
+  },
+  updateMonthlyInventoryStatus: async (id: number, status: string) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/${id}/status`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ inventory_status: status }) });
+    notifyAuthFailure(response);
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not update inventory status.'));
     return response.json();
   },
   deleteMonthlyInventory: async (id: number) => {

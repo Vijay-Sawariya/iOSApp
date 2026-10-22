@@ -74,6 +74,10 @@ class Database:
             self.entry['is_deleted'] = 1
         elif query.startswith('SELECT e.identity_hash'):
             self.result = self.entry
+        elif query.startswith("SHOW COLUMNS FROM monthly_inventory_entries LIKE 'inventory_status'"):
+            self.result = {'Field': 'inventory_status'}
+        elif query.startswith('UPDATE monthly_inventory_entries SET inventory_status='):
+            self.entry.update(inventory_status=args[0], status_changed_by=args[1])
         elif query.startswith('UPDATE monthly_inventory_entries'):
             self.entry['converted_lead_id'] = args[0]
         elif 'FOR UPDATE' in query:
@@ -129,6 +133,23 @@ class MonthlyTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD).status_code, 403)
             self.assertEqual(self.client.post('/api/monthly-inventory/10/delete').status_code, 403)
         self.assertEqual(self.db.queries, [])
+
+    def test_status_save_restore_and_validation(self):
+        for status in ('Sold', 'Hold', 'Invalid', 'Available'):
+            response = self.client.post('/api/monthly-inventory/10/status', json={'inventory_status': status})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self.db.entry['inventory_status'], status)
+            self.assertEqual(self.db.entry['status_changed_by'], self.user['id'])
+        self.assertEqual(self.client.post('/api/monthly-inventory/10/status', json={'inventory_status': 'unexpected'}).status_code, 422)
+        self.user['username'] = 'another-user'
+        self.assertEqual(self.client.post('/api/monthly-inventory/10/status', json={'inventory_status': 'Sold'}).status_code, 403)
+
+    def test_status_write_failure_rolls_back(self):
+        self.db.fail = 'SET inventory_status='
+        with self.assertRaises(RuntimeError):
+            self.client.post('/api/monthly-inventory/10/status', json={'inventory_status': 'Sold'})
+        self.assertEqual(self.db.rollbacks, 1)
+        self.assertNotIn('inventory_status', self.db.entry)
 
     def test_conversion_is_atomic_and_retry_is_idempotent(self):
         first = self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD)
@@ -189,6 +210,23 @@ class MonthlyTests(unittest.TestCase):
         self.assertFalse(data['has_more'])
         self.assertEqual(self.client.get('/api/monthly-inventory?month=2026-99').status_code, 422)
         self.assertEqual(self.client.get('/api/monthly-inventory?page=0').status_code, 422)
+
+    def test_search_criteria_apply_to_count_and_paginated_results(self):
+        response = self.client.get('/api/monthly-inventory', params=dict(
+            location='Anand', address='C-5', owner_name='Owner', phone='9811',
+            floor='GF', min_area='100', max_area='500', page=2))
+        self.assertEqual(response.status_code, 200, response.text)
+        queries = [query for query in self.db.queries if query.startswith(('SELECT COUNT(*)', 'SELECT e.*,b.book_month'))]
+        self.assertEqual(len(queries), 2)
+        for query in queries:
+            for column in ['location', 'address', 'owner_name', 'phone', 'floor']:
+                self.assertIn(f'e.{column} LIKE %s', query)
+            self.assertIn("NULLIF(e.area_size,'') >= %s", query)
+            self.assertIn("NULLIF(e.area_size,'') <= %s", query)
+
+    def test_invalid_area_ranges_are_rejected(self):
+        for params in [dict(min_area=-1), dict(max_area=-1), dict(min_area=500, max_area=100), dict(min_area='abc')]:
+            self.assertEqual(self.client.get('/api/monthly-inventory', params=params).status_code, 422)
 
     def test_soft_delete_hides_card_blocks_conversion_and_keeps_main_lead(self):
         self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD)

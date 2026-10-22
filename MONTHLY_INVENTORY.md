@@ -19,3 +19,10 @@ Rebuild/distribute the iOS app with the updated frontend. No new native dependen
 - `cd backend && python -m unittest test_monthly_inventory -v` (FastAPI, Pydantic, PyMySQL and httpx test dependencies)
 
 Backend tests use isolated fixtures and never connect to production. Before release, verify a real uploaded book PDF and conversion against a staging database using an authenticated iOS device/simulator.
+
+
+## October 21 status and seller filter update
+
+Monthly book cards have a Status popup with Available, Sold, Hold and Invalid. Unavailable cards have a colored edge and warning; all other card actions remain usable. The API writes inventory_status, status_changed_at and status_changed_by on monthly_inventory_entries. Deploy the matching web schema support and open Monthly Inventory once to initialize these columns before using the mobile status action. Missing columns return a setup error rather than silently losing status changes.
+
+Seller inventory uses icon-only Residential/Commercial markers, an address/phone row, the four Property Type sale/rent filters, and explicit 0–0 budget matching for zero/null/blank prices with no positive floor price. Blank budget bounds remain unrestricted.

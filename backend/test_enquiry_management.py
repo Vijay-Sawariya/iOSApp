@@ -25,6 +25,9 @@ class Database:
         self.events = []
         self.actions = []
         self.card_followups = []
+        self.repeat_candidates = []
+        self.repeat_owners = []
+        self.conversations = []
         self.queries = []
         self.flags = []
         self.telecaller = False
@@ -56,13 +59,19 @@ class Database:
                 self.result = [copy.deepcopy(self.row)]
         elif sql.startswith('SELECT id,username,full_name FROM users'):
             self.result = [{'id': 8, 'username': 'agent', 'full_name': 'Agent'}]
+        elif sql.startswith('SELECT id,phone FROM sheet_enquiries WHERE assigned_to IS NULL'):
+            self.result = self.repeat_candidates
+        elif sql.startswith('SELECT (SELECT la.user_id'):
+            self.result = [{'assigned_to': owner} for owner in self.repeat_owners]
+        elif sql.startswith('SELECT enquiry_id,details,created_at FROM sheet_enquiry_activities'):
+            self.result = self.conversations
         elif sql.startswith('SELECT id FROM leads'):
             self.result = [{'id': r['id']} for r in self.leads if enquiries.phone_key(r['phone']) == enquiries.phone_key(args[0])]
         elif sql.startswith('SELECT id FROM telecaller_leads'):
             self.result = [{'id': 99}] if self.telecaller else []
         elif sql.startswith('SELECT * FROM leads WHERE id='):
             self.result = [copy.deepcopy(r) for r in self.leads if r['id'] == args[0]]
-        elif sql.startswith('SELECT * FROM leads WHERE'):
+        elif sql.startswith('SELECT * FROM leads WHERE') or sql.startswith('SELECT leads.*'):
             self.result = copy.deepcopy(self.leads)
         elif sql.startswith('SELECT user_id FROM lead_assignments'):
             self.result = [{'user_id': 12}]
@@ -193,6 +202,49 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(self.db.actions), 1)
         self.assertEqual(self.db.events[-1][0], 'followup')
 
+    def test_repeat_assignment_only_for_unambiguous_active_owner(self):
+        self.db.repeat_candidates = [{'id': 1, 'phone': '+919811111111'}]
+        self.db.row['assigned_to'] = None
+        self.db.repeat_owners = [8, 8, None]
+        response = self.client.get('/mobile/enquiry-management')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.db.row['assigned_to'], 8)
+        self.assertEqual(self.db.events[0][1]['reason'], 'repeat_phone_match')
+        self.db.row['assigned_to'] = None
+        self.db.repeat_owners = [8, 12]
+        self.client.get('/mobile/enquiry-management')
+        self.assertIsNone(self.db.row['assigned_to'])
+
+    def test_last_conversation_on_card_without_reminder(self):
+        self.db.conversations = [{'enquiry_id': 1, 'details': json.dumps({'outcome': 'Connected', 'remarks': 'Shared details'}), 'created_at': '2026-10-21 12:00:00'}]
+        result = self.client.get('/mobile/enquiry-management').json()
+        self.assertEqual(result['items'][0]['last_conversation']['remarks'], 'Shared details')
+        self.assertEqual(result['items'][0]['followup_count'], 0)
+
+    def test_optional_date_saves_conversation_and_assignment_atomically(self):
+        self.db.row['assigned_to'] = None
+        response = self.post('followup', {'assigned_to': 8, 'outcome': 'Connected', 'remarks': 'Requirements discussed'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.db.row['assigned_to'], 8)
+        self.assertEqual(self.db.actions, [])
+        self.assertEqual(self.db.events[-1][0], 'conversation')
+        self.assertIsNone(self.db.events[-1][1]['due_at'])
+        self.assertEqual(self.db.events[-1][1]['remarks'], 'Requirements discussed')
+
+    def test_failed_followup_rolls_back_inline_assignment(self):
+        self.db.row['assigned_to'] = None
+        self.db.fail = 'INSERT INTO actions'
+        with self.assertRaises(RuntimeError):
+            self.post('followup', {'assigned_to': 8, 'outcome': 'Busy', 'due_at': '2099-01-01T12:00'})
+        self.assertIsNone(self.db.row['assigned_to'])
+        self.assertEqual(self.db.events, [])
+
+    def test_lead_search_returns_current_assignee(self):
+        self.db.leads = [dict(id=21, name='Existing', phone='9811111111', current_owner=8)]
+        result = self.client.get('/mobile/enquiry-management/1/leads?q=Existing')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()[0]['assigned_to'], 8)
+
     def test_invalid_can_be_restored(self):
         self.assertEqual(self.post('restore_invalid').status_code, 409)
         self.assertEqual(self.post('mark_invalid').status_code, 200)
@@ -212,7 +264,7 @@ class WorkflowTests(unittest.TestCase):
         result = self.client.get('/mobile/enquiry-management/1/leads', params={'q': 'a_%'})
         self.assertEqual(result.status_code, 200)
         self.assertEqual([r['id'] for r in result.json()], [21])
-        self.assertTrue(any(a == ['%a!_!%%'] for q, a in self.db.queries if q.startswith('SELECT * FROM leads WHERE')))
+        self.assertTrue(any(a == ['%a!_!%%'] for q, a in self.db.queries if q.startswith('SELECT leads.*')))
 
     def test_missing_registry_returns_setup_message(self):
         self.db.missing_table = 'sheet_enquiries'

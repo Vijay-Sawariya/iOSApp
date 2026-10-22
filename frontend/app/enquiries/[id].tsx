@@ -5,10 +5,9 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
 import { formatEnquiryDate, enquiryStatusLabel } from '../../services/enquiryPresentation';
-import EnquiryFollowupSummary from '../../components/EnquiryFollowupSummary';
 import { colors } from '../../constants/theme';
 import { AMENITIES, BHK_OPTIONS, CLIENT_STATUSES, FACINGS, FLOORS, LEAD_SOURCES, LOCATIONS, PROPERTY_TYPES, UNITS } from '../../constants/leadOptions';
-import { EnquiryButton as Button, EnquiryField as Field, EnquirySelect as Select, EnquiryLoading, EnquiryDateTime, enquiryStyles as s } from '../../components/EnquiryControls';
+import { EnquiryButton as Button, EnquiryField as Field, EnquirySelect as Select, EnquiryLoading, enquiryStyles as s } from '../../components/EnquiryControls';
 
 const qualificationDefaults: Record<string, string> = {
   name: '', phone: '', lead_type: 'buyer', lead_source: '', lead_status: 'Warm', location: '', property_type: '',
@@ -23,9 +22,6 @@ export default function EnquiryDetailScreen() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [outcome, setOutcome] = useState('');
-  const [due, setDue] = useState('');
-  const [remarks, setRemarks] = useState('');
   const [leadQuery, setLeadQuery] = useState('');
   const [leads, setLeads] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<any>(null);
@@ -58,7 +54,6 @@ export default function EnquiryDetailScreen() {
     writing.current = true; setBusy(true); setError('');
     try {
       const result = await api.updateEnquiry(enquiryId, action, payload);
-      if (action === 'followup') { setOutcome(''); setDue(''); setRemarks(''); }
       await load(false);
       Alert.alert('Saved', result.lead_id ? `Linked to Main Lead #${result.lead_id}.` : 'Enquiry updated.');
     } catch (e: any) { setError(e.message || 'Unable to save enquiry.'); Alert.alert('Unable to save', e.message || 'Please retry.'); }
@@ -133,24 +128,12 @@ export default function EnquiryDetailScreen() {
             <Button title={searching ? 'Searching…' : 'Search leads'} secondary disabled={searching || leadQuery.trim().length < 2 || disabled} onPress={search} />
             {!!searchError && <Text style={s.error}>{searchError}</Text>}
             {searched && leads.length === 0 && <Text style={s.muted}>No accessible Buyer/Tenant leads match.</Text>}
-            {leads.map(lead => <TouchableOpacity key={lead.id} style={[s.card, selectedLead?.id === lead.id && { borderColor: colors.primary }]} onPress={() => setSelectedLead(lead)}><Text style={s.text}>{selectedLead?.id === lead.id ? '✓ ' : ''}#{lead.id} · {lead.name}</Text><Text style={s.muted}>{lead.phone} · {lead.location}</Text></TouchableOpacity>)}
+            {leads.map(lead => <TouchableOpacity key={lead.id} style={[s.card, selectedLead?.id === lead.id && { borderColor: colors.primary }]} onPress={() => { setSelectedLead(lead); setOwner(String(lead.assigned_to || item.assigned_to || '')); }}><Text style={s.text}>{selectedLead?.id === lead.id ? '✓ ' : ''}#{lead.id} · {lead.name}</Text><Text style={s.muted}>{lead.phone} · {lead.location}</Text></TouchableOpacity>)}
             <Button title="Confirm existing lead" disabled={disabled || !selectedLead || !owner} onPress={() => Alert.alert('Link existing lead?', `Mark this enquiry Qualified · Converted and link to #${selectedLead.id} ${selectedLead.name}?`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Link lead', onPress: () => run('link_existing', { assigned_to: Number(owner), lead_id: selectedLead.id }) }])} />
           </View>
-          <View style={s.card}>
-            <Text style={s.heading}>Schedule follow-up</Text>
-            <Select label="Outcome *" value={outcome} choices={['Connected', 'No answer', 'Busy', 'Wrong number', 'Message sent']} onChange={setOutcome} />
-            <EnquiryDateTime value={due} onChange={setDue} />
-            <Field label="Remarks" value={remarks} onChange={setRemarks} multiline />
-            <Button title="Schedule follow-up" disabled={disabled || !item.assigned_to || !outcome || !due} onPress={() => run('followup', { due_at: due, outcome, remarks })} />
-            {!item.assigned_to && <Text style={s.warning}>Save an employee assignment before scheduling.</Text>}
-          </View>
+
         </View>}
         {readOnly && <View style={s.card}><Text style={s.heading}>Saved qualification</Text>{Object.entries(item.qualification || {}).filter(([, v]) => v !== '').map(([k, v]) => <Text key={k} style={s.text}>{k.replace(/_/g, ' ')}: {String(v)}</Text>)}</View>}
-        <View style={s.card}><Text style={s.heading}>Follow-ups</Text><Text style={s.muted}>Complete these in Reminders. Times are Asia/Kolkata.</Text>
-          <Button title="Open Reminders" secondary onPress={() => router.push('/reminders' as any)} />
-          {!data.followups.length && <Text style={s.muted}>No follow-ups scheduled.</Text>}
-          {data.followups.map((f: any) => <EnquiryFollowupSummary key={f.id} followup={f} />)}
-        </View>
         <View style={s.card}><Text style={s.heading}>Activity and assignment history</Text>
           {!data.history.length && <Text style={s.muted}>No activity yet.</Text>}
           {data.history.map((h: any) => <View key={h.id}><Text style={s.text}>{h.event_type} · {h.actor || 'Sync service'}</Text><Text style={s.muted}>{h.created_at}</Text><Text selectable style={s.muted}>{h.details}</Text></View>)}

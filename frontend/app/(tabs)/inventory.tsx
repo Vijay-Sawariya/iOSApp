@@ -46,6 +46,7 @@ import {
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
+import { inventoryPropertyCategory, matchesInventoryPropertyFilter, hasUnpricedInventory } from '../../utils/inventoryProperty';
 import AssignLeadButton from '../../components/AssignLeadButton';
 import { canShowInventory, isUnavailableInventory, formatInventoryCopy, sortInventory } from '../../utils/inventory';
 import { colors, radii, shadows } from '../../constants/theme';
@@ -56,10 +57,11 @@ const FLOOR_OPTIONS = [...FLOORS];
 const STATUS_OPTIONS = [...INVENTORY_STATUSES];
 const FACING_OPTIONS = [...FACINGS];
 const TYPE_OPTIONS = [
-  { label: 'All', value: '' },
-  { label: 'Sell', value: 'sell' },  // 'sell' will match both seller and builder
-  { label: 'Rent', value: 'landlord' },
-  { label: 'Agent', value: 'agent' },
+  { label: 'All property types', value: '' },
+  { label: 'Residential Sale', value: 'residential_sale' },
+  { label: 'Residential Rent', value: 'residential_rent' },
+  { label: 'Commercial Sale', value: 'commercial_sale' },
+  { label: 'Commercial Rent', value: 'commercial_rent' },
 ];
 
 const GODADDY_BASE_URL = 'https://sagarhomelms.com';
@@ -346,14 +348,7 @@ export default function InventoryLeadsScreen() {
       );
     }
 
-    // Type filter - 'sell' matches both 'seller' and 'builder'
-    if (type) {
-      if (type === 'sell') {
-        filtered = filtered.filter((lead) => lead.lead_type === 'seller' || lead.lead_type === 'builder');
-      } else {
-        filtered = filtered.filter((lead) => lead.lead_type === type);
-      }
-    }
+    if (type) filtered = filtered.filter(lead => matchesInventoryPropertyFilter(lead, type));
 
     // Location filter
     if (locations.length > 0) {
@@ -438,6 +433,9 @@ export default function InventoryLeadsScreen() {
       
       filtered = filtered.filter((lead) => {
         const pricesToCheck = getInventoryPrices(lead, floors);
+        if (bMin.trim() !== '' && bMax.trim() !== '' && Number(bMin) === 0 && Number(bMax) === 0) {
+          return hasUnpricedInventory(lead);
+        }
 
         if (pricesToCheck.length === 0) {
           // No matching floor prices found
@@ -773,18 +771,31 @@ export default function InventoryLeadsScreen() {
   };
 
   const openLoggedWhatsApp = async (lead: Lead) => {
-    const cleanPhone = (lead.phone || '').replace(/[^0-9]/g, '');
-    if (!cleanPhone) return;
+    const cleanPhone = (lead.phone || '').split(/[,;/]/)[0].replace(/[^0-9]/g, '');
+    if (!cleanPhone) {
+      Alert.alert('Phone unavailable', 'Add a phone number to open WhatsApp.');
+      return;
+    }
+    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     const message = `Hi ${lead.name || ''}, `;
-    await api.sendWhatsApp({
+    try {
+      try {
+        await Linking.openURL(`whatsapp://send?phone=${phoneWithCountry}`);
+      } catch {
+        await Linking.openURL(`https://wa.me/${phoneWithCountry}`);
+      }
+    } catch {
+      Alert.alert('Unable to open WhatsApp', 'Please check that WhatsApp is installed and try again.');
+      return;
+    }
+    // Opening the chat must not wait for the activity log or a network timeout.
+    void api.sendWhatsApp({
       phone: lead.phone || cleanPhone,
       message,
       lead_id: String(lead.id),
       status: 'opened',
       source: 'ios_inventory_card',
-    }).catch((error) => console.warn('WhatsApp log failed:', error));
-    await Linking.openURL(`https://wa.me/91${cleanPhone}`);
-    loadLeadsRef.current();
+    }).then(() => loadLeadsRef.current()).catch((error) => console.warn('WhatsApp log failed:', error));
   };
 
   const handleShareMenu = (lead: Lead) => {
@@ -879,7 +890,7 @@ export default function InventoryLeadsScreen() {
           {/* Name and Type Badge Row */}
           <View style={styles.cardHeader}>
             <View style={styles.nameSection}>
-              <Text style={styles.leadName}>{item.name}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Ionicons accessibilityLabel={inventoryPropertyCategory(item.property_type) || 'Property type not specified'} name={inventoryPropertyCategory(item.property_type) === 'commercial' ? 'business' : inventoryPropertyCategory(item.property_type) === 'residential' ? 'home' : 'help-circle-outline'} size={20} color={inventoryPropertyCategory(item.property_type) === 'commercial' ? '#864b0b' : '#174b82'} /><Text style={[styles.leadName, { flexShrink: 1 }]}>{item.name}</Text></View>
               {item.created_by_name && (
                 <Text style={styles.createdByText}>Gen. By {item.created_by_name}</Text>
               )}
@@ -909,31 +920,8 @@ export default function InventoryLeadsScreen() {
             </View>
           </View>
 
-          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
-          {item.phone && (
-            <View style={styles.infoRow}>
-              <Ionicons name="call" size={14} color={canViewData ? "#3B82F6" : "#9CA3AF"} />
-              <Text style={[styles.infoText, canViewData && styles.linkText]}>{displayPhone}</Text>
-              {canViewData && (
-                <>
-                  <TouchableOpacity 
-                    style={styles.whatsappButton}
-                    onPress={() => Linking.openURL(`tel:${item.phone}`)}
-                  >
-                    <Ionicons name="call" size={16} color="#3B82F6" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.whatsappButton}
-                    onPress={() => openLoggedWhatsApp(item)}
-                  >
-                    <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
-
-          {/* Address & Location Row */}
+          <View style={{ width: '100%', gap: 8 }}>
+            <View style={{ width: '100%' }}>          {/* Address & Location Row */}
           {(item.address || item.location) && (
             <View style={styles.infoRow}>
               <Ionicons name="location" size={14} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
@@ -976,7 +964,36 @@ export default function InventoryLeadsScreen() {
                 </TouchableOpacity>
               )}
             </View>
+          )}</View>
+            <View style={{ width: '100%' }}>          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
+          {item.phone && (
+            <View style={styles.infoRow}>
+              <Ionicons name="call" size={14} color={canViewData ? "#3B82F6" : "#9CA3AF"} />
+              <Text style={[styles.infoText, canViewData && styles.linkText]}>{displayPhone}</Text>
+              {canViewData && (
+                <>
+                  <TouchableOpacity
+                    style={styles.whatsappButton}
+                    onPress={() => Linking.openURL(`tel:${item.phone}`)}
+                  >
+                    <Ionicons name="call" size={16} color="#3B82F6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.whatsappButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open WhatsApp chat with ${item.name}`}
+                    activeOpacity={0.65}
+                    onPress={(event) => { event.stopPropagation(); void openLoggedWhatsApp(item); }}
+                  >
+                    <Ionicons name="logo-whatsapp" size={28} color="#25D366" />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           )}
+
+</View>
+          </View>
 
           {/* Tags Row - Removed property_type, added floor and facing */}
           <View style={styles.tagsRow}>
@@ -1705,7 +1722,7 @@ export default function InventoryLeadsScreen() {
 
                   {/* Type Filter */}
                   <View style={styles.filterSection}>
-                    <Text style={styles.filterLabel}>Type:</Text>
+                    <Text style={styles.filterLabel}>Property Type:</Text>
                     <View style={styles.filterOptions}>
                       {TYPE_OPTIONS.map((t) => (
                         <TouchableOpacity
@@ -1715,8 +1732,10 @@ export default function InventoryLeadsScreen() {
                             typeFilter === t.value && styles.filterChipActive,
                           ]}
                           onPress={() => {
-                            setTypeFilter(typeFilter === t.value ? '' : t.value);
-                            setTimeout(handleApplyFilters, 0);
+                            const nextType = typeFilter === t.value ? '' : t.value;
+                            setTypeFilter(nextType);
+                            setSelectedStatTile('total');
+                            applyFilters(leads, searchQuery, selectedLocations, selectedFloors, selectedStatuses, selectedFacings, nextType, areaMin, areaMax, budgetMin, budgetMax, addressFilter, 'total');
                           }}
                         >
                           <Text style={[
@@ -2522,7 +2541,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   whatsappButton: {
-    padding: 4,
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
     marginLeft: 8,
   },
   mapIconButton: {
