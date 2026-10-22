@@ -920,11 +920,11 @@ export default function InventoryLeadsScreen() {
             </View>
           </View>
 
-          <View style={{ width: '100%', gap: 8 }}>
+          <View style={styles.contactDetails}>
             <View style={{ width: '100%' }}>          {/* Address & Location Row */}
           {(item.address || item.location) && (
-            <View style={styles.infoRow}>
-              <Ionicons name="location" size={14} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
+            <View style={styles.addressRow}>
+              <Ionicons name="location" size={16} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
               {canViewData && hasMapUrl ? (
                 <TouchableOpacity
                   style={styles.locationLink}
@@ -967,32 +967,36 @@ export default function InventoryLeadsScreen() {
           )}</View>
             <View style={{ width: '100%' }}>          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
-            <View style={[styles.infoRow, { alignItems: 'center', marginBottom: 0 }]}>
-              <Ionicons name="call" size={14} color={canViewData ? "#3B82F6" : "#9CA3AF"} />
-              <Text style={[styles.infoText, { flex: 0, flexShrink: 1 }, canViewData && styles.linkText]}>{displayPhone}</Text>
+            <View style={styles.phoneRow}>
+              <TouchableOpacity
+                style={styles.phoneLink}
+                disabled={!canViewData}
+                accessibilityRole={canViewData ? 'link' : undefined}
+                accessibilityLabel={canViewData ? `Call ${item.name} at ${displayPhone}` : 'Phone number restricted'}
+                activeOpacity={0.65}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void Linking.openURL(`tel:${(item.phone || '').split(/[,;/]/)[0].trim()}`)
+                    .catch(() => Alert.alert('Unable to call', 'Please check the phone number and try again.'));
+                }}
+              >
+                <Ionicons name="call" size={16} color={canViewData ? '#3B82F6' : '#9CA3AF'} />
+                <Text style={[styles.phoneText, canViewData && styles.linkText]}>{displayPhone}</Text>
+              </TouchableOpacity>
               {canViewData && (
-                <>
-                  <TouchableOpacity
-                    style={styles.whatsappButton}
-                    onPress={() => Linking.openURL(`tel:${item.phone}`)}
-                  >
-                    <Ionicons name="call" size={16} color="#3B82F6" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.whatsappButton}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open WhatsApp chat with ${item.name}`}
-                    activeOpacity={0.65}
-                    onPress={(event) => { event.stopPropagation(); void openLoggedWhatsApp(item); }}
-                  >
-                    <Ionicons name="logo-whatsapp" size={28} color="#25D366" />
-                  </TouchableOpacity>
-                </>
+                <TouchableOpacity
+                  style={styles.whatsappButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open WhatsApp chat with ${item.name}`}
+                  activeOpacity={0.65}
+                  onPress={(event) => { event.stopPropagation(); void openLoggedWhatsApp(item); }}
+                >
+                  <Ionicons name="logo-whatsapp" size={28} color="#25D366" />
+                </TouchableOpacity>
               )}
             </View>
           )}
-
-</View>
+            </View>
           </View>
 
           {/* Tags Row - Removed property_type, added floor and facing */}
@@ -2522,6 +2526,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     marginLeft: 6,
   },
+  contactDetails: { width: '100%', gap: 2 },
+  addressRow: { flexDirection: 'row', alignItems: 'center', minHeight: 28 },
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  phoneLink: { flexDirection: 'row', alignItems: 'center', minHeight: 48, flexShrink: 1, gap: 8 },
+  phoneText: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, flexShrink: 1 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2546,7 +2555,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 24,
-    marginLeft: 8,
+    flexShrink: 0,
   },
   mapIconButton: {
     marginLeft: 10,

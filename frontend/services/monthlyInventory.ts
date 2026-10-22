@@ -5,7 +5,7 @@ export type MonthlyEntry = {
   owner_name: string; phone: string; note: string; entry_status: string; needs_review: boolean;
   converted_lead_id: number | null; matching_lead_id: number | null; pdf_id: number | null;
 };
-export type MonthlyInventoryPage = { items: MonthlyEntry[]; total: number; page: number; has_more: boolean; months: string[] };
+export type MonthlyInventoryPage = { items: MonthlyEntry[]; total: number; page: number; has_more: boolean; months: string[]; locations?: string[] };
 
 // Preserve combined floor labels, matching MonthlyInventoryConversion::floors on web.
 export function bookFloors(raw: string): string {
@@ -26,8 +26,9 @@ export function conversionParams(entry: MonthlyEntry): Record<string, string> {
 }
 
 // Empty numeric query parameters are rejected by the API; preserve explicit zero.
-export function monthlyInventoryQuery(filters: Record<string, string | number | undefined>): string {
+export function monthlyInventoryQuery(filters: Record<string, string | number | string[] | undefined>): string {
   return Object.entries(filters)
-    .filter(([, value]) => value !== undefined && String(value).trim() !== '')
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join('&');
+    .flatMap(([key, value]) => (Array.isArray(value) ? value : [value])
+      .filter(item => item !== undefined && String(item).trim() !== '')
+      .map(item => `${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`)).join('&');
 }

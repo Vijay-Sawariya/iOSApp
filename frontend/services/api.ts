@@ -280,7 +280,7 @@ export const api = {
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load sync history'));
     return response.json();
   },
-  getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {
+  getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number; locations?: string[]; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {
     const query = monthlyInventoryQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });
     notifyAuthFailure(response);

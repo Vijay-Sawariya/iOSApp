@@ -94,6 +94,8 @@ class Database:
             self.result = [] if self.entry['is_deleted'] else [dict(self.entry, entry_status='First book')]
         elif 'SELECT id,book_month,category FROM monthly_inventory_pdfs' in query:
             self.result = [dict(id=8, book_month=ENTRY['book_month'], category=ENTRY['category'])]
+        elif 'SELECT DISTINCT location FROM monthly_inventory_entries' in query:
+            self.result = [{'location': 'GK 1'}, {'location': 'GK 2'}]
         elif 'DISTINCT DATE_FORMAT' in query:
             self.result = [{'month': '2026-10'}]
         elif 'OCTET_LENGTH' in query:
@@ -223,6 +225,15 @@ class MonthlyTests(unittest.TestCase):
                 self.assertIn(f'e.{column} LIKE %s', query)
             self.assertIn("NULLIF(e.area_size,'') >= %s", query)
             self.assertIn("NULLIF(e.area_size,'') <= %s", query)
+
+    def test_multiple_locations_use_any_selected_location(self):
+        response = self.client.get('/api/monthly-inventory', params=[('locations', 'GK 1'), ('locations', 'GK 2')])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['locations'], ['GK 1', 'GK 2'])
+        queries = [query for query in self.db.queries if query.startswith(('SELECT COUNT(*)', 'SELECT e.*,b.book_month'))]
+        self.assertEqual(len(queries), 2)
+        for query in queries:
+            self.assertIn('e.location IN (%s,%s)', query)
 
     def test_invalid_area_ranges_are_rejected(self):
         for params in [dict(min_area=-1), dict(max_area=-1), dict(min_area=500, max_area=100), dict(min_area='abc')]:

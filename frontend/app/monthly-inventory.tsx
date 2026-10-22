@@ -8,6 +8,7 @@ import { api, getAuthToken } from '../services/api';
 import { API_URL } from '../constants/config';
 import { useAuth } from '../contexts/AuthContext';
 import { colors, radii } from '../constants/theme';
+import { SearchableMultiSelect } from '../components/forms/SearchableMultiSelect';
 import { CustomDropdown } from '../components/forms/CustomDropdown';
 import { MonthlyEntry, conversionParams } from '../services/monthlyInventory';
 
@@ -75,13 +76,16 @@ export default function MonthlyInventoryScreen() {
   const { user } = useAuth();
   const allowed = user?.username === 'vsawariya';
   const [items, setItems] = useState<MonthlyEntry[]>([]);
+  const [locationOptions, setLocationOptions] = useState<string[]>([]);
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [appliedLocations, setAppliedLocations] = useState<string[]>([]);
   const [months, setMonths] = useState<string[]>([]);
   const [month, setMonth] = useState('All months');
   const [category, setCategory] = useState('All categories');
   const [criteriaExpanded, setCriteriaExpanded] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const emptyCriteria = { location: '', address: '', owner_name: '', phone: '', floor: '', min_area: '', max_area: '' };
+  const emptyCriteria = { address: '', owner_name: '', phone: '', floor: '', min_area: '', max_area: '' };
   const [criteria, setCriteria] = useState(emptyCriteria);
   const [appliedCriteria, setAppliedCriteria] = useState(emptyCriteria);
   const applySearch = () => {
@@ -91,6 +95,7 @@ export default function MonthlyInventoryScreen() {
       Alert.alert('Invalid area range', 'Enter non-negative areas with minimum area no greater than maximum area.');
       return;
     }
+    setAppliedLocations(selectedLocations);
     setSearch(searchInput.trim());
     setAppliedCriteria(Object.fromEntries(Object.entries(criteria).map(([key, value]) => [key, value.trim()])) as typeof criteria);
   };
@@ -110,16 +115,16 @@ export default function MonthlyInventoryScreen() {
     setError('');
     setLoading(nextPage === 1); setLoadingMore(nextPage > 1);
     try {
-      const result = await api.getMonthlyInventory({ month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, page: nextPage });
+      const result = await api.getMonthlyInventory({ month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations, page: nextPage });
       if (version !== requestVersion.current) return;
       setItems(previous => nextPage === 1 ? result.items : [...previous, ...result.items]);
-      setMonths(result.months); setTotal(result.total); setPage(nextPage); setHasMore(result.has_more);
+      setLocationOptions(result.locations || []); setMonths(result.months); setTotal(result.total); setPage(nextPage); setHasMore(result.has_more);
     } catch (e) {
       if (version === requestVersion.current) setError(e instanceof Error ? e.message : 'Could not load monthly inventory.');
     } finally {
       if (version === requestVersion.current) { setLoading(false); setLoadingMore(false); }
     }
-  }, [allowed, month, category, search, appliedCriteria]);
+  }, [allowed, month, category, search, appliedCriteria, appliedLocations]);
   useFocusEffect(useCallback(() => {
     setItems([]); setHasMore(false); setPdfId(null);
     void load();
@@ -158,8 +163,13 @@ export default function MonthlyInventoryScreen() {
           <View style={styles.filter}><CustomDropdown label="Book month" value={month} options={['All months', ...months]} onSelect={setMonth} /></View>
           <View style={styles.filter}><CustomDropdown label="Category" value={category} options={Object.keys(categories)} onSelect={setCategory} /></View>
         </View>
+        <View>
+          <SearchableMultiSelect label="Location" selectedValues={selectedLocations} options={locationOptions}
+            placeholder="All locations" searchPlaceholder="Search locations..."
+            onToggle={value => setSelectedLocations(previous => previous.includes(value) ? previous.filter(location => location !== value) : [...previous, value])} />
+        </View>
         <View style={styles.criteriaGrid}>
-          {([['location', 'Location'], ['address', 'Address'], ['owner_name', 'Builder / owner'], ['phone', 'Phone'], ['floor', 'Floor'], ['min_area', 'Minimum area'], ['max_area', 'Maximum area']] as const).map(([key, label]) =>
+          {([['address', 'Address'], ['owner_name', 'Builder / owner'], ['phone', 'Phone'], ['floor', 'Floor'], ['min_area', 'Minimum area'], ['max_area', 'Maximum area']] as const).map(([key, label]) =>
             <View key={key} style={styles.criteriaField}>
               <Text style={styles.muted}>{label}</Text>
               <TextInput accessibilityLabel={label} placeholder={label} value={criteria[key]}
@@ -168,7 +178,7 @@ export default function MonthlyInventoryScreen() {
                 style={styles.criteriaInput} returnKeyType="search" onSubmitEditing={applySearch} />
             </View>)}
         </View>
-        <TouchableOpacity accessibilityRole="button" onPress={() => { setCriteria(emptyCriteria); setAppliedCriteria(emptyCriteria); setMonth('All months'); setCategory('All categories'); setSearchInput(''); setSearch(''); }}>
+        <TouchableOpacity accessibilityRole="button" onPress={() => { setSelectedLocations([]); setAppliedLocations([]); setCriteria(emptyCriteria); setAppliedCriteria(emptyCriteria); setMonth('All months'); setCategory('All categories'); setSearchInput(''); setSearch(''); }}>
           <Text style={styles.actionText}>Reset filters</Text>
         </TouchableOpacity>
         <View style={styles.searchRow}>

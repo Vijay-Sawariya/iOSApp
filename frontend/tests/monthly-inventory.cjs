@@ -46,3 +46,9 @@ test('monthly queries omit empty areas on opening and preserve zero bounds', () 
   assert.equal(query, 'page=1');
   assert.equal(exportsObject.monthlyInventoryQuery({ min_area: '0', max_area: '250', address: 'C & D' }), 'min_area=0&max_area=250&address=C%20%26%20D');
 });
+
+test('multiple locations remain separate query values including names containing commas', () => {
+  assert.equal(exportsObject.monthlyInventoryQuery({ locations: ['GK 1', 'Colony, West'], page: 1 }),
+    'locations=GK%201&locations=Colony%2C%20West&page=1');
+  assert.equal(exportsObject.monthlyInventoryQuery({ locations: [], page: 1 }), 'page=1');
+});
