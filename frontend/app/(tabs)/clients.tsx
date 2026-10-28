@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import { sortLeadsByCreatedAt } from '../../utils/leadSort';
 import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
 import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
@@ -84,8 +85,8 @@ interface Lead {
 }
 
 // Filter arrays
-const LOCATION_OPTIONS = [...LOCATIONS];
-const FLOOR_OPTIONS = [...FLOORS];
+const LOCATION_OPTIONS = LOCATIONS;
+const FLOOR_OPTIONS = FLOORS;
 
 const formatLeadDate = (value?: string | null) => {
   if (!value) return 'Not available';
@@ -100,6 +101,7 @@ const formatLeadDate = (value?: string | null) => {
 };
 
 export default function ClientLeadsScreen() {
+  useSharedDropdowns();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [refreshing, setRefreshing] = useState(false);

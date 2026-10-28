@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -250,6 +251,7 @@ const buildLeadsCsv = (rows: any[]) => {
 };
 
 export default function MoreScreen() {
+  useSharedDropdowns();
   const { user, token, logout, hasFeature } = useAuth();
   const params = useLocalSearchParams();
   const requestedTab = (params.tab as string) || 'visits';
@@ -315,7 +317,6 @@ export default function MoreScreen() {
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [filteredLocations, setFilteredLocations] = useState<string[]>([...LOCATIONS]);
   
   // Form states
   const [visitForm, setVisitForm] = useState({
@@ -330,6 +331,7 @@ export default function MoreScreen() {
     status: 'Scheduled',
     notes: '',
   });
+  const filteredLocations = LOCATIONS.filter(loc => loc.toLowerCase().includes(visitForm.location.toLowerCase()));
   
   const [dealForm, setDealForm] = useState({
     lead_id: '',
@@ -801,12 +803,9 @@ export default function MoreScreen() {
   const filterLocations = (query: string) => {
     setVisitForm({ ...visitForm, location: query });
     if (query.length === 0) {
-      setFilteredLocations([...LOCATIONS]);
+
     } else {
-      const filtered = LOCATIONS.filter(loc => 
-        loc.toLowerCase().includes(query.toLowerCase())
-      );
-      setFilteredLocations(filtered);
+
     }
     setShowLocationDropdown(true);
   };
@@ -1696,7 +1695,7 @@ export default function MoreScreen() {
                     style={styles.clearButton}
                     onPress={() => {
                       setVisitForm({ ...visitForm, location: '' });
-                      setFilteredLocations([...LOCATIONS]);
+
                     }}
                   >
                     <Ionicons name="close-circle" size={20} color="#9CA3AF" />

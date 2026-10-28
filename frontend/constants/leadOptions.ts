@@ -1,3 +1,5 @@
+// Shared dropdown arrays are populated from the LMS catalogue by sharedDropdowns.ts.
+// No per-app default values: offline data comes from the last downloaded catalogue.
 // Lead Management Constants
 // Centralized constants used across lead forms and filters
 
@@ -20,125 +22,34 @@ export const HOW_OLD_OPTIONS = Array.from({ length: 50 }, (_, index) => String(i
 
 export const PROPERTY_TYPES = ['Apartment', 'Builder Floor', 'Plot', 'Villa', 'Kothi', 'Commercial'] as const;
 
-export const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK', '5+ BHK', 'Farm House', 'Hall'] as const;
+export const BHK_OPTIONS: string[] = [];
 
 export const UNITS = ['CR', 'L', 'K'] as const;
 
 // Shared floor options for forms and filters
-export const FLOORS = ['BMT+GF', 'BMT', 'GF', 'UGF', 'FF', 'SF', 'TF', 'TF+Terr', 'Plot', 'Farm House', 'Kothi', 'Commercial'] as const;
+export const FLOORS: string[] = [];
 
-export const FACINGS = ['South', 'North', 'East', 'West', 'Southeast', 'Southwest', 'Northeast', 'Northwest'] as const;
+export const FACINGS: string[] = [];
 
 export const LIFT_OPTIONS = ['Yes', 'No'] as const;
 
 // Lead Source options
-export const LEAD_SOURCES = ['Agent', 'Instagram', 'Reference', 'Magic Brick', 'Meta Ad', 'Google', 'Bulk Messages', 'Cold_Calling'] as const;
+export const LEAD_SOURCES: string[] = [];
 export type LeadSource = typeof LEAD_SOURCES[number];
 
 // Additional amenities from database schema
-export const AMENITIES = [
-  { key: 'park_facing', label: 'Park Facing' },
-  { key: 'park_at_rear', label: 'Park at Rear' },
-  { key: 'wide_road', label: 'Wide Road' },
-  { key: 'peaceful_location', label: 'Peaceful Location' },
-  { key: 'main_road', label: 'Main Road' },
-  { key: 'corner', label: 'Corner Plot' },
-] as const;
+export const AMENITIES: { key: string; label: string }[] = [];
 
-// Locations sorted alphabetically - Centralized list for entire application
-export const LOCATIONS = [
-  "Anand Lok",
-  "Anand Niketan",
-  "Andrews Ganj",
-  "Basant Lok DDA Complex",
-  "Bhikaji Cama Place",
-  "Chanakyapuri",
-  "Chattapur Farm",
-  "Chirag Enclave",
-  "CR Park",
-  "Defence Colony",
-  "East of Kailash",
-  "Friends Colony",
-  "Friends Colony East",
-  "Friends Colony West",
-  "Geetanjali Enclave",
-  "GK 1",
-  "GK 2",
-  "GK 3",
-  "GK 4",
-  "GK Enclave 1",
-  "GK Enclave 2",
-  "Golf Links",
-  "Green Park",
-  "Green Park Extension",
-  "Gulmohar Park",
-  "Hamdard Nagar",
-  "Hanuman Road",
-  "Hauz Khas",
-  "Hauz Khas Enclave",
-  "Hemkunt Colony",
-  "Jangpura Extension",
-  "Jor Bagh",
-  "Jor Bagh Enclave",
-  "Kailash Colony",
-  "Kalkaji",
-  "Kalkaji Enclave",
-  "Kashmere Gate",
-  "Kashmere Gate Enclave",
-  "Lajpat Nagar",
-  "Lajpat Nagar- III",
-  "Lodi Colony",
-  "Lodi Road",
-  "Lutyens' Bungalow Zone",
-  "Maharani Bagh",
-  "Malcha Marg",
-  "Malviya Nagar",
-  "Masjid Moth",
-  "Maurice Nagar",
-  "Munirka Vihar",
-  "National Park",
-  "Navjeevan Vihar",
-  "Neeti Bagh",
-  "Nehru Enclave",
-  "New Friends Colony",
-  "Nizamuddin East",
-  "Nizamuddin West",
-  "Pamposh Enclave",
-  "Panchsheel Enclave",
-  "Panchsheel Park",
-  "Pashmi Marg",
-  "Prithviraj Road",
-  "Rajdoot Marg",
-  "Safdarjung Enclave",
-  "Saket",
-  "Sarvapriya Vihar",
-  "Sarvodaya Enclave",
-  "SDA",
-  "Shanti Niketan",
-  "Shivalik",
-  "Soami Nagar",
-  "South Ex 1",
-  "South Ex 2",
-  "Sukhdev Vihar",
-  "Sultanpur Farms",
-  "Sunder Nagar",
-  "Uday Park",
-  "Vasant Kunj",
-  "Vasant Vihar",
-  "West End",
-  "Mayfair Garden",
-  "Golf Link",
-  "Amrita Shergill Marg",
-  "APJ Abdul Kalam Road",
-  "Aurangzeb Lane",
-] as const;
+// Locations in the administrator-defined shared order
+export const LOCATIONS: string[] = [];
 
 // Total location count
-export const LOCATION_COUNT = LOCATIONS.length;
+export let LOCATION_COUNT = 0;
+export const updateLocationCount = () => { LOCATION_COUNT = LOCATIONS.length; };
 
 // Filter Status Options (includes 'Any')
 export const FILTER_STATUSES = ['Any', ...INVENTORY_STATUSES] as const;
-export const FILTER_FACINGS = ['Any', ...FACINGS] as const;
+export const FILTER_FACINGS: string[] = ['Any'];
 
 // Type guards
 export const isClientType = (type: string | null): boolean => {

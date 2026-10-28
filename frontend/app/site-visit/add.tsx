@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -45,6 +46,7 @@ const getVisitDateOptions = () => {
 };
 
 export default function AddSiteVisitScreen() {
+  useSharedDropdowns();
   const { token } = useAuth();
   const params = useLocalSearchParams();
   const leadId = params.lead_id as string;
@@ -62,7 +64,6 @@ export default function AddSiteVisitScreen() {
   
   // Location dropdown state
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [filteredLocations, setFilteredLocations] = useState<string[]>([...LOCATIONS]);
   
   // Form state
   const [visitForm, setVisitForm] = useState({
@@ -80,6 +81,7 @@ export default function AddSiteVisitScreen() {
     status: 'Scheduled',
     notes: '',
   });
+  const filteredLocations = LOCATIONS.filter(loc => loc.toLowerCase().includes(visitForm.location.toLowerCase()));
 
   // Load lead data if leadId is provided
   useEffect(() => {
@@ -138,13 +140,10 @@ export default function AddSiteVisitScreen() {
   const handleLocationSearch = (text: string) => {
     setVisitForm(prev => ({ ...prev, location: text }));
     if (text.length > 0) {
-      const filtered = LOCATIONS.filter(loc => 
-        loc.toLowerCase().includes(text.toLowerCase())
-      );
-      setFilteredLocations(filtered);
+
       setShowLocationDropdown(true);
     } else {
-      setFilteredLocations([...LOCATIONS]);
+
       setShowLocationDropdown(false);
     }
   };

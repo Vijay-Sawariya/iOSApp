@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../services/sharedDropdowns';
 import { filterScrollProps, useFilterPanel } from '../hooks/useFilterPanel';
 import { isUnavailableInventory } from '../utils/inventory';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
@@ -321,6 +322,7 @@ const defaultFiltersFromLead = (lead: any) => {
 };
 
 export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSaved }: MatchingLeadsModalProps) {
+  useSharedDropdowns();
   const [filters, setFilters] = useState(defaultFiltersFromLead(null));
   const [matches, setMatches] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);

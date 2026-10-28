@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../../../services/sharedDropdowns';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -70,6 +71,7 @@ const toPossessionDate = (month: string, year: string): string | null => {
 };
 
 export default function EditLeadScreen() {
+  useSharedDropdowns();
   const { id } = useLocalSearchParams<{ id: string }>();
   const leadId = Array.isArray(id) ? id[0] : id;
   const [loading, setLoading] = useState(true);
@@ -125,7 +127,7 @@ export default function EditLeadScreen() {
   const [howOld, setHowOld] = useState('');
   
   // Additional Amenities (boolean toggles)
-  const [amenities, setAmenities] = useState({
+  const [amenities, setAmenities] = useState<Record<string, boolean>>({
     park_facing: false,
     park_at_rear: false,
     wide_road: false,
@@ -241,6 +243,7 @@ export default function EditLeadScreen() {
       // Amenities - check both individual fields and required_amenities
       const requiredAmenities = (data.required_amenities || '').toLowerCase();
       setAmenities({
+        ...Object.fromEntries((data.required_amenities || '').split(',').map((key: string) => key.trim()).filter(Boolean).map((key: string) => [key, true])),
         park_facing: data.park_facing === 1 || data.park_facing === true || requiredAmenities.includes('park_facing') || requiredAmenities.includes('park facing'),
         park_at_rear: data.park_at_rear === 1 || data.park_at_rear === true || requiredAmenities.includes('park_at_rear') || requiredAmenities.includes('park at rear'),
         wide_road: data.wide_road === 1 || data.wide_road === true || requiredAmenities.includes('wide_road') || requiredAmenities.includes('wide road'),
@@ -328,16 +331,7 @@ export default function EditLeadScreen() {
   };
 
   // Build comma-separated amenities string
-  const getRequiredAmenities = (): string => {
-    const selected: string[] = [];
-    if (amenities.park_facing) selected.push('park_facing');
-    if (amenities.park_at_rear) selected.push('park_at_rear');
-    if (amenities.wide_road) selected.push('wide_road');
-    if (amenities.peaceful_location) selected.push('peaceful_location');
-    if (amenities.main_road) selected.push('main_road');
-    if (amenities.corner) selected.push('corner');
-    return selected.join(', ');
-  };
+  const getRequiredAmenities = (): string => Object.keys(amenities).filter(key => amenities[key]).join(',');
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -831,7 +825,7 @@ export default function EditLeadScreen() {
             <View key={amenity.key} style={styles.amenityRow}>
               <Text style={styles.amenityLabel}>{amenity.label}</Text>
               <Switch
-                value={amenities[amenity.key as keyof typeof amenities]}
+                value={!!amenities[amenity.key]}
                 onValueChange={() => toggleAmenity(amenity.key)}
                 trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
                 thumbColor={amenities[amenity.key as keyof typeof amenities] ? '#3B82F6' : '#F3F4F6'}

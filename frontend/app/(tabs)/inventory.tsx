@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import InventoryUpdateModal from '../../components/InventoryUpdateModal';
 import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
@@ -52,10 +53,10 @@ import { canShowInventory, isUnavailableInventory, formatInventoryCopy, sortInve
 import { colors, radii, shadows } from '../../constants/theme';
 
 // Filter arrays
-const LOCATION_OPTIONS = [...LOCATIONS];
-const FLOOR_OPTIONS = [...FLOORS];
+const LOCATION_OPTIONS = LOCATIONS;
+const FLOOR_OPTIONS = FLOORS;
 const STATUS_OPTIONS = [...INVENTORY_STATUSES];
-const FACING_OPTIONS = [...FACINGS];
+const FACING_OPTIONS = FACINGS;
 const TYPE_OPTIONS = [
   { label: 'All property types', value: '' },
   { label: 'Residential Sale', value: 'residential_sale' },
@@ -86,6 +87,7 @@ const formatLeadDate = (value?: string | null) => {
 };
 
 export default function InventoryLeadsScreen() {
+  useSharedDropdowns();
   const pathname = usePathname();
   const isColdCalling = pathname.startsWith('/cold-calling');
   const [updatingInventoryId, setUpdatingInventoryId] = useState<number | null>(null);

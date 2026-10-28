@@ -1,3 +1,4 @@
+import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import React, { useCallback, useRef, useState } from 'react';
 import { Alert, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +15,7 @@ const qualificationDefaults: Record<string, string> = {
   max_possession_wait_months: '', area_size: '', floor: '', bhk: '', building_facing: '', required_amenities: '', budget_min: '', budget_max: '', unit: 'CR', notes: '',
 };
 export default function EnquiryDetailScreen() {
+  useSharedDropdowns();
   const { id } = useLocalSearchParams<{ id: string }>();
   const enquiryId = Number(id);
   const [data, setData] = useState<any>(null);

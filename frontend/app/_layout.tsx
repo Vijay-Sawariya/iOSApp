@@ -1,5 +1,6 @@
+import { refreshSharedDropdowns, useSharedDropdowns } from '../services/sharedDropdowns';
 import React, { useEffect } from 'react';
-import { Alert, View, StyleSheet, ActivityIndicator, Text, AppState } from 'react-native';
+import { Alert, View, StyleSheet, ActivityIndicator, Text, AppState, Button } from 'react-native';
 import { Stack, router, usePathname } from 'expo-router';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { OfflineProvider, useOffline } from '../contexts/OfflineContext';
@@ -8,6 +9,14 @@ import { api, setAuthToken } from '../services/api';
 import { notificationService } from '../services/notificationService';
 
 function RootLayoutContent() {
+  const dropdowns = useSharedDropdowns();
+  useEffect(() => {
+    void refreshSharedDropdowns();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshSharedDropdowns();
+    });
+    return () => subscription.remove();
+  }, []);
   const { token, user, loading, hasFeature, featureFlagsLoading } = useAuth();
   const { isInitialized } = useOffline();
   const pathname = usePathname();
@@ -140,7 +149,10 @@ function RootLayoutContent() {
   }, [featureFlagsLoading, hasFeature, pathname, token, user?.role]);
 
   // Show loading screen while initializing offline database
-  if (!isInitialized) {
+  if (token && !dropdowns.ready && dropdowns.error) {
+    return <View style={styles.loadingContainer}><Text>{dropdowns.error}</Text><Button title="Retry" onPress={() => { void refreshSharedDropdowns(); }} /></View>;
+  }
+  if (!isInitialized || (token && !dropdowns.ready)) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3B82F6" />
@@ -152,6 +164,7 @@ function RootLayoutContent() {
   return (
     <View style={styles.container}>
       <OfflineBanner />
+      {dropdowns.error ? <Text accessibilityRole="alert" style={{ padding: 8, backgroundColor: '#FEF3C7' }}>{dropdowns.error}</Text> : null}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
