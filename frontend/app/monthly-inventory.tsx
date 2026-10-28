@@ -12,12 +12,22 @@ import { SearchableMultiSelect } from '../components/forms/SearchableMultiSelect
 import { CustomDropdown } from '../components/forms/CustomDropdown';
 import { MonthlyEntry, conversionParams } from '../services/monthlyInventory';
 
+// Session-only state: keep criteria and loaded pages when this route is reopened.
+// The auth token scopes the snapshot so another login cannot reuse it.
+let bookSessionToken: string | null | undefined;
+let bookSession: Record<string, any> = {};
+function useBookState<T,>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => key in bookSession ? bookSession[key] : initial);
+  useEffect(() => { bookSession[key] = value; }, [key, value]);
+  return [value, setValue] as const;
+}
+
 const categories: Record<string, string> = {
   'All categories': '', 'Residential sale': 'residential_sale', 'Residential rent': 'residential_rent',
   'Commercial sale': 'commercial_sale', 'Commercial rent': 'commercial_rent',
 };
 
-function BookCard({ item, onPdf, onDelete, deleting }: { item: MonthlyEntry; onPdf: (id: number) => void; onDelete: (id: number) => void; deleting: boolean }) {
+function BookCard({ item, onPdf, onDelete, deleting, onStatusSaved }: { onStatusSaved: (id: number, status: MonthlyEntry['inventory_status']) => void; item: MonthlyEntry; onPdf: (id: number) => void; onDelete: (id: number) => void; deleting: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState<string>(item.inventory_status || 'Available');
   const [draftStatus, setDraftStatus] = useState(status);
@@ -47,7 +57,7 @@ function BookCard({ item, onPdf, onDelete, deleting }: { item: MonthlyEntry; onP
         <View style={styles.actions}><TouchableOpacity disabled={savingStatus} style={styles.action} onPress={() => setStatusModal(false)}><Text>Cancel</Text></TouchableOpacity>
         <TouchableOpacity disabled={savingStatus} style={[styles.action, styles.primary]} onPress={async () => {
           setSavingStatus(true);
-          try { await api.updateMonthlyInventoryStatus(item.id, draftStatus); setStatus(draftStatus); setStatusModal(false); }
+          try { await api.updateMonthlyInventoryStatus(item.id, draftStatus); setStatus(draftStatus); onStatusSaved(item.id, draftStatus as MonthlyEntry['inventory_status']); setStatusModal(false); }
           catch (e: any) { Alert.alert('Unable to save', e.message); }
           finally { setSavingStatus(false); }
         }}><Text style={{ color: colors.white }}>{savingStatus ? 'Saving…' : 'Update Status'}</Text></TouchableOpacity></View>
@@ -75,19 +85,21 @@ function BookCard({ item, onPdf, onDelete, deleting }: { item: MonthlyEntry; onP
 export default function MonthlyInventoryScreen() {
   const { user } = useAuth();
   const allowed = user?.username === 'vsawariya';
-  const [items, setItems] = useState<MonthlyEntry[]>([]);
-  const [locationOptions, setLocationOptions] = useState<string[]>([]);
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [appliedLocations, setAppliedLocations] = useState<string[]>([]);
-  const [months, setMonths] = useState<string[]>([]);
-  const [month, setMonth] = useState('All months');
-  const [category, setCategory] = useState('All categories');
-  const [criteriaExpanded, setCriteriaExpanded] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const token = getAuthToken();
+  if (bookSessionToken !== token) { bookSessionToken = token; bookSession = {}; }
+  const [items, setItems] = useBookState<MonthlyEntry[]>('items', []);
+  const [locationOptions, setLocationOptions] = useBookState<string[]>('locationOptions', []);
+  const [selectedLocations, setSelectedLocations] = useBookState<string[]>('selectedLocations', []);
+  const [appliedLocations, setAppliedLocations] = useBookState<string[]>('appliedLocations', []);
+  const [months, setMonths] = useBookState<string[]>('months', []);
+  const [month, setMonth] = useBookState('month', 'All months');
+  const [category, setCategory] = useBookState('category', 'All categories');
+  const [criteriaExpanded, setCriteriaExpanded] = useBookState('criteriaExpanded', false);
+  const [searchInput, setSearchInput] = useBookState('searchInput', '');
+  const [search, setSearch] = useBookState('search', '');
   const emptyCriteria = { address: '', owner_name: '', phone: '', floor: '', min_area: '', max_area: '' };
-  const [criteria, setCriteria] = useState(emptyCriteria);
-  const [appliedCriteria, setAppliedCriteria] = useState(emptyCriteria);
+  const [criteria, setCriteria] = useBookState('criteria', emptyCriteria);
+  const [appliedCriteria, setAppliedCriteria] = useBookState('appliedCriteria', emptyCriteria);
   const applySearch = () => {
     const minimum = criteria.min_area.trim(), maximum = criteria.max_area.trim();
     if ([minimum, maximum].some(value => value && (!Number.isFinite(Number(value)) || Number(value) < 0)) ||
@@ -99,9 +111,9 @@ export default function MonthlyInventoryScreen() {
     setSearch(searchInput.trim());
     setAppliedCriteria(Object.fromEntries(Object.entries(criteria).map(([key, value]) => [key, value.trim()])) as typeof criteria);
   };
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useBookState('page', 1);
+  const [total, setTotal] = useBookState('total', 0);
+  const [hasMore, setHasMore] = useBookState('hasMore', false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
@@ -109,34 +121,54 @@ export default function MonthlyInventoryScreen() {
   const [pdfError, setPdfError] = useState('');
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const requestVersion = useRef(0);
-  const load = useCallback(async (nextPage = 1) => {
+  const loadedQuery = useRef<string | null>(bookSession.loadedQuery ?? null);
+  const queryKey = JSON.stringify([month, category, search, appliedCriteria, appliedLocations]);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const load = useCallback(async (nextPage = 1, quiet = false) => {
     if (!allowed) return;
     const version = ++requestVersion.current;
     setError('');
-    setLoading(nextPage === 1); setLoadingMore(nextPage > 1);
+    setLoading(nextPage === 1 && !quiet); setLoadingMore(nextPage > 1 && !quiet);
     try {
-      const result = await api.getMonthlyInventory({ month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations, page: nextPage });
+      const filters = { month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations };
+      // Revalidate all loaded pages after an edit without dropping the reader to page one.
+      const pages = quiet ? Array.from({ length: pageRef.current }, (_, index) => index + 1) : [nextPage];
+      const results = await Promise.all(pages.map(page => api.getMonthlyInventory({ ...filters, page })));
+      const result = results[results.length - 1];
       if (version !== requestVersion.current) return;
-      setItems(previous => nextPage === 1 ? result.items : [...previous, ...result.items]);
-      setLocationOptions(result.locations || []); setMonths(result.months); setTotal(result.total); setPage(nextPage); setHasMore(result.has_more);
+      setItems(previous => quiet ? results.flatMap(result => result.items) : nextPage === 1 ? result.items : [...previous, ...result.items]);
+      loadedQuery.current = queryKey;
+      bookSession.loadedQuery = queryKey;
+      bookSession.updatedAt = Date.now();
+      setLocationOptions(result.locations || []); setMonths(result.months); setTotal(result.total); setPage(result.page); setHasMore(result.has_more);
     } catch (e) {
       if (version === requestVersion.current) setError(e instanceof Error ? e.message : 'Could not load monthly inventory.');
     } finally {
       if (version === requestVersion.current) { setLoading(false); setLoadingMore(false); }
     }
-  }, [allowed, month, category, search, appliedCriteria, appliedLocations]);
+  }, [allowed, month, category, search, appliedCriteria, appliedLocations, queryKey]);
+  const hasFocused = useRef(false);
   useFocusEffect(useCallback(() => {
-    setItems([]); setHasMore(false); setPdfId(null);
-    void load();
+    const sameQuery = loadedQuery.current === queryKey;
+    if (!sameQuery) {
+      setItems([]); setHasMore(false);
+      void load();
+    } else {
+      setLoading(false);
+      // A mounted route regaining focus may have returned from a lead edit/conversion.
+      if (hasFocused.current || Date.now() - (bookSession.updatedAt || 0) > 60_000) void load(1, true);
+    }
+    hasFocused.current = true;
     return () => { requestVersion.current++; };
-  }, [load]));
+  }, [load, queryKey]));
   const confirmDelete = (id: number) => {
     if (deletingId !== null) return;
     Alert.alert('Delete book inventory?', 'This hides matching inventory from all books in this category and skips it in future imports. Existing main inventory leads are kept.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         setDeletingId(id);
-        try { await api.deleteMonthlyInventory(id); await load(); }
+        try { await api.deleteMonthlyInventory(id); await load(1, true); }
         catch (e) { Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.'); }
         finally { setDeletingId(null); }
       } },
@@ -191,7 +223,7 @@ export default function MonthlyInventoryScreen() {
         {!!error && <View style={styles.errorBox}><Text style={styles.error}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => void load()}><Text style={styles.actionText}>Retry</Text></TouchableOpacity></View>}
       </View>}
       ListEmptyComponent={<View style={styles.empty}>{loading ? <ActivityIndicator color={colors.primary} /> : !error && <Text style={styles.muted}>No inventory found for these filters.</Text>}</View>}
-      renderItem={({ item }) => <BookCard item={item} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
+      renderItem={({ item }) => <BookCard item={item} onStatusSaved={(id, inventory_status) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, inventory_status } : entry))} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
       ListFooterComponent={hasMore ? <TouchableOpacity accessibilityRole="button" disabled={loading || loadingMore} style={styles.loadMore} onPress={() => void load(page + 1)}>
         {loadingMore ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.actionText}>Load more</Text>}
       </TouchableOpacity> : null} />

@@ -68,14 +68,17 @@ test('valid floor prices take precedence; missing or invalid prices do not becom
   }
 });
 
-test('cached and live inventories sort by creation date despite newer edits, with deterministic ties', () => {
-  const a = { id: 1, created_at: '2026-06-01 12:00:00', updated_on: '2026-10-05 12:00:00' };
-  const b = { id: 2, created_at: '2026-08-01 12:00:00', updated_on: '2026-10-04 12:00:00' };
-  const c = { ...b, id: 3 };
-  const cached = [b, c, a];
-  assert.deepEqual(Array.from(sortInventory(cached), item => item.id), [3, 2, 1]);
-  assert.deepEqual(Array.from(sortInventory([a, c, b]), item => item.id), [3, 2, 1]);
-  assert.deepEqual(cached, [b, c, a]);
+test('cached and live inventories sort by natural address, ignoring edit and creation dates', () => {
+  const rows = ['B-3', 'A-10', 'A-2', 'B-2', 'A-1', 'A-3', 'A-9/10', 'A-9/2']
+    .map((address, id) => ({ id, address, created_at: `2026-10-${10 + id}` }));
+  const expected = ['A-1', 'A-2', 'A-3', 'A-9/2', 'A-9/10', 'A-10', 'B-2', 'B-3'];
+  assert.deepEqual(Array.from(sortInventory(rows), row => row.address), expected);
+  assert.deepEqual(Array.from(sortInventory([...rows].reverse()), row => row.address), expected);
+  assert.equal(rows[0].address, 'B-3');
+});
+test('blank addresses are last and identical addresses have stable ID order', () => {
+  const rows = [{ id: 4, address: null }, { id: 3, address: 'a-2' }, { id: 2, address: 'A-2' }, { id: 1, address: '' }];
+  assert.deepEqual(Array.from(sortInventory(rows), row => row.id), [2, 3, 1, 4]);
 });
 
 

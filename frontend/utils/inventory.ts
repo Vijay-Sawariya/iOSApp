@@ -48,4 +48,4 @@ export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): st
   ].filter(Boolean).join('\n\n');
 };
 
-export { sortLeadsByCreatedAt as sortInventory } from './leadSort';
+export { sortByAddress as sortInventory } from './addressSort';
