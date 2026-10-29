@@ -68,17 +68,17 @@ test('valid floor prices take precedence; missing or invalid prices do not becom
   }
 });
 
-test('cached and live inventories sort by natural address, ignoring edit and creation dates', () => {
+test('inventory search sorts by natural address within a location', () => {
   const rows = ['B-3', 'A-10', 'A-2', 'B-2', 'A-1', 'A-3', 'A-9/10', 'A-9/2']
     .map((address, id) => ({ id, address, created_at: `2026-10-${10 + id}` }));
   const expected = ['A-1', 'A-2', 'A-3', 'A-9/2', 'A-9/10', 'A-10', 'B-2', 'B-3'];
-  assert.deepEqual(Array.from(sortInventory(rows), row => row.address), expected);
-  assert.deepEqual(Array.from(sortInventory([...rows].reverse()), row => row.address), expected);
+  assert.deepEqual(Array.from(sortInventory(rows, true), row => row.address), expected);
+  assert.deepEqual(Array.from(sortInventory([...rows].reverse(), true), row => row.address), expected);
   assert.equal(rows[0].address, 'B-3');
 });
 test('blank addresses are last and identical addresses have stable ID order', () => {
   const rows = [{ id: 4, address: null }, { id: 3, address: 'a-2' }, { id: 2, address: 'A-2' }, { id: 1, address: '' }];
-  assert.deepEqual(Array.from(sortInventory(rows), row => row.id), [2, 3, 1, 4]);
+  assert.deepEqual(Array.from(sortInventory(rows, true), row => row.id), [2, 3, 1, 4]);
 });
 
 
@@ -116,4 +116,26 @@ test('saving recomputes budgets and rejects incomplete prices instead of silentl
     assert.throws(() => buildInventoryEditPricing([{ floor: 'GF', price }], ''), /positive price/);
   }
   assert.throws(() => buildInventoryEditPricing([{ floor: '', price: '2' }], ''), /Select a floor/);
+});
+
+test('default inventory order is newest created first, independent of edits and address', () => {
+  const rows = [
+    { id: 1, address: 'A-1', created_at: '2026-01-01', updated_on: '2026-12-01' },
+    { id: 2, address: 'Z-1', created_at: '2026-10-29 12:00:00' },
+    { id: 3, created_at: '2026-10-29T12:00:00' },
+    { id: 4, created_at: null },
+    { id: 5, created_at: 'invalid' },
+  ];
+  assert.deepEqual(Array.from(sortInventory(rows), row => row.id), [3, 2, 1, 5, 4]);
+  assert.equal(rows[0].id, 1);
+});
+test('search groups by location before sorting addresses and puts blank locations last', () => {
+  const rows = [
+    { id: 1, location: 'Vasant Vihar', address: 'A-1' },
+    { id: 2, location: 'Anand Niketan', address: 'Z-10' },
+    { id: 3, location: ' anand niketan ', address: 'Z-2' },
+    { id: 4, location: null, address: 'A-1' },
+    { id: 5, location: 'Anand Niketan', address: null },
+  ];
+  assert.deepEqual(Array.from(sortInventory(rows, true), row => row.id), [3, 2, 5, 1, 4]);
 });

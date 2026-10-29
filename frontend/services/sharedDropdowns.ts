@@ -48,7 +48,9 @@ export const refreshSharedDropdowns = (): Promise<void> => {
       apply(data);
       try { await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* Current network catalogue is still usable. */ }
     } catch {
-      publish(snapshot.ready, snapshot.ready ? 'Using the last downloaded dropdowns while offline.' : 'Unable to load shared dropdowns. Connect to the internet and retry.');
+      // A failed refresh does not prove the device is offline. Cached options
+      // remain usable without a persistent app-wide warning.
+      publish(snapshot.ready, snapshot.ready ? '' : 'Unable to load shared dropdowns. Connect to the internet and retry.');
     } finally { clearTimeout(timer); }
   })().finally(() => { pending = null; });
   return pending;

@@ -53,7 +53,9 @@ test('uses last downloaded catalogue offline without app-specific defaults', asy
   await fixture.service.refreshSharedDropdowns();
   assert.equal(fixture.arrays.BHK_OPTIONS[0], 'bhk_cached');
   assert.equal(fixture.service.useSharedDropdowns().ready, true);
-  assert.match(fixture.service.useSharedDropdowns().error, /last downloaded/);
+  assert.equal(fixture.service.useSharedDropdowns().error, '');
+  await fixture.service.refreshSharedDropdowns();
+  assert.equal(fixture.service.useSharedDropdowns().error, '');
 });
 
 test('first offline launch and invalid responses remain explicit failures', async () => {

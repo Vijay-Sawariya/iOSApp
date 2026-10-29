@@ -48,4 +48,16 @@ export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): st
   ].filter(Boolean).join('\n\n');
 };
 
-export { sortByAddress as sortInventory } from './addressSort';
+import { sortByAddress } from './addressSort';
+import { sortLeadsByCreatedAt } from './leadSort';
+
+const locations = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+export const sortInventory = <T extends { id: number; created_at?: string | null; location?: string | null; address?: string | null }>(items: T[], searching = false): T[] => {
+  if (!searching) return sortLeadsByCreatedAt(items);
+  // Stable sorting preserves natural address order within each location.
+  return sortByAddress(items).sort((a, b) => {
+    const left = (a.location || '').trim();
+    const right = (b.location || '').trim();
+    return Number(!left) - Number(!right) || locations.compare(left, right);
+  });
+};
