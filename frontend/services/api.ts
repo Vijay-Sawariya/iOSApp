@@ -717,6 +717,7 @@ export const api = {
 
   getMatchingClients: async (leadId: number, filters: any = {}) => {
     const params = new URLSearchParams();
+    if (Object.keys(filters).length > 0) params.set('filters_submitted', 'true');
     Object.entries(filters).forEach(([key, value]) => {
       if (value === undefined || value === null || value === '') return;
       if (Array.isArray(value)) {

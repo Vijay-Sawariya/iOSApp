@@ -1,5 +1,6 @@
 import { useSharedDropdowns } from '../services/sharedDropdowns';
 import { filterScrollProps, useFilterPanel } from '../hooks/useFilterPanel';
+import { recipientFiltersFromLead } from '../services/inventoryRecipientMatching';
 import { isUnavailableInventory } from '../utils/inventory';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
@@ -307,7 +308,8 @@ const composeInternalInventoriesMessage = (inventories: any[]) => {
   return msg;
 };
 
-const defaultFiltersFromLead = (lead: any) => {
+const defaultFiltersFromLead = (lead: any, mode: MatchMode = 'inventory') => {
+  if (mode === 'clients') return recipientFiltersFromLead(lead);
   const area = Number.parseFloat(toText(lead?.area_size));
   const budgetMin = Number.parseFloat(toText(lead?.budget_min));
   const budgetMax = Number.parseFloat(toText(lead?.budget_max));
@@ -371,7 +373,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
   // Reset state when modal opens
   useEffect(() => {
     if (visible && lead?.id) {
-      const nextFilters = defaultFiltersFromLead(lead);
+      const nextFilters = defaultFiltersFromLead(lead, mode);
       setFilters(nextFilters);
       setSelectedIds([]);
       setMatches([]);
@@ -384,7 +386,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [visible, lead?.id, setShowFilters]);
+  }, [visible, lead?.id, mode, setShowFilters]);
 
   const loadMatches = useCallback(async (activeFilters = filters) => {
     if (!lead?.id) return;
@@ -437,7 +439,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
   };
 
   const resetFilters = () => {
-    const nextFilters = defaultFiltersFromLead(lead);
+    const nextFilters = defaultFiltersFromLead(lead, mode);
     setFilters(nextFilters);
   };
 
