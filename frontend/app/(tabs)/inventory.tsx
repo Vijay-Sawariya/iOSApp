@@ -459,10 +459,11 @@ export default function InventoryLeadsScreen() {
       filtered = filtered.filter((lead) => String(lead.created_by) === createdByFilter);
     }
 
+    // Category tiles keep newest-first ordering; only search/detail filters use address ordering.
     const searching = Boolean(search.trim() || locations.length || floors.length ||
       statuses.length || facings.length || type || aMin || aMax || bMin || bMax ||
       addrFilter.trim() || phone.trim() || budgetSrch || client ||
-      (statTile && statTile !== 'total') || createdByFilter);
+      createdByFilter);
     setFilteredLeads(sortInventory(filtered, searching));
     setSelectedIds(previous => new Set([...previous].filter(id => filtered.some(lead => lead.id === id))));
   };
