@@ -10,10 +10,19 @@ function load(file) {
   vm.runInNewContext(code, { exports, require: name => load(path.resolve(path.dirname(file), `${name}.ts`)) });
   return exports;
 }
-const { canShowInventory, formatInventoryCopy } = load(path.join(__dirname, '../utils/inventory.ts'));
+const { canShowInventory, formatInventoryCopy, getInventoryAmenities } = load(path.join(__dirname, '../utils/inventory.ts'));
 const lead = { id: 1587, location: 'Defence Colony', address: 'D-201', area_size: '325', floor: 'Kothi', bhk: '5+ BHK', car_parking_number: 4, unit: 'Lac', floor_pricing: [{ floor_label: 'Kothi', floor_amount: 10 }] };
+test('special amenities merge legacy flags and saved selections without duplicates', () => {
+  const property = { ...lead, park_facing: '1', wide_road: true, corner: '0', main_road: false,
+    required_amenities: 'park_facing, Wide Road, park_at_rear, Roof Garden' };
+  assert.deepEqual(Array.from(getInventoryAmenities(property)), ['Park Facing', 'Wide Road', 'Park at Rear', 'Roof Garden']);
+  for (const internal of [false, true]) {
+    assert.ok(formatInventoryCopy(property, 1, internal).includes('Special Amenities: Park Facing, Wide Road, Park at Rear, Roof Garden'));
+  }
+  assert.ok(!formatInventoryCopy(lead).includes('Special Amenities:'));
+});
 test('copy matches the requested format exactly', () => {
-  assert.equal(formatInventoryCopy(lead), 'Property Ref Id: 01-1587 - 325 Sq. Yds. At Defence Colony\n\nLocation: Defence Colony\n\nSize: 325 Sq. Yds.\n\nConfiguration: Kothi | — 5+ Bedrooms\n\nParking: 4 Cars\n\nKothi: ₹10 Lac Negotiable');
+  assert.equal(formatInventoryCopy(lead), 'Property Ref Id: 01-1587 - 325 Sq. Yds. At Defence Colony\nLocation: Defence Colony\nSize: 325 Sq. Yds.\nConfiguration: Kothi | — 5+ Bedrooms\nParking: 4 Cars\nKothi: ₹10 Lac Negotiable');
   assert.ok(formatInventoryCopy(lead, 2).startsWith('Property Ref Id: 02-1587 -'));
   assert.ok(!formatInventoryCopy(lead).includes('D-201'));
 });
@@ -33,15 +42,15 @@ test('closed inventory is shown only for an explicit status', () => {
 test('copy handles multiple prices and missing optional fields', () => {
   const text = formatInventoryCopy({ ...lead, floor: 'GF,FF', bhk: '1 BHK', car_parking_number: 1, floor_pricing: [{ floor_label: 'GF', floor_amount: 2.50 }, { floor_label: 'FF', floor_amount: 3 }], unit: 'CR' });
   assert.ok(text.includes('Ground Floor | First Floor | — 1 Bedroom'));
-  assert.ok(text.includes('Parking: 1 Car\n\nGround Floor: ₹2.5 Cr Negotiable\n\nFirst Floor: ₹3 Cr Negotiable'));
+  assert.ok(text.includes('Parking: 1 Car\nGround Floor: ₹2.5 Cr Negotiable\nFirst Floor: ₹3 Cr Negotiable'));
   assert.ok(formatInventoryCopy({ id: 2 }).includes('Ask: On Request Negotiable'));
 });
 
 test('internal copy includes address and locality only in its reference line', () => {
   const shared = formatInventoryCopy(lead);
   const internal = formatInventoryCopy(lead, 1, true);
-  assert.equal(internal.split('\n\n')[0], 'Property Ref Id: 01-1587 - D-201, Defence Colony | 325 Sq. Yds. At Defence Colony');
-  assert.equal(internal.slice(internal.indexOf('\n\n')), shared.slice(shared.indexOf('\n\n')));
+  assert.equal(internal.split('\n')[0], 'Property Ref Id: 01-1587 - D-201, Defence Colony | 325 Sq. Yds. At Defence Colony');
+  assert.equal(internal.slice(internal.indexOf('\n')), shared.slice(shared.indexOf('\n')));
   assert.ok(!formatInventoryCopy({ ...lead, address: null }, 1, true).includes('null'));
 });
 

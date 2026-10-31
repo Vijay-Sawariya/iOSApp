@@ -190,6 +190,18 @@ export interface Lead {
   bhk?: string | null;
   car_parking_number?: number | null;
   lift?: string | null;
+  required_amenities?: string | null;
+  park_facing?: number | boolean | string | null;
+  park_at_rear?: number | boolean | string | null;
+  wide_road?: number | boolean | string | null;
+  peaceful_location?: number | boolean | string | null;
+  main_road?: number | boolean | string | null;
+  corner?: number | boolean | string | null;
+  park?: number | boolean | string | null;
+  gated_community?: number | boolean | string | null;
+  sample_flat?: number | boolean | string | null;
+  parking?: number | boolean | string | null;
+  stilt?: number | boolean | string | null;
   building_facing: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;

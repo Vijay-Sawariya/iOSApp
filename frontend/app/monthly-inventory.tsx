@@ -11,6 +11,7 @@ import { colors, radii } from '../constants/theme';
 import { SearchableMultiSelect } from '../components/forms/SearchableMultiSelect';
 import { CustomDropdown } from '../components/forms/CustomDropdown';
 import { MonthlyEntry, conversionParams } from '../services/monthlyInventory';
+import PhoneNumbers from '../components/PhoneNumbers';
 
 // Session-only state: keep criteria and loaded pages when this route is reopened.
 // The auth token scopes the snapshot so another login cannot reuse it.
@@ -38,8 +39,8 @@ function BookCard({ item, onPdf, onDelete, deleting, onStatusSaved }: { onStatus
   return <View style={[styles.card, status !== 'Available' && { borderLeftWidth: 5, borderLeftColor: status === 'Hold' ? '#b7791f' : status === 'Sold' ? '#b42318' : '#64748b', backgroundColor: status === 'Hold' ? '#fffbeb' : status === 'Sold' ? '#fff5f5' : '#f1f5f9' }]}>
     {status !== 'Available' && <Text style={{ color: '#9a3412', fontWeight: '700' }}>{status} · Avoid availability calls</Text>}
     <Text style={styles.cardTitle}>{item.owner_name || 'Inventory entry'}</Text>
-    {!!item.phone && <Text style={styles.phone}>{item.phone}</Text>}
-    <Text style={styles.address}>{[item.address, item.location].filter(Boolean).join(', ')}</Text>
+    {!!item.phone && <PhoneNumbers phone={item.phone} textStyle={styles.phone} />}
+    <Text selectable style={styles.address}>{[item.address, item.location].filter(Boolean).join(', ')}</Text>
     <Text style={styles.muted}>{item.book_month.slice(0, 7)} · {item.category.replace('_', ' ')}</Text>
     <View style={styles.tags}>
       {[item.area_size ? `${item.area_size} ${item.area_unit}` : '', item.floor, item.configuration, item.entry_status,

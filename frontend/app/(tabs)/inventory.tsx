@@ -3,6 +3,7 @@ import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import InventoryUpdateModal from '../../components/InventoryUpdateModal';
 import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
 import TeamInboxBell from '../../components/TeamInboxBell';
+import PhoneNumbers from '../../components/PhoneNumbers';
 import { canViewLeadContacts } from '../../utils/contactAccess';
 import React, { useState, useCallback, useMemo } from 'react';
 import {
@@ -49,7 +50,7 @@ import {
 import { api } from '../../services/api';
 import { inventoryPropertyCategory, matchesInventoryPropertyFilter, hasUnpricedInventory } from '../../utils/inventoryProperty';
 import AssignLeadButton from '../../components/AssignLeadButton';
-import { canShowInventory, isUnavailableInventory, formatInventoryCopy, sortInventory } from '../../utils/inventory';
+import { canShowInventory, isUnavailableInventory, formatInventoryCopy, getInventoryAmenities, sortInventory } from '../../utils/inventory';
 import { colors, radii, shadows } from '../../constants/theme';
 
 // Filter arrays
@@ -805,6 +806,25 @@ export default function InventoryLeadsScreen() {
     }).then(() => loadLeadsRef.current()).catch((error) => console.warn('WhatsApp log failed:', error));
   };
 
+  const handleShareLocation = async (lead: Lead) => {
+    const locationUrl = lead.Property_locationUrl?.trim();
+    if (!locationUrl) return;
+    try {
+      const text = encodeURIComponent(locationUrl);
+      if (Platform.OS === 'web') {
+        await Linking.openURL(`https://web.whatsapp.com/send?text=${text}`);
+      } else {
+        try {
+          await Linking.openURL(`whatsapp://send?text=${text}`);
+        } catch {
+          await Linking.openURL(`https://wa.me/?text=${text}`);
+        }
+      }
+    } catch {
+      Alert.alert('Unable to share location', 'Please check that WhatsApp is installed and try again.');
+    }
+  };
+
   const handleShareMenu = (lead: Lead) => {
     setShareMenuLead(lead);
   };
@@ -834,16 +854,7 @@ export default function InventoryLeadsScreen() {
     const maskedAddress = canViewData ? item.address : (item.address ? '**********' : null);
     const displayAddressLocation = [maskedAddress, item.location].filter(Boolean).join(', ');
 
-    // Parse amenities from required_amenities field or individual amenity fields
-    const amenitiesList: string[] = [];
-    if ((item as any).park === '1' || (item as any).park === 1) amenitiesList.push('Park');
-    if ((item as any).corner === '1' || (item as any).corner === 1) amenitiesList.push('Corner');
-    if ((item as any).gated_community === '1' || (item as any).gated_community === 1) amenitiesList.push('Gated');
-    if ((item as any).sample_flat === '1' || (item as any).sample_flat === 1) amenitiesList.push('Sample Flat');
-    if ((item as any).main_road === '1' || (item as any).main_road === 1) amenitiesList.push('Main Road');
-    if ((item as any).parking === '1' || (item as any).parking === 1) amenitiesList.push('Parking');
-    if ((item as any).lift === '1' || (item as any).lift === 1 || (item as any).lift === 'Yes') amenitiesList.push('Lift');
-    if ((item as any).stilt === '1' || (item as any).stilt === 1) amenitiesList.push('Stilt');
+    const amenitiesList = getInventoryAmenities(item);
 
     // Get aging info
     const agingStyles = getAgingStyles(item.aging_color);
@@ -975,21 +986,12 @@ export default function InventoryLeadsScreen() {
             <View style={{ width: '100%' }}>          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
             <View style={styles.phoneRow}>
-              <TouchableOpacity
-                style={styles.phoneLink}
-                disabled={!canViewData}
-                accessibilityRole={canViewData ? 'link' : undefined}
-                accessibilityLabel={canViewData ? `Call ${item.name} at ${displayPhone}` : 'Phone number restricted'}
-                activeOpacity={0.65}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void Linking.openURL(`tel:${(item.phone || '').split(/[,;/]/)[0].trim()}`)
-                    .catch(() => Alert.alert('Unable to call', 'Please check the phone number and try again.'));
-                }}
-              >
+              <View style={styles.phoneLink}>
                 <Ionicons name="call" size={16} color={canViewData ? '#3B82F6' : '#9CA3AF'} />
-                <Text style={[styles.phoneText, canViewData && styles.linkText]}>{displayPhone}</Text>
-              </TouchableOpacity>
+                {canViewData
+                  ? <PhoneNumbers phone={item.phone} textStyle={[styles.phoneText, styles.linkText]} />
+                  : <Text style={styles.phoneText}>{displayPhone}</Text>}
+              </View>
               {canViewData && (
                 <TouchableOpacity
                   style={styles.whatsappButton}
@@ -1036,6 +1038,12 @@ export default function InventoryLeadsScreen() {
                 <Text style={styles.tagText}>{item.area_size} sq.yds</Text>
               </View>
             )}
+            {item.car_parking_number != null && (
+              <View style={styles.tag}>
+                <Ionicons name="car-outline" size={12} color={colors.inkMuted} />
+                <Text style={styles.tagText}>{item.car_parking_number} Car{Number(item.car_parking_number) === 1 ? '' : 's'}</Text>
+              </View>
+            )}
             {item.lead_status && (
               <View style={[styles.tag, styles.statusTag]}>
                 <Text style={[styles.tagText, styles.statusTagText]}>{item.lead_status}</Text>
@@ -1047,7 +1055,7 @@ export default function InventoryLeadsScreen() {
           {amenitiesList.length > 0 && (
             <View style={styles.amenitiesRow}>
               <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-              <Text style={styles.amenitiesText} numberOfLines={1}>
+              <Text style={styles.amenitiesText}>
                 {amenitiesList.join(' • ')}
               </Text>
             </View>
@@ -2063,6 +2071,21 @@ export default function InventoryLeadsScreen() {
               <Ionicons name="copy-outline" size={20} color="#6D28D9" />
               <Text style={styles.shareMenuItemText}>Copy Details</Text>
             </TouchableOpacity>
+            {!!shareMenuLead?.Property_locationUrl?.trim() && canViewLeadContacts(shareMenuLead, user?.id) && (
+              <TouchableOpacity
+                style={styles.shareMenuItem}
+                accessibilityRole="button"
+                accessibilityLabel="Share location via WhatsApp"
+                onPress={() => {
+                  const leadToShare = shareMenuLead;
+                  setShareMenuLead(null);
+                  if (leadToShare) void handleShareLocation(leadToShare);
+                }}
+              >
+                <Ionicons name="location-outline" size={20} color="#15803D" />
+                <Text style={styles.shareMenuItemText}>Share location</Text>
+              </TouchableOpacity>
+            )}
             {shareMenuLead && (inventoryFileCounts[shareMenuLead.id]?.images || 0) > 0 && (
               <TouchableOpacity
                 style={styles.shareMenuItem}
@@ -2621,6 +2644,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
   amenitiesText: {
+    flexShrink: 1,
     fontSize: 12,
     color: '#059669',
     marginLeft: 6,

@@ -21,6 +21,31 @@ const floorNames: Record<string, string> = {
 const floorLabel = (floor: string) => floorNames[floor.replace(/\s/g, '').toUpperCase()] || floor.trim() || 'Floor';
 const amount = (value: string | number) => Number.isFinite(Number(value)) ? String(Number(Number(value).toFixed(2))) : String(value);
 
+const amenityLabels = {
+  park_facing: 'Park Facing', park_at_rear: 'Park at Rear', wide_road: 'Wide Road',
+  peaceful_location: 'Peaceful Location', main_road: 'Main Road', corner: 'Corner',
+  park: 'Park', gated_community: 'Gated Community', sample_flat: 'Sample Flat',
+  parking: 'Parking', lift: 'Lift', stilt: 'Stilt',
+} as const;
+
+export const getInventoryAmenities = (lead: Lead): string[] => {
+  const enabled = (value: unknown) => value === true || value === 1 ||
+    (typeof value === 'string' && ['1', 'true', 'yes'].includes(value.trim().toLowerCase()));
+  const labels = new Map<string, string>();
+  const add = (label: string) => labels.set(normalizeSearchText(label), label);
+  for (const [key, label] of Object.entries(amenityLabels)) {
+    if (enabled(lead[key as keyof typeof amenityLabels])) add(label);
+  }
+  for (const value of (lead.required_amenities || '').split(/[,;|\n]+/)) {
+    const name = value.trim();
+    if (!name) continue;
+    const known = Object.entries(amenityLabels).find(([key, label]) =>
+      normalizeSearchText(key) === normalizeSearchText(name) || normalizeSearchText(label) === normalizeSearchText(name));
+    add(known ? known[1] : name.replace(/_/g, ' '));
+  }
+  return Array.from(labels.values());
+};
+
 export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): string => {
   const areaLabel = ({ YD: 'Sq. Yds.', SQFT: 'Sq. Ft.', SQM: 'Sq. M.', ACRE: 'Acres' } as Record<string, string>)[lead.area_unit || 'YD'] || lead.area_unit;
   const size = `${lead.area_size ? amount(lead.area_size) : 'NA'} ${areaLabel}`;
@@ -44,8 +69,9 @@ export const formatInventoryCopy = (lead: Lead, index = 1, internal = false): st
     `Size: ${size}`,
     (floor || bedrooms) ? `Configuration: ${floor || 'NA'}${bedrooms ? ` | — ${bedrooms}` : ''}` : null,
     lead.car_parking_number != null ? `Parking: ${lead.car_parking_number} ${Number(lead.car_parking_number) === 1 ? 'Car' : 'Cars'}` : null,
+    getInventoryAmenities(lead).length ? `Special Amenities: ${getInventoryAmenities(lead).join(', ')}` : null,
     ...prices,
-  ].filter(Boolean).join('\n\n');
+  ].filter(Boolean).join('\n');
 };
 
 import { sortByAddress } from './addressSort';

@@ -426,10 +426,10 @@ export default function RemindersScreen() {
             {item.lead_name && (
               <View style={styles.clientRow}>
                 <Ionicons name="person" size={12} color="#6B7280" />
+                <View style={styles.clientDetails}>
                 <TouchableOpacity accessibilityLabel={item.entity_type === 'sheet_enquiry' ? 'Open linked enquiry' : 'Open linked lead'} onPress={() => item.entity_type === 'sheet_enquiry' ? router.push(`/enquiries/${item.entity_id}` as any) : item.lead_id && router.push(`/leads/${item.lead_id}` as any)}><Text style={styles.clientText}>{item.entity_type === 'sheet_enquiry' ? 'Linked Enquiry' : 'Linked Lead'} · {item.lead_name}</Text></TouchableOpacity>
                 {item.lead_phone && (
                   <Text style={styles.clientPhone}>
-                    {' • '}
                     {(item.entity_type === 'sheet_enquiry' ? item.can_view_sensitive : canViewSensitiveData(
                       user?.role,
                       user?.id,
@@ -440,6 +440,7 @@ export default function RemindersScreen() {
                       : maskPhone(item.lead_phone)}
                   </Text>
                 )}
+                </View>
               </View>
             )}
 
@@ -756,6 +757,7 @@ const styles = StyleSheet.create({
   },
   reminderContent: {
     flex: 1,
+    minWidth: 0,
   },
   reminderTitle: {
     fontSize: 16,
@@ -770,14 +772,19 @@ const styles = StyleSheet.create({
   },
   clientRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 4,
     marginBottom: 6,
+  },
+  clientDetails: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
   },
   clientText: {
     fontSize: 13,
     color: '#3B82F6',
     fontWeight: '500',
-    marginLeft: 4,
   },
   clientPhone: {
     fontSize: 12,
@@ -790,6 +797,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
+    flexShrink: 1,
     fontSize: 12,
     color: '#6B7280',
     fontWeight: '500',
@@ -839,6 +847,8 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   actions: {
+    flexShrink: 0,
+    marginLeft: 8,
     alignItems: 'flex-end',
     gap: 8,
   },
