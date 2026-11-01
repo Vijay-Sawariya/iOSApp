@@ -61,3 +61,23 @@ test('timeouts have a useful message and release lifecycle listeners', async () 
   await assert.rejects(s.fetchWithTimeout('/slow', {}, 1), /server took too long/);
   assert.equal(s.listeners.size, 0);
 });
+
+test('a brief inactive transition does not abort or resend a healthy read', async () => {
+  let calls = 0, finish;
+  const response = { ok: true };
+  const s = setup((url, { signal }) => {
+    calls++;
+    return new Promise((resolve, reject) => {
+      finish = () => resolve(response);
+      signal.addEventListener('abort', () => reject(new Error('Aborted')));
+    });
+  });
+  const pending = s.fetchWithTimeout('/search');
+  await settle();
+  s.state('inactive');
+  s.state('active');
+  finish();
+  assert.equal(await pending, response);
+  assert.equal(calls, 1);
+  assert.equal(s.listeners.size, 0);
+});

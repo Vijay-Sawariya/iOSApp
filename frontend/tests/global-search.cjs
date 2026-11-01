@@ -10,27 +10,32 @@ function setup(fetch) {
   }).outputText, { exports, require: () => ({}), fetch, Error, AbortController, setTimeout, clearTimeout, console, URLSearchParams });
   return exports.api;
 }
-test('global search progressively returns record details and isolates failed sources', async () => {
-  const updates = [];
-  const api = setup(async url => ({ ok: true, json: async () => {
-    if (url.includes('sources_only')) return { sources: [{ key: 'monthly', label: 'Monthly' }, { key: 'clients', label: 'Clients' }] };
-    if (url.includes('source=clients')) throw new Error('Connection failed');
-    return { groups: { monthly: { label: 'Monthly', total: 1, items: [{ row: { id: 18, address: 'F-18', owner_name: 'Owner' }, url: '/monthly-inventory?entry_id=18' }] } }, errors: [] };
-  } }));
+test('global search uses one authenticated request and retains successful details with source failures', async () => {
+  const calls = [], updates = [];
+  const api = setup(async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => ({ groups: {
+      monthly: { label: 'Monthly', total: 1, items: [{ row: { id: 18, address: 'F-18', owner_name: 'Owner' }, url: '/monthly-inventory?entry_id=18' }] },
+    }, errors: ['Clients'], timings_ms: { monthly: 12 } }) };
+  });
   const result = await api.globalSearch('F-18', false, 1, '', data => updates.push(data));
+  assert.equal(calls.length, 1);
+  assert.ok(!calls[0].url.includes('sources_only'));
   assert.equal(result.groups.monthly.items[0].row.address, 'F-18');
   assert.equal(result.groups.monthly.items[0].row.owner_name, 'Owner');
-  assert.equal(updates.length, 2);
-  assert.match(result.errors[0], /Clients: Connection failed/);
+  assert.equal(updates.length, 1);
+  assert.equal(result.errors[0], 'Clients');
 });
-test('search cancellation prevents queued sources from being requested', async () => {
+test('source pagination stays a single request and forwards cancellation', async () => {
   const controller = new AbortController();
   let calls = 0;
-  const api = setup(async () => {
+  const api = setup(async (url, {signal}) => {
     calls++;
-    controller.abort();
-    return { ok: true, json: async () => ({ sources: Array.from({length: 8}, (_, i) => ({ key: String(i) })) }) };
+    assert.match(url, /page=2&source=monthly/);
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Cancelled'))));
   });
-  await api.globalSearch('R-50', false, 1, '', undefined, controller.signal);
+  const pending = api.globalSearch('R-50', false, 2, 'monthly', undefined, controller.signal);
+  controller.abort();
+  await assert.rejects(pending, /Cancelled/);
   assert.equal(calls, 1);
 });

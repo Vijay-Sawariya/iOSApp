@@ -50,7 +50,7 @@ export default function GlobalSearch() {
       <View style={styles.toggle}><Switch accessibilityLabel="Exact match" value={exact} onValueChange={setExact} /><Text>Exact match</Text></View>
       <Text>Searches records you can access. Phone formatting is ignored.</Text>
       <TouchableOpacity onPress={() => search()}><Text style={styles.link}>Search</Text></TouchableOpacity>
-      {busy && <View><ActivityIndicator /><Text>Searching records… Results appear as sources finish.</Text></View>}
+      {busy && <View><ActivityIndicator /><Text>Searching records…</Text></View>}
       {!!error && <Text accessibilityRole="alert">{error}</Text>}
       {!!errors.length && <Text>Some sources could not be searched: {errors.join(', ')}. Please retry.</Text>}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
