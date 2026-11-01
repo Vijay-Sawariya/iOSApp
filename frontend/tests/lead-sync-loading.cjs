@@ -45,6 +45,7 @@ test('unknown and brief network transitions do not flash offline or trigger reco
   const timers = new Map();
   const context = {
     useEffect: fn => { cleanup = fn(); }, isInitialized: true, onlineRef: { current: true },
+    AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
     NetInfo: { addEventListener: fn => { listener = fn; return () => {}; } },
     isNetworkReachable: state => state.isConnected === true && state.isInternetReachable !== false,
     setIsOnline: value => { online = value; }, runSync: async () => { syncs++; },

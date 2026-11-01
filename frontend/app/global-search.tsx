@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,20 +18,25 @@ export default function GlobalSearch() {
   const [busy, setBusy] = useState(false);
   const [request, setRequest] = useState({ q: '', exact: false, page: 1, source: '' });
   const generation = useRef(0);
-  useEffect(() => () => { generation.current++; }, []);
-  useEffect(() => { generation.current++; setGroups({}); setErrors([]); setBusy(false); }, [user?.id, user?.username]);
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => { generation.current++; controller.current?.abort(); }, []);
+  useEffect(() => { generation.current++; controller.current?.abort(); setGroups({}); setErrors([]); setBusy(false); }, [user?.id, user?.username]);
   const search = async (page = 1, source = '', repeat = false) => {
     if (!allowed) return;
     const term = repeat ? request.q : q.trim();
     const mode = repeat ? request.exact : exact;
     if (term.length < 2) { setError('Enter at least two characters.'); return; }
+    Keyboard.dismiss();
+    controller.current?.abort();
+    const activeController = new AbortController();
+    controller.current = activeController;
     const id = ++generation.current;
     setBusy(true); setError(''); setGroups({}); setErrors([]);
     setRequest({ q: term, exact: mode, page, source });
     try {
       const result = await api.globalSearch(term, mode, page, source, result => {
         if (generation.current === id) { setGroups(result.groups); setErrors(result.errors); }
-      });
+      }, activeController.signal);
       if (generation.current === id) { setGroups(result.groups); setErrors(result.errors); }
     } catch (e) { if (generation.current === id) setError(e instanceof Error ? e.message : 'Search failed.'); }
     finally { if (generation.current === id) setBusy(false); }
@@ -44,11 +49,11 @@ export default function GlobalSearch() {
         maxLength={200} returnKeyType="search" onSubmitEditing={() => search()} style={styles.input} />
       <View style={styles.toggle}><Switch accessibilityLabel="Exact match" value={exact} onValueChange={setExact} /><Text>Exact match</Text></View>
       <Text>Searches records you can access. Phone formatting is ignored.</Text>
-      <TouchableOpacity disabled={busy} onPress={() => search()}><Text style={styles.link}>Search</Text></TouchableOpacity>
+      <TouchableOpacity onPress={() => search()}><Text style={styles.link}>Search</Text></TouchableOpacity>
       {busy && <View><ActivityIndicator /><Text>Searching records… Results appear as sources finish.</Text></View>}
       {!!error && <Text accessibilityRole="alert">{error}</Text>}
       {!!errors.length && <Text>Some sources could not be searched: {errors.join(', ')}. Please retry.</Text>}
-      <ScrollView keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
         {!busy && !!request.q && !error && !errors.length && !Object.values(groups).some(g => g.total) && <Text>No accessible records match.</Text>}
         {Object.entries(groups).map(([key, group]) => group.total > 0 && <View key={key} style={styles.group}>
           <Text style={styles.heading}>{group.label} ({group.total})</Text>

@@ -39,7 +39,7 @@ export const fetchWithTimeout = async (
     });
   });
   for (let attempt = 0; ; attempt++) {
-    await waitForForeground();
+    if (AppState && AppState.currentState !== 'active') await waitForForeground();
     const controller = new AbortController();
     let interrupted = false;
     let timedOut = false;
@@ -267,11 +267,11 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
-  globalSearch: async (q: string, exact: boolean, page = 1, source = '', onProgress?: (result: any) => void) => {
+  globalSearch: async (q: string, exact: boolean, page = 1, source = '', onProgress?: (result: any) => void, signal?: AbortSignal) => {
     if (isOfflineMode) throw new Error('Connect to the internet to search all records.');
     const query = `q=${encodeURIComponent(q)}&exact=${exact}&page=${page}`;
     const read = async (suffix: string) => {
-      const response = await fetchWithTimeout(`${API_URL}/api/global-search?${query}&${suffix}`, { headers: getHeaders() });
+      const response = await fetchWithTimeout(`${API_URL}/api/global-search?${query}&${suffix}`, { headers: getHeaders(), signal });
       if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not search. Please retry.'));
       return response.json();
     };
@@ -282,13 +282,16 @@ export const api = {
     const result: any = { groups: {}, errors: [] };
     const queue = [...manifest.sources];
     await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
-      while (queue.length) {
+      while (queue.length && !signal?.aborted) {
         const entry = queue.shift();
         try {
           const data = await read(`source=${encodeURIComponent(entry.key)}`);
           Object.assign(result.groups, data.groups);
           result.errors.push(...data.errors);
-        } catch { result.errors.push(entry.label); }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          result.errors.push(`${entry.label}: ${error instanceof Error ? error.message : 'Search failed. Please retry.'}`);
+        }
         onProgress?.({ groups: { ...result.groups }, errors: [...result.errors] });
       }
     }));
