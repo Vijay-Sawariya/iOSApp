@@ -158,11 +158,12 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
     let offlineTimer: ReturnType<typeof setTimeout> | undefined;
     const updateNetwork = (state: NetInfoState) => {
       // Unknown reachability during resume is not a confirmed disconnection.
-      if (state.isConnected === null) return;
+      if (AppState.currentState !== 'active' || state.isConnected === null) return;
       const online = isNetworkReachable(state);
       clearTimeout(offlineTimer);
       if (!online) {
         offlineTimer = setTimeout(() => {
+          if (AppState.currentState !== 'active') return;
           onlineRef.current = false;
           setIsOnline(false);
         }, 3000);
@@ -174,7 +175,11 @@ export const OfflineProvider: React.FC<OfflineProviderProps> = ({ children }) =>
       if (wasOffline && isInitialized) void runSync(true);
     };
     const unsubscribe = NetInfo.addEventListener(updateNetwork);
-    return () => { unsubscribe(); clearTimeout(offlineTimer); };
+    const subscription = AppState.addEventListener('change', state => {
+      clearTimeout(offlineTimer);
+      if (state === 'active') void NetInfo.refresh().then(updateNetwork).catch(() => {});
+    });
+    return () => { unsubscribe(); subscription.remove(); clearTimeout(offlineTimer); };
   }, [isInitialized, runSync]);
 
   // Retry pending writes even when the connection never emits another transition.

@@ -50,7 +50,7 @@ class SearchTest(unittest.TestCase):
         self.user = dict(id=7, username='vsawariya', role='employee')
     def run_search(self, q, **kw):
         return self.search(q=q, exact=kw.get('exact', False), page=kw.get('page', 1),
-                           source=kw.get('source', 'clients'), current_user=kw.get('user', self.user))
+                           source=kw.get('source', 'clients'), sources_only=kw.get('sources_only', False), current_user=kw.get('user', self.user))
     def test_authorization_before_queries(self):
         for user in ({}, dict(id=7, username='other', role='admin'), dict(id=0, username='vsawariya')):
             with self.assertRaises(HTTPError) as error: self.run_search('Person', user=user)
@@ -69,6 +69,15 @@ class SearchTest(unittest.TestCase):
         self.assertNotIn('password', result['items'][0]['row'])
     def test_masked_private_metadata_never_matches(self):
         self.assertEqual(self.run_search('hidden-secret')['groups']['clients']['total'], 0)
+    def test_manifest_lists_only_enabled_sources_without_scanning(self):
+        result = self.run_search('Person', sources_only=True)
+        self.assertEqual(result['sources'], [
+            {'key': 'clients', 'label': 'Clients'},
+            {'key': 'monthly', 'label': 'Monthly Inventory'}])
+        self.assertEqual(self.calls, [])
+        self.flags['buyer_leads'] = False
+        self.assertEqual(len(self.run_search('Person', sources_only=True)['sources']), 1)
+
     def test_matching(self):
         match = module['matches']
         self.assertTrue(match(dict(phone='+91 (96542)-28808'), '919654228808', True))

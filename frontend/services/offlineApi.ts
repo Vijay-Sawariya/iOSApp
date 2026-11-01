@@ -10,7 +10,7 @@
 
 import NetInfo from '@react-native-community/netinfo';
 import { syncService } from './syncService';
-import { api, getAuthToken } from './api';
+import { api, getAuthToken, fetchWithTimeout } from './api';
 import { API_URL } from '../constants/config';
 
 type LeadFetchOptions = {
@@ -40,7 +40,7 @@ class OfflineApiService {
   }
 
   private async fetchFromNetwork(endpoint: string): Promise<any> {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetchWithTimeout(`${API_URL}${endpoint}`, {
       headers: this.getHeaders(),
     });
     if (!response.ok) {
@@ -259,7 +259,7 @@ class OfflineApiService {
       throw new Error('Cannot send WhatsApp while offline. Please connect to the internet.');
     }
     
-    const response = await fetch(`${API_URL}/api/whatsapp/send`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/whatsapp/send`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(data),

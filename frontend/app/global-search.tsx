@@ -29,7 +29,9 @@ export default function GlobalSearch() {
     setBusy(true); setError(''); setGroups({}); setErrors([]);
     setRequest({ q: term, exact: mode, page, source });
     try {
-      const result = await api.globalSearch(term, mode, page, source);
+      const result = await api.globalSearch(term, mode, page, source, result => {
+        if (generation.current === id) { setGroups(result.groups); setErrors(result.errors); }
+      });
       if (generation.current === id) { setGroups(result.groups); setErrors(result.errors); }
     } catch (e) { if (generation.current === id) setError(e instanceof Error ? e.message : 'Search failed.'); }
     finally { if (generation.current === id) setBusy(false); }
@@ -43,7 +45,7 @@ export default function GlobalSearch() {
       <View style={styles.toggle}><Switch accessibilityLabel="Exact match" value={exact} onValueChange={setExact} /><Text>Exact match</Text></View>
       <Text>Searches records you can access. Phone formatting is ignored.</Text>
       <TouchableOpacity disabled={busy} onPress={() => search()}><Text style={styles.link}>Search</Text></TouchableOpacity>
-      {busy && <ActivityIndicator />}
+      {busy && <View><ActivityIndicator /><Text>Searching records… Results appear as sources finish.</Text></View>}
       {!!error && <Text accessibilityRole="alert">{error}</Text>}
       {!!errors.length && <Text>Some sources could not be searched: {errors.join(', ')}. Please retry.</Text>}
       <ScrollView keyboardShouldPersistTaps="handled">

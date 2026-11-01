@@ -8,25 +8,9 @@ import {
   setAuthFailureHandler,
   initializeAuthToken,
   isRequestTimeout,
+  fetchWithTimeout,
 } from '../services/api';
 import { API_URL } from '../constants/config';
-
-// Render cold starts can exceed 30 seconds before the database is ready.
-const REQUEST_TIMEOUT_MS = 45000;
-
-const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs: number = REQUEST_TIMEOUT_MS) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-};
 
 // Inactivity timeout: 2 days in milliseconds
 const INACTIVITY_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000; // 2 days

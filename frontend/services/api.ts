@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import { CACHE_KEYS, cacheService } from './cacheService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as db from './database';
@@ -30,12 +31,50 @@ export const fetchWithTimeout = async (
   options: RequestInit = {},
   timeoutMs: number = 45000
 ): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
+  const readable = ['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase());
+  const waitForForeground = () => new Promise<void>(resolve => {
+    if (!AppState || AppState.currentState === 'active') { resolve(); return; }
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') { subscription.remove(); resolve(); }
+    });
+  });
+  for (let attempt = 0; ; attempt++) {
+    await waitForForeground();
+    const controller = new AbortController();
+    let interrupted = false;
+    let timedOut = false;
+    const subscription = AppState?.addEventListener('change', state => {
+      if (state !== 'active') {
+        interrupted = true;
+        clearTimeout(timeoutId);
+        if (readable) controller.abort();
+      }
+    });
+    const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    const cancel = () => controller.abort();
+    options.signal?.addEventListener('abort', cancel);
+    if (options.signal?.aborted) controller.abort();
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      if (interrupted && readable && attempt < 2) continue;
+      if (interrupted) {
+        await waitForForeground();
+        throw new Error(readable ? 'Connection interrupted. Please try again.' :
+          'Connection interrupted. Check whether your changes were saved before trying again.');
+      }
+      if (timedOut) {
+        const timeout = new Error('The server took too long to respond. Please try again.');
+        timeout.name = 'AbortError';
+        throw timeout;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+      subscription?.remove();
+      options.signal?.removeEventListener('abort', cancel);
+    }
   }
 };
 
@@ -228,13 +267,32 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
-  globalSearch: async (q: string, exact: boolean, page = 1, source = '') => {
+  globalSearch: async (q: string, exact: boolean, page = 1, source = '', onProgress?: (result: any) => void) => {
     if (isOfflineMode) throw new Error('Connect to the internet to search all records.');
-    const query = `q=${encodeURIComponent(q)}&exact=${exact}&page=${page}&source=${encodeURIComponent(source)}`;
-    const response = await fetchWithTimeout(`${API_URL}/api/global-search?${query}`, { headers: getHeaders() });
-    notifyAuthFailure(response);
-    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not search. Please retry.'));
-    return response.json();
+    const query = `q=${encodeURIComponent(q)}&exact=${exact}&page=${page}`;
+    const read = async (suffix: string) => {
+      const response = await fetchWithTimeout(`${API_URL}/api/global-search?${query}&${suffix}`, { headers: getHeaders() });
+      if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not search. Please retry.'));
+      return response.json();
+    };
+    if (source) return read(`source=${encodeURIComponent(source)}`);
+    const manifest = await read('sources_only=true');
+    // Older servers still return a complete search response.
+    if (!manifest.sources) return manifest;
+    const result: any = { groups: {}, errors: [] };
+    const queue = [...manifest.sources];
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+      while (queue.length) {
+        const entry = queue.shift();
+        try {
+          const data = await read(`source=${encodeURIComponent(entry.key)}`);
+          Object.assign(result.groups, data.groups);
+          result.errors.push(...data.errors);
+        } catch { result.errors.push(entry.label); }
+        onProgress?.({ groups: { ...result.groups }, errors: [...result.errors] });
+      }
+    }));
+    return result;
   },
   getCachedEnquiryManagement: (params: Record<string, string | number | boolean> = {}) => {
     const cached = enquiryPages.get(enquiryQuery(params));
@@ -404,7 +462,7 @@ export const api = {
 
   saveInventoryUpdate: async (leadId: number, data: unknown) => {
     if (!(await cacheService.isOnline()) || isOfflineMode) throw new Error('An online connection is required to update inventory.');
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/inventory-update`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/inventory-update`, {
       method: 'PUT', headers: getHeaders(), body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to save inventory. Please try again.'));
@@ -412,13 +470,13 @@ export const api = {
   },
 
   getTeamInboxSummary: async () => {
-    const response = await fetch(`${API_URL}/api/collaboration/inbox/summary`, { headers: getHeaders() });
+    const response = await fetchWithTimeout(`${API_URL}/api/collaboration/inbox/summary`, { headers: getHeaders() });
     if (!response.ok) throw new Error('Unable to load inbox count.');
     return response.json();
   },
 
   getCollaborationInbox: async () => {
-    const response = await fetch(`${API_URL}/api/collaboration/inbox`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/collaboration/inbox`, {
       headers: getHeaders(),
     });
     if (!response.ok) {
@@ -431,7 +489,7 @@ export const api = {
     if (!(await cacheService.isOnline()) || isOfflineMode) {
       throw new Error('An internet connection is required to request private lead details.');
     }
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/detail-access-request`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/detail-access-request`, {
       method: 'POST',
       headers: getHeaders(),
     });
@@ -447,7 +505,7 @@ export const api = {
     if (!(await cacheService.isOnline()) || isOfflineMode) {
       throw new Error('An internet connection is required to change private-detail access.');
     }
-    const response = await fetch(`${API_URL}/api/collaboration/detail-access/${requestId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/collaboration/detail-access/${requestId}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify({ decision }),
@@ -461,7 +519,7 @@ export const api = {
   },
 
   markCollaborationInboxRead: async () => {
-    const response = await fetch(`${API_URL}/api/collaboration/inbox/read`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/collaboration/inbox/read`, {
       method: 'PUT',
       headers: getHeaders(),
     });
@@ -472,7 +530,7 @@ export const api = {
   },
 
   getLeadCollaboration: async (leadId: string | number) => {
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/collaboration`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/collaboration`, {
       headers: getHeaders(),
     });
     if (!response.ok) {
@@ -482,7 +540,7 @@ export const api = {
   },
 
   addLeadComment: async (leadId: string | number, body: string, mentionIds: number[] = []) => {
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/collaboration/comments`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/collaboration/comments`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ body, mention_ids: mentionIds }),
@@ -494,7 +552,7 @@ export const api = {
   },
 
   requestLeadHandoff: async (leadId: string | number, toUserId: number, note: string) => {
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/collaboration/handoffs`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/collaboration/handoffs`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ to_user_id: toUserId, note }),
@@ -506,7 +564,7 @@ export const api = {
   },
 
   respondToLeadHandoff: async (handoffId: number, decision: 'accepted' | 'declined') => {
-    const response = await fetch(`${API_URL}/api/collaboration/handoffs/${handoffId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/collaboration/handoffs/${handoffId}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify({ decision }),
@@ -619,7 +677,7 @@ export const api = {
   },
 
   convertEnquiry: async (enquiryId: number) => {
-    const response = await fetch(`${API_URL}/api/mobile/enquiries/${enquiryId}/convert`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiries/${enquiryId}/convert`, {
       method: 'POST',
       headers: getHeaders(),
     });
@@ -635,7 +693,7 @@ export const api = {
   },
 
   generateAIMessage: async (leadId: number, messageType: string, customContext?: string) => {
-    const response = await fetch(`${API_URL}/api/ai/generate-message`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/ai/generate-message`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -650,7 +708,7 @@ export const api = {
 
   // Leads - All
   getLeads: async () => {
-    const response = await fetch(`${API_URL}/api/leads`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch leads');
@@ -697,7 +755,7 @@ export const api = {
   },
 
   getPreferredInventoryIds: async (clientId: number): Promise<number[]> => {
-    const response = await fetch(`${API_URL}/api/leads/${clientId}/preferred-inventory`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${clientId}/preferred-inventory`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to get preferred inventory');
@@ -716,7 +774,7 @@ export const api = {
       }
     });
     const query = params.toString();
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/matching-inventory${query ? `?${query}` : ''}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/matching-inventory${query ? `?${query}` : ''}`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch matching inventory');
@@ -735,7 +793,7 @@ export const api = {
       }
     });
     const query = params.toString();
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/matching-clients${query ? `?${query}` : ''}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/matching-clients${query ? `?${query}` : ''}`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch matching clients');
@@ -743,7 +801,7 @@ export const api = {
   },
 
   addPreferredLeads: async (leadId: number, matchingLeadIds: number[]) => {
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/preferred-leads`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/preferred-leads`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ matching_lead_ids: matchingLeadIds }),
@@ -758,7 +816,7 @@ export const api = {
       return db.queuePendingLeadCreate(data);
     }
     
-    const response = await fetch(`${API_URL}/api/leads`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -781,7 +839,7 @@ export const api = {
       return queued;
     }
     
-    const response = await fetch(`${API_URL}/api/leads/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${id}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -807,7 +865,7 @@ export const api = {
       return queued;
     }
     
-    const response = await fetch(`${API_URL}/api/leads/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${id}`, {
       method: 'DELETE',
       headers: getHeaders(),
     });
@@ -853,7 +911,7 @@ export const api = {
       throw new Error('Cannot create builder while offline. Please connect to the internet.');
     }
     
-    const response = await fetch(`${API_URL}/api/builders`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/builders`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -869,7 +927,7 @@ export const api = {
       throw new Error('Cannot update builder while offline. Please connect to the internet.');
     }
     
-    const response = await fetch(`${API_URL}/api/builders/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/builders/${id}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -886,7 +944,7 @@ export const api = {
       throw new Error('Cannot delete builder while offline. Please connect to the internet.');
     }
     
-    const response = await fetch(`${API_URL}/api/builders/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/builders/${id}`, {
       method: 'DELETE',
       headers: getHeaders(),
     });
@@ -916,7 +974,7 @@ export const api = {
       return queued;
     }
     
-    const response = await fetch(`${API_URL}/api/reminders`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/reminders`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -936,7 +994,7 @@ export const api = {
       return queued;
     }
     
-    const response = await fetch(`${API_URL}/api/reminders/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/reminders/${id}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -956,7 +1014,7 @@ export const api = {
       return queued;
     }
     
-    const response = await fetch(`${API_URL}/api/reminders/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/reminders/${id}`, {
       method: 'DELETE',
       headers: getHeaders(),
     });
@@ -970,13 +1028,13 @@ export const api = {
 
   getActiveAssignmentUsers: async () => {
     // No fallback to unfiltered team lists: only active accounts may receive leads.
-    const response = await fetch(`${API_URL}/api/users/assignable`, { headers: getHeaders() });
+    const response = await fetchWithTimeout(`${API_URL}/api/users/assignable`, { headers: getHeaders() });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Failed to load active users'));
     return response.json();
   },
 
   assignLead: async (leadId: number, userId: number, canViewPrivate = false) => {
-    const response = await fetch(`${API_URL}/api/team/assign-lead?lead_id=${leadId}&user_id=${userId}&can_view_private=${canViewPrivate}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/team/assign-lead?lead_id=${leadId}&user_id=${userId}&can_view_private=${canViewPrivate}`, {
       method: 'POST', headers: getHeaders(),
     });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Failed to assign lead'));
@@ -1024,7 +1082,7 @@ export const api = {
       throw new Error('Cannot send WhatsApp while offline. Please connect to the internet.');
     }
     
-    const response = await fetch(`${API_URL}/api/whatsapp/send`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/whatsapp/send`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -1042,7 +1100,7 @@ export const api = {
 
   getWhatsAppLogs: async (leadId?: string | number) => {
     const query = leadId ? `?lead_id=${encodeURIComponent(String(leadId))}` : '';
-    const response = await fetch(`${API_URL}/api/whatsapp/logs${query}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/whatsapp/logs${query}`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch WhatsApp logs');
@@ -1071,7 +1129,7 @@ export const api = {
       throw new Error('Cannot create followup while offline. Please connect to the internet.');
     }
     
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/followups`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/followups`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ ...data, lead_id: parseInt(leadId) }),
@@ -1084,7 +1142,7 @@ export const api = {
   },
 
   getLeadActivity: async (leadId: string | number) => {
-    const response = await fetch(`${API_URL}/api/leads/${leadId}/activity`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/leads/${leadId}/activity`, {
       headers: getHeaders(),
     });
     if (!response.ok) {
@@ -1105,7 +1163,7 @@ export const api = {
   },
 
   getPricingDetail: async (pricingId: number) => {
-    const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/pricing/${pricingId}`, {
       headers: getHeaders(),
     });
     if (!response.ok) {
@@ -1124,7 +1182,7 @@ export const api = {
     tentative_price?: number;
     floors: { floor_label: string; tentative_floor_price: string }[];
   }) => {
-    const response = await fetch(`${API_URL}/api/pricing`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/pricing`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -1138,7 +1196,7 @@ export const api = {
   },
 
   updatePricing: async (pricingId: number, data: any) => {
-    const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/pricing/${pricingId}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -1152,7 +1210,7 @@ export const api = {
   },
 
   deletePricing: async (pricingId: number) => {
-    const response = await fetch(`${API_URL}/api/pricing/${pricingId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/pricing/${pricingId}`, {
       method: 'DELETE',
       headers: getHeaders(),
     });
@@ -1185,7 +1243,7 @@ export const api = {
       type: file.type,
     } as any);
 
-    const response = await fetch(`${API_URL}/api/inventory/${leadId}/files`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/inventory/${leadId}/files`, {
       method: 'POST',
       headers: {
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -1201,7 +1259,7 @@ export const api = {
   },
 
   getInventoryFiles: async (leadId: number) => {
-    const response = await fetch(`${API_URL}/api/inventory/${leadId}/files`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/inventory/${leadId}/files`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch files');
@@ -1209,7 +1267,7 @@ export const api = {
   },
 
   getInventoryFile: async (fileId: number) => {
-    const response = await fetch(`${API_URL}/api/inventory/files/${fileId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/inventory/files/${fileId}`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch file');
@@ -1217,7 +1275,7 @@ export const api = {
   },
 
   deleteInventoryFile: async (fileId: number) => {
-    const response = await fetch(`${API_URL}/api/inventory/files/${fileId}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/inventory/files/${fileId}`, {
       method: 'DELETE',
       headers: getHeaders(),
     });
@@ -1226,7 +1284,7 @@ export const api = {
   },
 
   getInventoryFilesCount: async (leadId: number) => {
-    const response = await fetch(`${API_URL}/api/inventory/${leadId}/files/count`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/inventory/${leadId}/files/count`, {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch file count');
@@ -1238,7 +1296,7 @@ export const api = {
     const url = new URL(`${API_URL}/api/leads/map-data`);
     if (leadType) url.searchParams.append('lead_type', leadType);
     
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to fetch map data');
