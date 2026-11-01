@@ -1,7 +1,7 @@
 import { useSharedDropdowns } from '../services/sharedDropdowns';
 import { filterScrollProps, useFilterPanel } from '../hooks/useFilterPanel';
 import { recipientFiltersFromLead } from '../services/inventoryRecipientMatching';
-import { isUnavailableInventory } from '../utils/inventory';
+import { getInventoryAmenities, isUnavailableInventory } from '../utils/inventory';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -538,6 +538,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
 
   const renderMatch = ({ item, index, isTablet }: { item: any; index?: number; isTablet?: boolean }) => {
     const checked = selectedIds.includes(item.id);
+    const amenities = mode === 'inventory' ? getInventoryAmenities(item) : [];
 
     // Format floor pricing inline - handle the correct data structure
     let floorPricingText = '';
@@ -629,6 +630,15 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
             <View style={styles.tag}><Text style={styles.tagText}>{item.lead_status}</Text></View>
           )}
         </View>
+
+        {amenities.length > 0 && (
+          <View style={styles.amenitiesRow}>
+            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+            <Text style={styles.amenitiesText}>
+              {amenities.join(' • ')}
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.priceText}>{floorPricingText}</Text>
 
@@ -1366,6 +1376,18 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 13,
     fontWeight: '500',
+  },
+  amenitiesRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 12,
+  },
+  amenitiesText: {
+    flex: 1,
+    color: '#059669',
+    fontSize: 12,
+    lineHeight: 18,
   },
   priceText: {
     marginTop: 12,

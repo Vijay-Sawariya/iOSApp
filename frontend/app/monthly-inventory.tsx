@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import { api, getAuthToken } from '../services/api';
 import { API_URL } from '../constants/config';
@@ -85,6 +85,8 @@ function BookCard({ item, onPdf, onDelete, deleting, onStatusSaved }: { onStatus
 
 export default function MonthlyInventoryScreen() {
   const { user } = useAuth();
+  const params = useLocalSearchParams<{ entry_id?: string }>();
+  const entryId = /^\d+$/.test(params.entry_id || '') ? params.entry_id : '';
   const allowed = user?.username === 'vsawariya';
   const token = getAuthToken();
   if (bookSessionToken !== token) { bookSessionToken = token; bookSession = {}; }
@@ -123,7 +125,7 @@ export default function MonthlyInventoryScreen() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const requestVersion = useRef(0);
   const loadedQuery = useRef<string | null>(bookSession.loadedQuery ?? null);
-  const queryKey = JSON.stringify([month, category, search, appliedCriteria, appliedLocations]);
+  const queryKey = JSON.stringify([entryId, month, category, search, appliedCriteria, appliedLocations]);
   const pageRef = useRef(page);
   pageRef.current = page;
   const load = useCallback(async (nextPage = 1, quiet = false) => {
@@ -132,7 +134,7 @@ export default function MonthlyInventoryScreen() {
     setError('');
     setLoading(nextPage === 1 && !quiet); setLoadingMore(nextPage > 1 && !quiet);
     try {
-      const filters = { month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations };
+      const filters = entryId ? { entry_id: entryId, month: '', category: '', search: '' } : { month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations };
       // Revalidate all loaded pages after an edit without dropping the reader to page one.
       const pages = quiet ? Array.from({ length: pageRef.current }, (_, index) => index + 1) : [nextPage];
       const results = await Promise.all(pages.map(page => api.getMonthlyInventory({ ...filters, page })));
@@ -148,7 +150,7 @@ export default function MonthlyInventoryScreen() {
     } finally {
       if (version === requestVersion.current) { setLoading(false); setLoadingMore(false); }
     }
-  }, [allowed, month, category, search, appliedCriteria, appliedLocations, queryKey]);
+  }, [allowed, entryId, month, category, search, appliedCriteria, appliedLocations, queryKey]);
   const hasFocused = useRef(false);
   useFocusEffect(useCallback(() => {
     const sameQuery = loadedQuery.current === queryKey;

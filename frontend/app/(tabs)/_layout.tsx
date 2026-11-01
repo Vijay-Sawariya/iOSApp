@@ -111,6 +111,8 @@ const MoreMenuPopup = ({ visible, onClose, bottomInset }: { visible: boolean; on
           <View style={styles.menuGrid}>
             <MenuItem icon="book" label="Monthly Books" color={colors.primary} bgColor={colors.primarySoft}
               onPress={() => handleRoutePress('/monthly-inventory')} visible={user?.username === 'vsawariya'} />
+            <MenuItem icon="search" label="Global Search" color={colors.inkSubtle} bgColor="#eef2ff"
+              onPress={() => handleRoutePress('/global-search')} visible={user?.username === 'vsawariya'} />
             <MenuItem
               icon="briefcase"
               label="Workbench"

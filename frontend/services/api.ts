@@ -228,6 +228,14 @@ const fetchWithCache = async <T>(
 };
 
 export const api = {
+  globalSearch: async (q: string, exact: boolean, page = 1, source = '') => {
+    if (isOfflineMode) throw new Error('Connect to the internet to search all records.');
+    const query = `q=${encodeURIComponent(q)}&exact=${exact}&page=${page}&source=${encodeURIComponent(source)}`;
+    const response = await fetchWithTimeout(`${API_URL}/api/global-search?${query}`, { headers: getHeaders() });
+    notifyAuthFailure(response);
+    if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not search. Please retry.'));
+    return response.json();
+  },
   getCachedEnquiryManagement: (params: Record<string, string | number | boolean> = {}) => {
     const cached = enquiryPages.get(enquiryQuery(params));
     // Show a recent page immediately while an expired result refreshes on focus.
@@ -280,7 +288,7 @@ export const api = {
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load sync history'));
     return response.json();
   },
-  getMonthlyInventory: async (filters: { month: string; category: string; search: string; page: number; locations?: string[]; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {
+  getMonthlyInventory: async (filters: { entry_id?: string; month: string; category: string; search: string; page: number; locations?: string[]; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {
     const query = monthlyInventoryQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });
     notifyAuthFailure(response);
