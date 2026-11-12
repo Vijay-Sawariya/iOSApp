@@ -1,6 +1,6 @@
 import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import { sortLeadsByCreatedAt } from '../../utils/leadSort';
-import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
+import { createDeferredListUpdates, hasRemovedLeads } from '../../utils/deferredListUpdates';
 import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import { canViewLeadContacts } from '../../utils/contactAccess';
 import AssignLeadButton from '../../components/AssignLeadButton';
@@ -226,7 +226,7 @@ www.sagarhome.com`;
   };
 
   const clientUpdates = useMemo(() => createDeferredListUpdates<Lead[]>(
-    data => displayClientsRef.current(data)
+    data => displayClientsRef.current(data), hasRemovedLeads
   ), []);
 
   const loadLeads = async (forceNetwork = false) => {
@@ -778,19 +778,14 @@ www.sagarhome.com`;
           </View>
         )}
 
-        <TouchableOpacity
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}
-          onPress={() => setPropertyTableLead(item)}
-          accessibilityRole="button"
-          accessibilityLabel="View preferred and shared properties"
-        >
-          <Ionicons name="grid-outline" size={16} color="#2563EB" />
-          <Text style={{ color: '#2563EB', fontSize: 12, fontWeight: '600', flex: 1 }}>Preferred / Shared Properties</Text>
-          <Ionicons name="chevron-forward" size={15} color="#94A3B8" />
-        </TouchableOpacity>
-
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         {canViewData ? <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => setPropertyTableLead(item)}
+            accessibilityRole="button" accessibilityLabel="Shortlisted properties">
+            <Ionicons name="grid-outline" size={15} color="#2563EB" />
+            <Text style={[styles.actionText, { color: '#2563EB' }]}>Shortlisted</Text>
+          </TouchableOpacity>
+          <View style={styles.actionDivider} />
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
@@ -832,6 +827,11 @@ www.sagarhome.com`;
           )}
         </View> : (
           <View style={styles.restrictedActions}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => setPropertyTableLead(item)}
+              accessibilityRole="button" accessibilityLabel="Shortlisted properties">
+              <Ionicons name="grid-outline" size={15} color="#2563EB" />
+              <Text style={[styles.actionText, { color: '#2563EB' }]}>Shortlisted</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.requestAccessButton, { flex: 4 }]}
               disabled={requestingAccessId === item.id || item.detail_access_status === 'pending'}

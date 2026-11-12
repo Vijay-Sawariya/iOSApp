@@ -66,3 +66,5 @@ export const getLeadCount = async (): Promise<{ clients: number; inventory: numb
 export const getBuilderCount = async (): Promise<number> => 0;
 
 export const resolvePendingCreate = async (operationId: number, entity: string, localId: number, serverId: number): Promise<void> => {};
+
+export const pruneLeadSnapshot = async (category: 'clients' | 'inventory', ids: number[]): Promise<void> => {};

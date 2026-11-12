@@ -45,3 +45,15 @@ test('initial load and updates at rest at the top remain immediate', () => {
   updates.receive('live');
   assert.deepEqual(displayed, ['initial', 'live']);
 });
+
+test('removed clients and inventory disappear while scrolling and cannot return from a queued snapshot', () => {
+  const displayed = [];
+  const updates = createDeferredListUpdates(data => displayed.push(data), exported.hasRemovedLeads);
+  updates.receive([{ id: 1 }, { id: 2 }]);
+  updates.onScroll(500);
+  updates.receive([{ id: 2 }, { id: 1 }, { id: 3 }]);
+  updates.receive([{ id: 2 }]);
+  assert.deepEqual(displayed, [[{ id: 1 }, { id: 2 }], [{ id: 2 }]]);
+  updates.onScroll(0);
+  assert.equal(displayed.length, 2);
+});

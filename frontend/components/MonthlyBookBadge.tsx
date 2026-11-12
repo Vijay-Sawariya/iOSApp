@@ -35,7 +35,7 @@ export function MonthlyBookBadge({ book, onOpen }: { book?: BookPresence[number]
   if (!book) return null;
   return (
     <View style={styles.row}>
-      <Pressable accessibilityRole="link" onPress={event => {
+      <Pressable style={styles.bookLink} accessibilityRole="link" onPress={event => {
         event.stopPropagation();
         onOpen?.();
         router.push({ pathname: '/monthly-inventory', params: { entry_id: String(book.entry_id) } });
@@ -44,16 +44,17 @@ export function MonthlyBookBadge({ book, onOpen }: { book?: BookPresence[number]
       </Pressable>
       <Pressable accessibilityRole="button" onPress={event => {
         event.stopPropagation();
-        Alert.alert('Original book note', book.note?.trim() || 'No original book note recorded.');
+        Alert.alert('Book Text', book.note?.trim() || 'No book text recorded.');
       }}>
-        <Text style={styles.note}>Original book note</Text>
+        <Text style={styles.note}>Book Text</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginVertical: 6 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6 },
+  bookLink: { flexShrink: 1 },
   badge: { backgroundColor: '#DCFCE7', color: '#166534', fontSize: 12, fontWeight: '600', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   note: { color: '#1D4ED8', fontSize: 12, textDecorationLine: 'underline' },
 });

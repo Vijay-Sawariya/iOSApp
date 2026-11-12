@@ -57,6 +57,7 @@ class OfflineApiService {
           forceNetwork: true,
           skipCacheWrite: true,
         }).then((fresh) => {
+          fresh = fresh.filter((lead: any) => !lead.is_deleted || lead.is_deleted === '0');
           options?.onBackgroundRefresh?.(fresh);
           void syncService.storeClientSnapshot(fresh).catch((error) => {
             console.error('Failed to persist client snapshot:', error);
@@ -88,6 +89,7 @@ class OfflineApiService {
           forceNetwork: true,
           skipCacheWrite: true,
         }).then((fresh) => {
+          fresh = fresh.filter((lead: any) => !lead.is_deleted || lead.is_deleted === '0');
           options?.onBackgroundRefresh?.(fresh);
           void syncService.storeInventorySnapshot(fresh).catch((error) => {
             console.error('Failed to persist inventory snapshot:', error);

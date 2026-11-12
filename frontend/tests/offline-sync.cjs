@@ -19,7 +19,7 @@ function setup(operations, send, lastSync = null) {
         return { ...op, local_entity_id: serverId, payload: JSON.stringify({ ...JSON.parse(op.payload), id: serverId }) };
       });
     },
-    removeLocalLead: async () => {}, saveLeads: async () => {}, saveFloorPricing: async () => {},
+    pruneLeadSnapshot: async () => {}, removeLocalLead: async () => {}, saveLeads: async () => {}, saveFloorPricing: async () => {},
     saveBuilders: async () => {},
     getLastSyncTime: async () => lastSync,
     updateLastSyncTime: async () => { lastSync = new Date(); },

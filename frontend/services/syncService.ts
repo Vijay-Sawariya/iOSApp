@@ -30,12 +30,16 @@ class SyncService {
   }
 
   async storeClientSnapshot(leads: any[]): Promise<void> {
+    leads = leads.filter(lead => !lead.is_deleted || lead.is_deleted === '0');
     await db.saveLeads(leads);
+    await db.pruneLeadSnapshot('clients', leads.map(lead => lead.id));
     this.clientListeners.forEach((listener) => listener(leads));
   }
 
   async storeInventorySnapshot(leads: any[]): Promise<void> {
+    leads = leads.filter(lead => !lead.is_deleted || lead.is_deleted === '0');
     await db.saveLeads(leads);
+    await db.pruneLeadSnapshot('inventory', leads.map(lead => lead.id));
     for (const lead of leads) {
       if (Array.isArray(lead.floor_pricing)) {
         await db.saveFloorPricing(lead.id, lead.floor_pricing);

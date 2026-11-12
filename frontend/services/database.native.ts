@@ -180,6 +180,21 @@ export const saveLeads = async (leads: any[]): Promise<void> => {
   }
 };
 
+// Reconcile a successful category response, including an empty snapshot.
+// Keep queued local changes even when they are not yet present on the server.
+export const pruneLeadSnapshot = async (category: 'clients' | 'inventory', ids: number[]): Promise<void> => {
+  const database = getDatabase();
+  if (!database) return;
+  const types = category === 'clients' ? "'buyer','tenant'" : "'seller','owner','landlord','builder','agent'";
+  const stale = await database.getAllAsync(
+    `SELECT id FROM leads WHERE lead_type IN (${types}) AND id > 0
+     AND id NOT IN (SELECT value FROM json_each(?))
+     AND id NOT IN (SELECT local_entity_id FROM pending_operations WHERE entity_type = 'lead')`,
+    [JSON.stringify(ids)]
+  ) as { id: number }[];
+  for (const row of stale) await removeLocalLead(row.id);
+};
+
 // Save floor pricing
 export const saveFloorPricing = async (leadId: number, pricing: any[]): Promise<void> => {
   if (!isSQLiteAvailable()) return;
@@ -260,7 +275,7 @@ export const getLocalClientLeads = async (): Promise<any[]> => {
   const result = await database.getAllAsync(
     `SELECT * FROM leads WHERE lead_type IN ('buyer', 'tenant') ORDER BY created_at DESC`
   ) as any[];
-  return result.map(hydrateLeadRow);
+  return result.map(hydrateLeadRow).filter(lead => !lead.is_deleted || lead.is_deleted === '0');
 };
 
 // Get all inventory leads from local database
@@ -272,7 +287,7 @@ export const getLocalInventoryLeads = async (): Promise<any[]> => {
   const rows = await database.getAllAsync(
     `SELECT * FROM leads WHERE lead_type IN ('seller', 'owner', 'landlord', 'builder', 'agent') ORDER BY created_at DESC`
   ) as any[];
-  const leads = rows.map(hydrateLeadRow);
+  const leads = rows.map(hydrateLeadRow).filter(lead => !lead.is_deleted || lead.is_deleted === '0');
 
   // Load all floor prices in one query. The previous N+1 query loop made a
   // cached inventory screen perform hundreds/thousands of SQLite round trips.

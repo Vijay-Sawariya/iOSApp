@@ -870,6 +870,7 @@ export const api = {
       headers: getHeaders(),
     });
     if (!response.ok) throw new Error('Failed to delete lead');
+    await db.removeLocalLead(parseInt(id, 10));
     await cacheService.remove(`cache_lead_${id}`);
     await cacheService.remove(CACHE_KEYS.LEADS_CLIENTS);
     await cacheService.remove(CACHE_KEYS.LEADS_INVENTORY);

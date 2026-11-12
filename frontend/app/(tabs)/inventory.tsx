@@ -1,7 +1,7 @@
 import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import InventoryUpdateModal from '../../components/InventoryUpdateModal';
-import { createDeferredListUpdates } from '../../utils/deferredListUpdates';
+import { createDeferredListUpdates, hasRemovedLeads } from '../../utils/deferredListUpdates';
 import TeamInboxBell from '../../components/TeamInboxBell';
 import PhoneNumbers from '../../components/PhoneNumbers';
 import { canViewLeadContacts } from '../../utils/contactAccess';
@@ -248,7 +248,7 @@ export default function InventoryLeadsScreen() {
   // Keep the current cards stable while reading farther down the list. Apply
   // the latest background snapshot at the top or on an explicit refresh.
   const inventoryUpdates = useMemo(() => createDeferredListUpdates<Lead[]>(
-    data => displayInventoryRef.current(data)
+    data => displayInventoryRef.current(data), hasRemovedLeads
   ), []);
 
   const loadLeads = async (forceNetwork = false) => {
@@ -1081,12 +1081,16 @@ export default function InventoryLeadsScreen() {
         )}
 
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
-        {(canManageLead || item.detail_access_status === 'approved' || (normalizedRole === 'sr agent' && item.lead_type === 'builder')) && (
-          <TouchableOpacity style={styles.requestAccessButton} onPress={() => setUpdatingInventoryId(item.id)}>
-            <Ionicons name="options-outline" size={18} color="#2563EB" /><Text style={styles.requestAccessText}>Update inventory</Text>
-          </TouchableOpacity>
-        )}
         {canViewData ? <View style={styles.actionsRow}>
+          {(canManageLead || item.detail_access_status === 'approved' || (normalizedRole === 'sr agent' && item.lead_type === 'builder')) && <>
+            <TouchableOpacity style={styles.actionButton} onPress={() => setUpdatingInventoryId(item.id)}
+              accessibilityRole="button" accessibilityLabel="Update status">
+              <Ionicons name="options-outline" size={15} color="#2563EB" />
+              <Text style={[styles.actionText, { color: '#2563EB' }]}>Update status</Text>
+            </TouchableOpacity>
+            <View style={styles.actionDivider} />
+          </>}
+
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => setMatchingLead(item)}
