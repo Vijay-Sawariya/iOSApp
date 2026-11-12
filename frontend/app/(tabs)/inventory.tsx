@@ -29,6 +29,7 @@ import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { offlineApi } from '../../services/offlineApi';
 import { router, useFocusEffect, usePathname } from 'expo-router';
+import { MonthlyBookBadge, useMonthlyBookPresence } from '../../components/MonthlyBookBadge';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import InventoryFileUpload from '../../components/InventoryFileUpload';
@@ -103,6 +104,7 @@ export default function InventoryLeadsScreen() {
   const { expanded: showFilters, toggle: toggleFilters, listRef } = useFilterPanel();
   const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
   const { user } = useAuth();
+  const monthlyBookPresence = useMonthlyBookPresence(leads, !isColdCalling);
   const normalizedRole = user?.role?.trim().toLowerCase();
   const isCaller = ['caller', 'tele caller', 'telecaller'].includes(normalizedRole || '');
   const canAddInventory = isColdCalling || !isCaller;
@@ -905,6 +907,7 @@ export default function InventoryLeadsScreen() {
           onPress={() => router.push(`/leads/${item.id}`)}
           activeOpacity={0.7}
         >
+          <MonthlyBookBadge book={monthlyBookPresence?.[item.id]} />
           {/* Name and Type Badge Row */}
           <View style={styles.cardHeader}>
             <View style={styles.nameSection}>

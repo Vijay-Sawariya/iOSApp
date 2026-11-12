@@ -13,7 +13,7 @@ function setup(fetch) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(require.resolve('../services/api.ts'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS },
   }).outputText, { exports, require: name => name === 'react-native' ? { AppState } : {},
-    fetch, AbortController, setTimeout, clearTimeout, console, URLSearchParams });
+    fetch, AbortController, setTimeout, clearTimeout, console, URLSearchParams, Headers });
   return { ...exports, state(value) {
     AppState.currentState = value;
     for (const fn of [...listeners]) fn(value);
@@ -80,4 +80,20 @@ test('a brief inactive transition does not abort or resend a healthy read', asyn
   assert.equal(await pending, response);
   assert.equal(calls, 1);
   assert.equal(s.listeners.size, 0);
+});
+
+
+test('authenticated 401 expires the session, while timeout, forbidden and login failures do not', async () => {
+  let status = 401, expired = 0;
+  const s = setup(async () => ({ status }));
+  s.setAuthToken('session');
+  s.setAuthFailureHandler(() => { expired++; });
+  await s.fetchWithTimeout('/enquiries', { headers: { Authorization: 'Bearer session' } });
+  assert.equal(expired, 1);
+  await s.fetchWithTimeout('/login');
+  status = 403;
+  await s.fetchWithTimeout('/restricted', { headers: { Authorization: 'Bearer session' } });
+  status = 504;
+  await s.fetchWithTimeout('/slow', { headers: { Authorization: 'Bearer session' } });
+  assert.equal(expired, 1);
 });

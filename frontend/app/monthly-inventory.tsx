@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { colors, radii } from '../constants/theme';
 import { SearchableMultiSelect } from '../components/forms/SearchableMultiSelect';
 import { CustomDropdown } from '../components/forms/CustomDropdown';
-import { MonthlyEntry, conversionParams } from '../services/monthlyInventory';
+import { MonthlyEntry, conversionParams, isKothiBookEntry } from '../services/monthlyInventory';
 import PhoneNumbers from '../components/PhoneNumbers';
 
 // Session-only state: keep criteria and loaded pages when this route is reopened.
@@ -43,6 +43,7 @@ function BookCard({ item, onPdf, onDelete, deleting, onStatusSaved }: { onStatus
     <Text selectable style={styles.address}>{[item.address, item.location].filter(Boolean).join(', ')}</Text>
     <Text style={styles.muted}>{item.book_month.slice(0, 7)} · {item.category.replace('_', ' ')}</Text>
     <View style={styles.tags}>
+      {isKothiBookEntry(item) && <Text style={[styles.tag, { backgroundColor: '#DBEAFE', color: '#1E40AF' }]}>Kothi</Text>}
       {[item.area_size ? `${item.area_size} ${item.area_unit}` : '', item.floor, item.configuration, item.entry_status,
         item.converted_lead_id ? 'Converted' : '', item.needs_review ? 'Review details' : ''].filter(Boolean).map((tag, i) =>
         <Text key={i} style={styles.tag}>{tag}</Text>)}
@@ -95,8 +96,8 @@ export default function MonthlyInventoryScreen() {
   const [selectedLocations, setSelectedLocations] = useBookState<string[]>('selectedLocations', []);
   const [appliedLocations, setAppliedLocations] = useBookState<string[]>('appliedLocations', []);
   const [months, setMonths] = useBookState<string[]>('months', []);
-  const [month, setMonth] = useBookState('month', 'All months');
-  const [category, setCategory] = useBookState('category', 'All categories');
+  const [month, setMonth] = useBookState('month', 'Latest month');
+  const [category, setCategory] = useBookState('category', 'Residential sale');
   const [criteriaExpanded, setCriteriaExpanded] = useBookState('criteriaExpanded', false);
   const [searchInput, setSearchInput] = useBookState('searchInput', '');
   const [search, setSearch] = useBookState('search', '');
@@ -134,7 +135,7 @@ export default function MonthlyInventoryScreen() {
     setError('');
     setLoading(nextPage === 1 && !quiet); setLoadingMore(nextPage > 1 && !quiet);
     try {
-      const filters = entryId ? { entry_id: entryId, month: '', category: '', search: '' } : { month: month === 'All months' ? '' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations };
+      const filters = entryId ? { entry_id: entryId, month: '', category: '', search: '' } : { month: month === 'All months' ? '' : month === 'Latest month' ? 'latest' : month, category: categories[category], search, ...appliedCriteria, locations: appliedLocations };
       // Revalidate all loaded pages after an edit without dropping the reader to page one.
       const pages = quiet ? Array.from({ length: pageRef.current }, (_, index) => index + 1) : [nextPage];
       const results = await Promise.all(pages.map(page => api.getMonthlyInventory({ ...filters, page })));
@@ -195,7 +196,7 @@ export default function MonthlyInventoryScreen() {
         </TouchableOpacity>
         {criteriaExpanded && <View style={styles.criteriaPanel}>
         <View style={styles.filterRow}>
-          <View style={styles.filter}><CustomDropdown label="Book month" value={month} options={['All months', ...months]} onSelect={setMonth} /></View>
+          <View style={styles.filter}><CustomDropdown label="Book month" value={month} options={['Latest month', 'All months', ...months]} onSelect={setMonth} /></View>
           <View style={styles.filter}><CustomDropdown label="Category" value={category} options={Object.keys(categories)} onSelect={setCategory} /></View>
         </View>
         <View>
@@ -213,7 +214,7 @@ export default function MonthlyInventoryScreen() {
                 style={styles.criteriaInput} returnKeyType="search" onSubmitEditing={applySearch} />
             </View>)}
         </View>
-        <TouchableOpacity accessibilityRole="button" onPress={() => { setSelectedLocations([]); setAppliedLocations([]); setCriteria(emptyCriteria); setAppliedCriteria(emptyCriteria); setMonth('All months'); setCategory('All categories'); setSearchInput(''); setSearch(''); }}>
+        <TouchableOpacity accessibilityRole="button" onPress={() => { setSelectedLocations([]); setAppliedLocations([]); setCriteria(emptyCriteria); setAppliedCriteria(emptyCriteria); setMonth('Latest month'); setCategory('Residential sale'); setSearchInput(''); setSearch(''); }}>
           <Text style={styles.actionText}>Reset filters</Text>
         </TouchableOpacity>
         <View style={styles.searchRow}>

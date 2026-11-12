@@ -55,7 +55,14 @@ export const fetchWithTimeout = async (
     options.signal?.addEventListener('abort', cancel);
     if (options.signal?.aborted) controller.abort();
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      // Only expire the session that sent this request. A late response from an
+      // earlier login must not log out a newly authenticated user.
+      if (response.status === 401 && authToken &&
+          new Headers(options.headers).get('Authorization') === `Bearer ${authToken}`) {
+        notifyAuthFailure(response);
+      }
+      return response;
     } catch (error) {
       if (options.signal?.aborted) throw error;
       if (interrupted && readable && attempt < 2) continue;
@@ -327,6 +334,16 @@ export const api = {
   getEnquirySyncHistory: async () => {
     const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/sync-history`, { headers: getHeaders() });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load sync history'));
+    return response.json();
+  },
+  getMonthlyBookPresence: async (leadIds: number[], transaction: '' | 'sale' | 'rent'): Promise<Record<number, { entry_id: number; month: string; note: string }>> => {
+    const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/presence`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ lead_ids: leadIds, transaction }),
+    });
+    notifyAuthFailure(response);
+    if (!response.ok) throw new Error('Could not load monthly book badges.');
     return response.json();
   },
   getMonthlyInventory: async (filters: { entry_id?: string; month: string; category: string; search: string; page: number; locations?: string[]; location?: string; address?: string; owner_name?: string; phone?: string; floor?: string; min_area?: string; max_area?: string }): Promise<MonthlyInventoryPage> => {

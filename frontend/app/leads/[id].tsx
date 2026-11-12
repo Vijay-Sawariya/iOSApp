@@ -1104,7 +1104,7 @@ export default function LeadDetailScreen() {
       {isClientLead() && lead.matched_properties && lead.matched_properties.length > 0 ? (
         <View style={styles.section}>
           <View style={styles.matchedHeaderRow}>
-            <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
+            <Text style={styles.sectionTitle}>{'Preferred / Shared Properties'}</Text>
             {selectedMatchedIds.length > 0 && (
               <TouchableOpacity 
                 style={styles.shareMatchedBtn}
@@ -1143,8 +1143,11 @@ export default function LeadDetailScreen() {
                   {isSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
                 </View>
                 <View style={styles.matchedPropertyNameContainer}>
-                  <Text style={styles.matchedPropertyName}>{safeStr(prop.property_name)}</Text>
-                  <Text style={styles.matchedPropertyType}>{` (${getTypeLabel(prop.property_type)})`}</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+                    <Text style={styles.matchedPropertyName}>{safeStr(prop.property_name)}</Text>
+                    <Text style={styles.matchedPropertyType}>{getTypeLabel(prop.property_type)}</Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 3 }}>Lead ID: #{prop.property_id || prop.id}</Text>
                 </View>
                 <View style={styles.matchedPropertyActions}>
                   {/* Only show Call/WhatsApp icons if user can view data */}
@@ -1244,8 +1247,8 @@ export default function LeadDetailScreen() {
         </View>
       ) : isClientLead() ? (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{'Matched Property List'}</Text>
-          <Text style={styles.noMatchedText}>{'No matched properties found'}</Text>
+          <Text style={styles.sectionTitle}>{'Preferred / Shared Properties'}</Text>
+          <Text style={styles.noMatchedText}>{'No preferred or shared properties found'}</Text>
         </View>
       ) : null}
 
@@ -1986,8 +1989,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   matchedPropertyNameContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     flexShrink: 1,
     flexWrap: 'wrap',
   },

@@ -37,6 +37,7 @@ import {
 } from '../../constants/leadOptions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MatchingLeadsModal from '../../components/MatchingLeadsModal';
+import BuyerPropertyTableModal from '../../components/BuyerPropertyTableModal';
 import { colors, radii, shadows } from '../../constants/theme';
 
 interface Lead {
@@ -127,6 +128,7 @@ export default function ClientLeadsScreen() {
   const [selectedStatTile, setSelectedStatTile] = useState<string>('total'); // 'total', 'buyer', 'tenant'
   const [phoneFilter, setPhoneFilter] = useState('');
   const [budgetSearch, setBudgetSearch] = useState(''); // Budget with +/- 10%
+  const [propertyTableLead, setPropertyTableLead] = useState<Lead | null>(null);
   const [matchingLead, setMatchingLead] = useState<Lead | null>(null);
   const [requestingAccessId, setRequestingAccessId] = useState<number | null>(null);
 
@@ -776,6 +778,17 @@ www.sagarhome.com`;
           </View>
         )}
 
+        <TouchableOpacity
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}
+          onPress={() => setPropertyTableLead(item)}
+          accessibilityRole="button"
+          accessibilityLabel="View preferred and shared properties"
+        >
+          <Ionicons name="grid-outline" size={16} color="#2563EB" />
+          <Text style={{ color: '#2563EB', fontSize: 12, fontWeight: '600', flex: 1 }}>Preferred / Shared Properties</Text>
+          <Ionicons name="chevron-forward" size={15} color="#94A3B8" />
+        </TouchableOpacity>
+
         {/* Action Buttons Row - Edit/Delete only visible if user has permission */}
         {canViewData ? <View style={styles.actionsRow}>
           <TouchableOpacity
@@ -1396,6 +1409,8 @@ www.sagarhome.com`;
           <Ionicons name="add" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       )}
+
+      <BuyerPropertyTableModal lead={propertyTableLead} onClose={() => setPropertyTableLead(null)} />
 
       <MatchingLeadsModal
         visible={!!matchingLead}

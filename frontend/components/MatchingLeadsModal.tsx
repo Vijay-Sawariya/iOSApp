@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LOCATIONS, FLOORS, formatUnit } from '../constants/leadOptions';
 import { offlineApi } from '../services/offlineApi';
+import { MonthlyBookBadge, useMonthlyBookPresence } from './MonthlyBookBadge';
 import { api } from '../services/api';
 
 type MatchMode = 'inventory' | 'clients';
@@ -327,6 +328,8 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
   useSharedDropdowns();
   const [filters, setFilters] = useState(defaultFiltersFromLead(null));
   const [matches, setMatches] = useState<any[]>([]);
+  const monthlyBookPresence = useMonthlyBookPresence(matches, visible && mode === 'inventory',
+    ['tenant', 'rent'].includes(toText(lead?.lead_type).trim().toLowerCase()) ? 'rent' : 'sale');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -583,6 +586,7 @@ export default function MatchingLeadsModal({ visible, lead, mode, onClose, onSav
           </TouchableOpacity>
         </View>
 
+        <MonthlyBookBadge book={monthlyBookPresence?.[item.id]} onOpen={onClose} />
         {/* Phone with Call and WhatsApp icons */}
         {item.phone && item.can_view_sensitive !== false && (
           <View style={styles.phoneRow}>

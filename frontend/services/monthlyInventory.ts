@@ -1,4 +1,5 @@
 export type MonthlyEntry = {
+  is_kothi?: boolean | 0 | 1;
   inventory_status?: 'Available' | 'Sold' | 'Hold' | 'Invalid';
   id: number; book_month: string; category: string; location: string; address: string;
   area_size: string | number | null; area_unit: string; floor: string; configuration: string;
@@ -6,6 +7,13 @@ export type MonthlyEntry = {
   converted_lead_id: number | null; matching_lead_id: number | null; pdf_id: number | null;
 };
 export type MonthlyInventoryPage = { items: MonthlyEntry[]; total: number; page: number; has_more: boolean; months: string[]; locations?: string[] };
+
+export function isKothiBookEntry(entry: Pick<MonthlyEntry, 'category' | 'address' | 'configuration' | 'note' | 'is_kothi'>): boolean {
+  return ['residential_sale', 'residential_rent'].includes(entry.category)
+    && (Boolean(entry.is_kothi) || /\b(?:kothis?|bungalows?|(?:independent|full|entire)[\s-]+house)\b/i.test(
+      [entry.address, entry.configuration, entry.note].join(' '),
+    ));
+}
 
 // Preserve combined floor labels, matching MonthlyInventoryConversion::floors on web.
 export function bookFloors(raw: string): string {
