@@ -310,6 +310,16 @@ export const api = {
     try { return await request; }
     finally { if (enquiryRequests.get(query) === request) enquiryRequests.delete(query); }
   },
+  registerEnquiryPush: async (deviceToken: string, sessionToken: string, remove = false) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-push-device`, {
+      method: remove ? 'DELETE' : 'POST', headers: { ...getHeaders(), Authorization: `Bearer ${sessionToken}` }, body: JSON.stringify({token:deviceToken}),
+    });
+    if (!response.ok) {
+      if (remove) throw new Error('Unable to unregister enquiry notifications');
+      throw new Error(await getApiErrorMessage(response, 'Unable to register enquiry notifications'));
+    }
+    return response.json();
+  },
   getEnquiryDetail: async (id: number) => {
     const response = await fetchWithTimeout(`${API_URL}/api/mobile/enquiry-management/${id}`, { headers: getHeaders() });
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Unable to load enquiry'));
@@ -328,7 +338,7 @@ export const api = {
     const result = await response.json();
     clearEnquiryPages();
     if (action === 'qualify' || action === 'link_existing') await invalidateLeadAccessCaches(result.lead_id);
-    if (['followup', 'assign', 'qualify', 'link_existing'].includes(action)) await invalidateReminderCaches();
+    if (['followup', 'assign', 'qualify', 'link_existing', 'soft_delete'].includes(action)) await invalidateReminderCaches();
     return result;
   },
   getEnquirySyncHistory: async () => {

@@ -12,11 +12,12 @@ import { colors } from '../constants/theme';
 import { EnquiryButton as Button, EnquiryField as Field, EnquirySelect as Select, EnquiryLoading, enquiryStyles as s } from '../components/EnquiryControls';
 
 const EMPTY = { q: '', status: '', assigned: '', due: false, duplicates: false, sort: 'newest' };
-const STATUSES = ['New', 'Contacted', 'Qualified', 'Nurture', 'Disqualified', 'Invalid'];
+const STATUSES = ['New', 'Contacted', 'Qualified', 'Nurture', 'Disqualified', 'Invalid', 'Agent enquiry'];
 const WEB_PAGE = 'https://sagarhomelms.com/enquiry_management.php';
 export default function EnquiriesScreen() {
   const { user, hasFeature, featureFlagsLoading } = useAuth();
   const canViewEnquiries = !featureFlagsLoading && hasFeature('enquiry_management');
+  const [tab, setTab] = useState<'general' | 'magicbricks'>('general');
   const [filters, setFilters] = useState(EMPTY);
   const [applied, setApplied] = useState(EMPTY);
   const [expanded, setExpanded] = useState(false);
@@ -33,14 +34,14 @@ export default function EnquiriesScreen() {
     const serial = ++request.current;
     setLoading(true); setError('');
     try {
-      const result = await api.getEnquiryManagement({ ...applied, page }, { forceNetwork });
+      const result = await api.getEnquiryManagement({ ...applied, page, tab }, { forceNetwork });
       if (serial === request.current) {
         setData(focusedItem && !result.items.some((row: any) => row.id === focusedItem.id)
           ? { ...result, items: [focusedItem, ...result.items] } : result);
       }
     } catch (e: any) { if (serial === request.current) setError(e.message || 'Unable to load enquiries.'); }
     finally { if (serial === request.current) setLoading(false); }
-  }, [applied, page, canViewEnquiries]);
+  }, [applied, page, tab, canViewEnquiries]);
   useFocusEffect(useCallback(() => { load(); return () => { request.current++; }; }, [load]));
   const employeeChoices = [{ value: '', label: 'All accessible' }, { value: 'none', label: 'Unassigned' }, ...(data?.users || []).map((u: any) => ({ value: String(u.id), label: u.full_name || u.username }))];
   const update = (key: keyof typeof EMPTY, value: string | boolean) => setFilters(f => ({ ...f, [key]: value }));
@@ -50,15 +51,16 @@ export default function EnquiriesScreen() {
   </SafeAreaView>;
   return <SafeAreaView style={s.page}>
     <View style={s.header}><TouchableOpacity accessibilityLabel="Back" onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color={colors.ink} /></TouchableOpacity>
-      <View style={{ flex: 1 }}><Text style={s.title}>Enquiry Management</Text><Text style={s.subtitle}>Website and Meta Ad enquiries</Text></View>
+      <View style={{ flex: 1 }}><Text style={s.title}>Enquiry Management</Text><Text style={s.subtitle}>Website, Meta Ad and Magicbricks enquiries</Text></View>
       <TouchableOpacity accessibilityLabel="Refresh enquiries" onPress={() => load(true)}><Ionicons name="refresh" size={22} color={colors.primary} /></TouchableOpacity>
     </View>
     <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={() => load(true)} />}>
+      <View style={s.row}>{(['general','magicbricks'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="tab" accessibilityState={{selected:tab===value}} onPress={() => { request.current++; setTab(value); setPage(1); setData(null); setError(''); }} style={{flex:1,padding:12,borderRadius:10,backgroundColor:tab===value?colors.primary:colors.surfaceRaised,borderWidth:1,borderColor:colors.border}}><Text style={{color:tab===value?'#fff':colors.ink,fontWeight:'700',fontSize:12,textAlign:'center'}}>{value==='magicbricks'?'Magic Brick Enquiries':'Website & Meta Ad'}</Text></TouchableOpacity>)}</View>
       <Text style={s.muted}>Qualify enquiries before converting them to Main Leads.</Text>
       {error ? <View style={s.card}><Text style={s.error}>{error}</Text><Button title="Retry" onPress={() => load(true)} /></View> : null}
       {!data && loading ? <EnquiryLoading /> : null}
       {data ? <>
-        <View style={s.row}>{stats.map(([key, label]) => <View key={key} style={[s.card, { width: '47%', flexGrow: 1 }]}><Text style={s.muted}>{label}</Text><Text style={s.title}>{data.stats?.[key] || 0}</Text></View>)}</View>
+        <View style={s.row}>{stats.map(([key, label]) => <View key={key} style={[s.card, { width: '30%', flexGrow: 1, padding: 10, gap: 4 }]}><Text style={s.muted}>{label}</Text><Text style={s.title}>{data.stats?.[key] || 0}</Text></View>)}</View>
         <Button title={expanded ? 'Hide filters' : 'Search and filters'} onPress={() => setExpanded(v => !v)} secondary />
         {expanded ? <View style={s.card}>
           <Field label="Name, phone, email or property" value={filters.q} onChange={v => update('q', v)} />
@@ -77,9 +79,10 @@ export default function EnquiriesScreen() {
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
           return <View key={item.id} style={s.card}>
-            <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
+            <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
             <TouchableOpacity accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><Text style={[s.text, { color: colors.accent }]}>{item.phone}</Text>
             <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
+            <Text style={s.muted}>Listing URL: {item.listing_url ? <Text accessibilityRole="link" style={{color:colors.primary}} onPress={() => { Linking.openURL(item.listing_url).catch(() => setError('Unable to open listing.')); }}>{item.listing_url}</Text> : 'Not provided'}</Text>
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}
             <Text style={s.muted}>Best time to call: {bestTime ? bestTime.replace(/_/g, ' ') : 'Not provided'}</Text>
             <View style={[s.row, { alignItems: 'flex-start', borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}>
@@ -94,8 +97,8 @@ export default function EnquiriesScreen() {
             <EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
               const updated = { ...item, ...changes };
               request.current++;
-              setData((current: any) => current ? { ...current, items: current.items.map((row: any) => row.id === item.id ? updated : row) } : current);
-              void load(true, updated);
+              setData((current: any) => current ? { ...current, items: changes.is_deleted ? current.items.filter((row:any)=>row.id!==item.id) : current.items.map((row: any) => row.id === item.id ? updated : row) } : current);
+              void load(true, changes.is_deleted ? undefined : updated);
             }} />
           </View>;
         })}
@@ -105,7 +108,7 @@ export default function EnquiriesScreen() {
           <Button title="Next" secondary disabled={loading || data.page >= data.pages} onPress={() => { setPage(data.page + 1); scroll.current?.scrollTo({ y: 0 }); }} />
         </View>
       </> : null}
-      {user?.role?.trim().toLowerCase() === 'admin' && <View style={s.card}>
+      {tab==='general' && user?.role?.trim().toLowerCase() === 'admin' && <View style={s.card}>
         <Text style={s.heading}>Sheet synchronisation</Text>
         <Text style={s.muted}>Preview and import use the existing LMS sheet configuration. The web page may ask you to sign in. Server imports run daily at 8:00 AM and 10:30 PM India time once cPanel scheduling is configured. Imported enquiries appear here after refresh.</Text>
         <Button title="Open preview / sync in LMS" secondary onPress={() => { Linking.openURL(WEB_PAGE).catch(() => setSyncError('Unable to open the LMS page.')); }} />

@@ -53,7 +53,7 @@ export default function EnquiryCardActions({ item, users, canAssign, onChanged }
       const result = await api.updateEnquiry(item.id, action,
         action === 'assign' || action === 'link_existing' ? { assigned_to: Number(owner), ...(action === 'link_existing' ? { lead_id: selected.id } : {}) } : action === 'followup' ? { assigned_to: Number(owner), outcome, due_at: due, remarks } : {});
       const employee = users.find(u => String(u.id) === owner);
-      const changes = action === 'mark_invalid' ? { status: 'Invalid' } : action === 'restore_invalid' ? { status: 'New' } : {
+      const changes = action === 'soft_delete' ? { is_deleted: true } : ['mark_invalid','restore_invalid','mark_agent','restore_agent'].includes(action) ? { status: result.status } : {
         assigned_to: Number(owner), employee: employee?.full_name || employee?.username || item.employee,
         ...(action === 'link_existing' ? { status: 'Qualified', main_lead_id: result.lead_id } : {}),
       };
@@ -84,18 +84,20 @@ export default function EnquiryCardActions({ item, users, canAssign, onChanged }
     finally { if (version === searchVersion.current) setSearching(false); }
   };
   const icon = (name: keyof typeof Ionicons.glyphMap, label: string, color: string, onPress: () => void, disabled = false) =>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} hitSlop={4} accessibilityState={{ disabled: disabled || busy }}
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} hitSlop={6} accessibilityState={{ disabled: disabled || busy }}
       disabled={disabled || busy} onPress={onPress} style={{ width: 32, height: 32, borderWidth: 1, borderColor: color, borderRadius: 6, alignItems: 'center', justifyContent: 'center', opacity: disabled || busy ? .4 : 1 }}>
-      <Ionicons name={name} size={17} color={color} />
+      {name === 'person-remove-outline' ? <View style={{width:24,height:24,alignItems:'center',justifyContent:'center'}}><Ionicons name="person" size={16} color="#292929" /><Ionicons name="ban-outline" size={25} color="#dc2626" style={{position:'absolute'}} /></View> : <Ionicons name={name} size={17} color={color} />}
     </TouchableOpacity>;
   return <>
     <View style={[s.row, { borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 6 }]}>
-      {!converted && icon(invalid ? 'arrow-undo-outline' : 'ban-outline', invalid ? 'Restore to New' : 'Junk / Invalid', invalid ? '#64748b' : '#ef3340', () => {
+      {icon('trash-outline', 'Delete enquiry', '#b42318', () => Alert.alert('Delete enquiry?', 'The record and history will be retained, pending follow-ups cancelled, and any linked Main Lead unchanged.', [{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:()=>{void save('soft_delete');}}]))}
+      {icon(invalid ? 'arrow-undo-outline' : 'ban-outline', invalid ? 'Restore to New' : 'Junk / Invalid', '#b42318', () => {
         if (invalid) { void save('restore_invalid'); return; }
         Alert.alert('Mark as Junk / Invalid?', 'This enquiry can be restored to New later.', [
           { text: 'Cancel', style: 'cancel' }, { text: 'Mark Invalid', style: 'destructive', onPress: () => { void save('mark_invalid'); } },
         ]);
       })}
+      {icon(item.status==='Agent enquiry'?'arrow-undo-outline':'person-remove-outline', item.status==='Agent enquiry'?'Restore enquiry':'Agent enquiry', '#b42318', () => { void save(item.status==='Agent enquiry'?'restore_agent':'mark_agent'); })}
       {icon('calendar-outline', converted ? 'Follow-up history' : 'Follow-up details', '#b7791f', () => open('followup'), invalid)}
       {!converted && canAssign && icon('person-add-outline', 'Assignment', '#06b6d4', () => open('assign'))}
       {icon('open-outline', invalid ? 'Open (restore to New first)' : 'Open enquiry', '#1677ff', () => router.push(`/enquiries/${item.id}` as any), invalid)}

@@ -55,11 +55,11 @@ class Database:
         if 'FROM user_mobile_feature_flags' in sql: self.result = copy.deepcopy(self.flags)
         elif sql.startswith('SELECT GET_LOCK'): self.result = [{'acquired': 1}]
         elif sql.startswith('SELECT e.* FROM sheet_enquiries'):
-            if args[0] == 1 and (len(args) == 1 or args[1] == self.row['assigned_to']):
+            if args[0] == 1 and not self.row.get('is_deleted') and (len(args) == 1 or args[1] == self.row['assigned_to']):
                 self.result = [copy.deepcopy(self.row)]
         elif sql.startswith('SELECT id,username,full_name FROM users'):
             self.result = [{'id': 8, 'username': 'agent', 'full_name': 'Agent'}]
-        elif sql.startswith('SELECT id,phone FROM sheet_enquiries WHERE assigned_to IS NULL'):
+        elif sql.startswith('SELECT id,phone FROM sheet_enquiries WHERE is_deleted=0 AND assigned_to IS NULL'):
             self.result = self.repeat_candidates
         elif sql.startswith('SELECT (SELECT la.user_id'):
             self.result = [{'assigned_to': owner} for owner in self.repeat_owners]
@@ -82,6 +82,8 @@ class Database:
             self.actions.append(tuple(args)); self.lastrowid = 50
         elif sql.startswith('INSERT INTO sheet_enquiry_activities'):
             self.events.append((args[2], json.loads(args[3])))
+        elif sql.startswith('UPDATE sheet_enquiries SET is_deleted=1'):
+            self.row.update(is_deleted=1,deleted_by=args[0])
         elif sql.startswith('UPDATE sheet_enquiries SET assigned_to=%s,status='):
             self.row.update(assigned_to=args[0], main_lead_id=args[1], status='Qualified')
         elif sql.startswith('UPDATE sheet_enquiries SET assigned_to='):
@@ -160,7 +162,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.post('qualify', PAYLOAD).json()['lead_id'], 42)
         self.assertEqual(len(self.db.leads), 1)
         self.assertTrue(any('RELEASE_LOCK' in q for q, a in self.db.queries))
-        self.assertEqual(self.post('mark_invalid').status_code, 409)
+        self.assertEqual(self.post('mark_invalid').status_code, 200)
 
     def test_mid_conversion_failure_rolls_back_every_write(self):
         self.db.fail = 'INSERT INTO lead_assignments'
@@ -314,6 +316,59 @@ class WorkflowTests(unittest.TestCase):
 
     def test_time_serialization(self):
         self.assertEqual(enquiries.wire({'due_time': timedelta(hours=10, minutes=30)})['due_time'], '10:30:00')
+
+
+class ParityTests(WorkflowTests):
+    def test_magicbricks_source_listing_and_numeric_budget_snapshot(self):
+        original={'parsed_lead':{'listing_URL':'https://www.magicbricks.com/test','budget_max':'80','unit':'L'}, 'answers':['80,00,000']}
+        row=dict(self.db.row,spreadsheet_id='magicbricks',worksheet='Magic Brick Enquiries',original_json=json.dumps(original))
+        item=enquiries.wire(row)
+        self.assertEqual(item['source'],'Magicbricks')
+        self.assertEqual(item['listing_url'],'https://www.magicbricks.com/test')
+        self.assertEqual(item['original']['answers'],['80,00,000'])
+        self.assertEqual(enquiries.listing_url({'listing_URL':'N/A'}),'')
+        self.assertEqual(enquiries.listing_url({'listing_URL':'javascript:alert(1)'}),'')
+        self.assertEqual(enquiries.listing_url({'listing_URL':'https://user:pass@example.com'}),'')
+
+    def test_source_tabs_have_separate_stats_and_results_scopes(self):
+        for tab in ('general','magicbricks'):
+            self.db.queries=[]
+            result=self.client.get('/mobile/enquiry-management',params={'tab':tab})
+            self.assertEqual(result.status_code,200,result.text)
+            query=next(q for q,a in self.db.queries if q.startswith('SELECT COUNT(*) total,'))
+            self.assertIn('e.is_deleted=0',query)
+            self.assertIn("e.spreadsheet_id='magicbricks'",query)
+            self.assertEqual('AND NOT (' in query,tab=='general')
+        self.assertEqual(self.client.get('/mobile/enquiry-management?tab=unknown').status_code,422)
+
+    def test_agent_classification_and_restore_on_linked_enquiry(self):
+        self.db.row['main_lead_id']=42
+        self.assertEqual(self.post('mark_agent').status_code,200)
+        self.assertEqual(self.db.row['status'],'Agent enquiry')
+        self.assertEqual(self.post('restore_agent').json()['status'],'Qualified')
+        self.assertFalse(self.db.leads)
+
+    def test_soft_delete_hides_record_retains_lead_and_audits(self):
+        self.db.row['main_lead_id']=42
+        self.assertEqual(self.post('soft_delete').status_code,200)
+        self.assertEqual(self.db.row['is_deleted'],1)
+        self.assertEqual(self.db.row['main_lead_id'],42)
+        self.assertIn('soft_deleted',[event for event,details in self.db.events])
+        self.assertTrue(any("status='Cancelled'" in q for q,a in self.db.queries))
+        self.assertEqual(self.client.get('/mobile/enquiry-management/1').status_code,404)
+
+    def test_another_employee_cannot_delete_or_classify(self):
+        self.user={'id':99,'role':'agent'}
+        self.assertEqual(self.post('soft_delete').status_code,404)
+        self.assertEqual(self.post('mark_agent').status_code,404)
+
+
+    def test_push_token_rejected_before_storage_and_access_is_enforced(self):
+        response=self.client.post('/mobile/enquiry-push-device',json={'token':'not-an-expo-token'})
+        self.assertEqual(response.status_code,422)
+        self.db.flags=[{'feature_key':'enquiry_management','is_enabled':0}]
+        response=self.client.post('/mobile/enquiry-push-device',json={'token':'ExponentPushToken[test]'})
+        self.assertEqual(response.status_code,403)
 
 
 if __name__ == '__main__': unittest.main()

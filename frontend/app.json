@@ -74,7 +74,8 @@
           "locationWhenInUsePermission": "Get property location for Google Maps"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

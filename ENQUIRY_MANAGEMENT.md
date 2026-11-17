@@ -55,3 +55,23 @@ Enquiry cards match the web action row: Junk/Invalid (or Restore to New), Assign
 - iOS continues using Expo native scheduled notifications, including foreground banners and background delivery for downloaded reminders. New server changes while the app is suspended require APNs/server push or a subsequent app refresh; this release does not provision APNs credentials.
 
 Deploy the Python backend and mobile build together. No production deployment or App Store submission is performed by this change.
+
+
+## November 17: web parity and new-enquiry push
+
+- More → Enquiries now has Website & Meta Ad and Magic Brick Enquiries tabs. Each tab has separate scoped results, statistics, filters and pagination.
+- Both list cards and detail screens offer icon actions for soft deletion, Junk/Invalid and Agent enquiry, including restore actions. The first three actions are red. Classifying a converted enquiry does not modify its Main Lead. Soft deletion cancels only pending/missed enquiry follow-ups and preserves history, receipts and Main Leads. Deleted records are excluded from lists, details, duplicate checks and repeat ownership matching.
+- Listing URL is displayed inline, validated as HTTP(S), or shown as Not provided. Magicbricks listing URL and provenance survive explicit conversion. Numeric rupee budgets use the web import snapshot (for example 80,00,000) and existing normalized qualification amounts.
+- Missing soft-delete columns are added idempotently before enquiry transactions. Device registration/startup creates `mobile_enquiry_push_devices`. The deployment database user needs CREATE/ALTER permissions for initial setup.
+- `enquiry_push.py` runs a server worker about every 15 seconds. It uses a MySQL advisory lock across backend workers, checks feature flags and enquiry visibility, starts new devices at the current watermark, and advances only after accepted Expo tickets. Expired device tokens are removed. Notification bodies are generic; opening an enquiry still requires the authenticated API's current permissions.
+- The phone registers an Expo token using the existing EAS project ID after permission is granted. iOS handles foreground/background banners through Expo notifications and deep-links to `/enquiries/[id]`. Registration is refreshed on app activation and removed on logout/account change. No Magicbricks partner endpoint/header/payload changes are needed.
+
+### Deployment and device verification
+
+Deploy the Python backend (including `enquiry_push.py`) and rebuild/install the mobile app together. `expo-notifications` is now included in the Expo plugins; the existing native iOS target already has an `aps-environment` entitlement. A valid Apple push key/provisioning profile must be configured in this EAS project's credentials. Credentials were not read or changed by this task. Build with the project's normal EAS/native process and verify notification permission on a physical iPhone; Expo Go/simulator checks do not prove background delivery.
+
+`ENQUIRY_PUSH_ENABLED=0` disables the server worker. If Expo push security is enabled, configure `EXPO_ACCESS_TOKEN` on the backend. Do not place it in mobile source. Keep the API worker running (an always-on host, not request-only PHP hosting). Database/network or push acceptance failures retry. Delivery is at least once: uncertain network responses may result in a repeated banner. Apple's notification settings, Focus and connectivity affect visible delivery. Push ticket acceptance does not prove APNs delivery.
+
+Acceptance: register a phone; save a unique enquiry through the existing Magicbricks webhook and through the general import; verify the correct tab/card; background/lock the phone and verify both notifications; tap each to open its enquiry; verify staff cannot open another owner's records; test Junk/Agent/restore, deletion, follow-ups and conversion. No production deployment, credentials provisioning, physical-device test or App Store submission was performed.
+
+Local backend regression: `python -m unittest test_enquiry_management test_enquiry_push -q`. Tests use database doubles and a fake push sender, never live notifications or production data.

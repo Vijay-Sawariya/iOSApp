@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { OfflineProvider, useOffline } from '../contexts/OfflineContext';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { api, setAuthToken } from '../services/api';
+import { startEnquiryPush } from '../services/enquiryPush';
 import { notificationService } from '../services/notificationService';
 
 function RootLayoutContent() {
@@ -27,6 +28,12 @@ function RootLayoutContent() {
   useEffect(() => {
     setAuthToken(token);
   }, [token]);
+
+  const enquiryPushEnabled = notificationReady && !featureFlagsLoading && hasFeature('enquiry_management');
+  useEffect(() => {
+    if (!enquiryPushEnabled || !token) return;
+    return startEnquiryPush(token);
+  }, [token, enquiryPushEnabled]);
 
   useEffect(() => {
     if (!notificationReady) return;
@@ -54,7 +61,13 @@ function RootLayoutContent() {
     };
     const handleResponse = async (response: Parameters<typeof notificationService.handleReminderNotificationResponse>[0]) => {
       const data = response.notification.request.content.data;
-      if (!active || data?.type !== 'reminder' || !data.reminderId) return;
+      if (!active) return;
+      if (data?.type === 'enquiry' && Number.isSafeInteger(Number(data.enquiryId)) && Number(data.enquiryId)>0) {
+        router.push(`/enquiries/${Number(data.enquiryId)}` as any);
+        await notificationService.clearLastNotificationResponse();
+        return;
+      }
+      if (data?.type !== 'reminder' || !data.reminderId) return;
       const key = `${response.notification.request.identifier}:${response.actionIdentifier}`;
       if (handledResponses.current.has(key)) return;
       handledResponses.current.add(key);
