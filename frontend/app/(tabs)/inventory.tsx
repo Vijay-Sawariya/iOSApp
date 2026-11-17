@@ -1,3 +1,5 @@
+import * as Location from 'expo-location';
+import { confirmMapLocation } from '../../utils/confirmMapLocation';
 import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import { filterScrollProps, useFilterPanel } from '../../hooks/useFilterPanel';
 import InventoryUpdateModal from '../../components/InventoryUpdateModal';
@@ -93,6 +95,7 @@ export default function InventoryLeadsScreen() {
   const pathname = usePathname();
   const isColdCalling = pathname.startsWith('/cold-calling');
   const [updatingInventoryId, setUpdatingInventoryId] = useState<number | null>(null);
+  const [capturingLocationId, setCapturingLocationId] = useState<number | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
@@ -134,6 +137,32 @@ export default function InventoryLeadsScreen() {
   const [clientSearch, setClientSearch] = useState('');
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [preferredInventoryIds, setPreferredInventoryIds] = useState<number[]>([]);
+
+  const captureInventoryLocation = async (lead: Lead) => {
+    if (capturingLocationId !== null) return;
+    setCapturingLocationId(lead.id);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Location permission required', 'Allow location access in Settings to capture the inventory location.');
+        return;
+      }
+      const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const url = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
+      if (!(await confirmMapLocation(url, lead.name))) return;
+      const result = await api.updateLead(String(lead.id), { Property_locationUrl: url });
+      const update = (item: Lead) => item.id === lead.id ? { ...item, Property_locationUrl: url } : item;
+      setLeads(current => current.map(update));
+      setFilteredLeads(current => current.map(update));
+      Alert.alert(result?.is_pending_sync ? 'Saved Offline' : 'Location saved', result?.is_pending_sync
+        ? 'Location saved on this device and will sync when internet is available.'
+        : 'The Google Maps location has been saved for this inventory.');
+    } catch (error: any) {
+      Alert.alert('Unable to save location', error?.message || 'Check location services and try again.');
+    } finally {
+      setCapturingLocationId(null);
+    }
+  };
 
   const requestDetailAccess = async (lead: Lead) => {
     if (requestingAccessId || lead.detail_access_status === 'pending') return;
@@ -985,6 +1014,16 @@ export default function InventoryLeadsScreen() {
                 </TouchableOpacity>
               )}
             </View>
+          )}
+          {canViewData && !hasMapUrl && (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Capture current location for ${item.name}`}
+              disabled={capturingLocationId !== null}
+              style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              onPress={event => { event.stopPropagation(); void captureInventoryLocation(item); }}>
+              {capturingLocationId === item.id ? <ActivityIndicator size="small" color={colors.primary} />
+                : <Ionicons name="location-outline" size={24} color={colors.primary} />}
+              <Text style={styles.linkText}>Capture current location</Text>
+            </TouchableOpacity>
           )}</View>
             <View style={{ width: '100%' }}>          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (

@@ -1,3 +1,4 @@
+import EnquiryPhone from '../components/EnquiryPhone';
 import React, { useCallback, useRef, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -80,7 +81,7 @@ export default function EnquiriesScreen() {
           const bestTime = item.original?.answers?.[bestIndex];
           return <View key={item.id} style={s.card}>
             <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
-            <TouchableOpacity accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><Text style={[s.text, { color: colors.accent }]}>{item.phone}</Text>
+            <TouchableOpacity accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryPhone phone={item.phone || ''} />
             <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
             <Text style={s.muted}>Listing URL: {item.listing_url ? <Text accessibilityRole="link" style={{color:colors.primary}} onPress={() => { Linking.openURL(item.listing_url).catch(() => setError('Unable to open listing.')); }}>{item.listing_url}</Text> : 'Not provided'}</Text>
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}
