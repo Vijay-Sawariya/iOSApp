@@ -23,7 +23,7 @@ export default function EnquiriesScreen() {
   const [applied, setApplied] = useState(EMPTY);
   const [expanded, setExpanded] = useState(false);
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<any>(() => api.getCachedEnquiryManagement({ ...EMPTY, page: 1 }));
+  const [data, setData] = useState<any>(() => api.getCachedEnquiryManagement({ ...EMPTY, page: 1, tab: 'general' }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [runs, setRuns] = useState<any[] | null>(null);
@@ -33,6 +33,9 @@ export default function EnquiriesScreen() {
   const load = useCallback(async (forceNetwork = false, focusedItem?: any) => {
     if (!canViewEnquiries) return;
     const serial = ++request.current;
+    // Show the matching cached page immediately, then refresh expired data.
+    const cached = api.getCachedEnquiryManagement({ ...applied, page, tab });
+    if (!forceNetwork) setData(cached);
     setLoading(true); setError('');
     try {
       const result = await api.getEnquiryManagement({ ...applied, page, tab }, { forceNetwork });
@@ -56,7 +59,7 @@ export default function EnquiriesScreen() {
       <TouchableOpacity accessibilityLabel="Refresh enquiries" onPress={() => load(true)}><Ionicons name="refresh" size={22} color={colors.primary} /></TouchableOpacity>
     </View>
     <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={() => load(true)} />}>
-      <View style={s.row}>{(['general','magicbricks'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="tab" accessibilityState={{selected:tab===value}} onPress={() => { request.current++; setTab(value); setPage(1); setData(null); setError(''); }} style={{flex:1,padding:12,borderRadius:10,backgroundColor:tab===value?colors.primary:colors.surfaceRaised,borderWidth:1,borderColor:colors.border}}><Text style={{color:tab===value?'#fff':colors.ink,fontWeight:'700',fontSize:12,textAlign:'center'}}>{value==='magicbricks'?'Magic Brick Enquiries':'Website & Meta Ad'}</Text></TouchableOpacity>)}</View>
+      <View style={s.row}>{(['general','magicbricks'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="tab" accessibilityState={{selected:tab===value}} onPress={() => { if (value === tab) return; request.current++; setTab(value); setPage(1); setData(api.getCachedEnquiryManagement({ ...applied, page: 1, tab: value })); setError(''); }} style={{flex:1,padding:12,borderRadius:10,backgroundColor:tab===value?colors.primary:colors.surfaceRaised,borderWidth:1,borderColor:colors.border}}><Text style={{color:tab===value?'#fff':colors.ink,fontWeight:'700',fontSize:12,textAlign:'center'}}>{value==='magicbricks'?'Magic Brick Enquiries':'Website & Meta Ad'}</Text></TouchableOpacity>)}</View>
       <Text style={s.muted}>Qualify enquiries before converting them to Main Leads.</Text>
       {error ? <View style={s.card}><Text style={s.error}>{error}</Text><Button title="Retry" onPress={() => load(true)} /></View> : null}
       {!data && loading ? <EnquiryLoading /> : null}

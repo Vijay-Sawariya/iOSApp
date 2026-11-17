@@ -972,15 +972,19 @@ export default function InventoryLeadsScreen() {
 
           <View style={styles.contactDetails}>
             <View style={{ width: '100%' }}>          {/* Address & Location Row */}
-          {(item.address || item.location) && (
+          {(item.address || item.location || canViewData) && (
             <View style={styles.addressRow}>
-              <Ionicons name="location" size={16} color={canViewData && hasMapUrl ? "#3B82F6" : "#6B7280"} />
-              {canViewData && hasMapUrl ? (
+              <Ionicons name="location" size={16} color={canViewData ? "#3B82F6" : "#6B7280"} />
+              {canViewData ? (
                 <TouchableOpacity
                   style={styles.locationLink}
+                  accessibilityRole="button"
+                  accessibilityLabel={hasMapUrl ? `Open ${item.name} location in Google Maps` : `Capture current location for ${item.name}`}
+                  disabled={!hasMapUrl && capturingLocationId !== null}
                   onPress={(event) => {
                     event.stopPropagation();
-                    openMapUrl(item.Property_locationUrl!);
+                    if (hasMapUrl) openMapUrl(item.Property_locationUrl!);
+                    else void captureInventoryLocation(item);
                   }}
                   activeOpacity={0.7}
                 >
@@ -988,8 +992,9 @@ export default function InventoryLeadsScreen() {
                     style={[styles.infoText, styles.linkText]}
                     numberOfLines={2}
                   >
-                    {displayAddressLocation}
+                    {displayAddressLocation || 'Address not provided'}
                   </Text>
+                  {capturingLocationId === item.id && <ActivityIndicator size="small" color={colors.primary} />}
                 </TouchableOpacity>
               ) : (
                 <Text
@@ -1015,16 +1020,7 @@ export default function InventoryLeadsScreen() {
               )}
             </View>
           )}
-          {canViewData && !hasMapUrl && (
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Capture current location for ${item.name}`}
-              disabled={capturingLocationId !== null}
-              style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
-              onPress={event => { event.stopPropagation(); void captureInventoryLocation(item); }}>
-              {capturingLocationId === item.id ? <ActivityIndicator size="small" color={colors.primary} />
-                : <Ionicons name="location-outline" size={24} color={colors.primary} />}
-              <Text style={styles.linkText}>Capture current location</Text>
-            </TouchableOpacity>
-          )}</View>
+          </View>
             <View style={{ width: '100%' }}>          {/* Phone Row - Only show Call/WhatsApp if user can view data */}
           {item.phone && (
             <View style={styles.phoneRow}>

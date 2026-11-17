@@ -105,7 +105,7 @@ export default function EnquiryCardActions({ item, users, canAssign, onChanged }
         icon('link-outline', 'Link existing lead', '#159457', () => open('link'), invalid)}
       {busy && <ActivityIndicator size="small" color={colors.primary} />}
     </View>
-    <Modal visible={dialog !== null} transparent animationType="slide" onRequestClose={close}>
+    {dialog !== null && <Modal visible transparent animationType="slide" onRequestClose={close}>
       <Pressable style={{ flex: 1, backgroundColor: '#0007', justifyContent: 'flex-end' }} onPress={close}>
         <Pressable onPress={event => event.stopPropagation()} style={{ backgroundColor: colors.surfaceRaised, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '85%', padding: 20, paddingBottom: 35, gap: 12 }}>
           <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.heading}>{dialog === 'followup' ? 'Conversation / Follow-up' : dialog === 'assign' ? 'Assign Enquiry' : 'Link existing lead'}</Text><Button title="Close" secondary disabled={busy} onPress={close} /></View>
@@ -137,6 +137,6 @@ export default function EnquiryCardActions({ item, users, canAssign, onChanged }
           </ScrollView>
         </Pressable>
       </Pressable>
-    </Modal>
+    </Modal>}
   </>;
 }
