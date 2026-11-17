@@ -1,3 +1,4 @@
+import EnquiryContactBadges from '../components/EnquiryContactBadges';
 import EnquiryPhone from '../components/EnquiryPhone';
 import React, { useCallback, useRef, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
@@ -18,6 +19,7 @@ const WEB_PAGE = 'https://sagarhomelms.com/enquiry_management.php';
 export default function EnquiriesScreen() {
   const { user, hasFeature, featureFlagsLoading } = useAuth();
   const canViewEnquiries = !featureFlagsLoading && hasFeature('enquiry_management');
+  const [cardHeight, setCardHeight] = useState(0);
   const [tab, setTab] = useState<'general' | 'magicbricks'>('general');
   const [filters, setFilters] = useState(EMPTY);
   const [applied, setApplied] = useState(EMPTY);
@@ -82,11 +84,11 @@ export default function EnquiriesScreen() {
           const questions = item.original?.questions || [];
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
-          return <View key={item.id} style={s.card}>
+          return <View key={item.id} style={[s.card, { minHeight: cardHeight }]} onLayout={event => { const height = Math.ceil(event.nativeEvent.layout.height); setCardHeight(current => Math.max(current, height)); }}>
             <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
-            <TouchableOpacity accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryPhone phone={item.phone || ''} />
+            <View style={[s.row, { alignItems: 'center' }]}><TouchableOpacity style={{ flexShrink: 1 }} accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryContactBadges item={item} /></View><EnquiryPhone phone={item.phone || ''} />
             <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
-            <Text style={s.muted}>Listing URL: {item.listing_url ? <Text accessibilityRole="link" style={{color:colors.primary}} onPress={() => { Linking.openURL(item.listing_url).catch(() => setError('Unable to open listing.')); }}>{item.listing_url}</Text> : 'Not provided'}</Text>
+            <Text style={s.muted} numberOfLines={1} ellipsizeMode="tail">Listing URL: {item.listing_url ? <Text accessibilityRole="link" style={{color:colors.primary}} onPress={() => { Linking.openURL(item.listing_url).catch(() => setError('Unable to open listing.')); }}>{item.listing_url}</Text> : 'Not provided'}</Text>
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}
             <Text style={s.muted}>Best time to call: {bestTime ? bestTime.replace(/_/g, ' ') : 'Not provided'}</Text>
             <View style={[s.row, { alignItems: 'flex-start', borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}>
@@ -98,12 +100,12 @@ export default function EnquiriesScreen() {
               {item.followup_count > 1 && <Text style={s.muted}>{item.followup_count} follow-ups · Open Follow-up details below for history</Text>}
             </View>}
             {item.last_conversation && <View style={s.card}><Text style={s.text}>Last conversation · {item.last_conversation.outcome}</Text><Text style={s.muted}>{item.last_conversation.remarks}</Text><Text style={s.muted}>{formatEnquiryDate(item.last_conversation.created_at)}</Text></View>}
-            <EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
+            <View style={{ marginTop: 'auto' }}><EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
               const updated = { ...item, ...changes };
               request.current++;
               setData((current: any) => current ? { ...current, items: changes.is_deleted ? current.items.filter((row:any)=>row.id!==item.id) : current.items.map((row: any) => row.id === item.id ? updated : row) } : current);
               void load(true, changes.is_deleted ? undefined : updated);
-            }} />
+            }} /></View>
           </View>;
         })}
         <View style={[s.row, { justifyContent: 'space-between' }]}>

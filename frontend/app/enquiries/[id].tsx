@@ -1,3 +1,4 @@
+import EnquiryContactBadges from '../../components/EnquiryContactBadges';
 import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import React, { useCallback, useRef, useState } from 'react';
 import { Alert, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
@@ -82,7 +83,7 @@ export default function EnquiryDetailScreen() {
       {loading && !item ? <EnquiryLoading /> : null}
       {item && <>
         <View style={s.card}>
-          <View style={s.row}><Text style={s.heading}>{item.full_name}</Text><Text style={[s.badge, readOnly ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{readOnly && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
+          <View style={s.row}><View style={[s.row, { flex: 1, alignItems: 'center' }]}><Text style={s.heading}>{item.full_name}</Text><EnquiryContactBadges item={item} /></View><Text style={[s.badge, readOnly ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{readOnly && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
           <Text style={s.text}>{item.phone}{item.email ? `\n${item.email}` : ''}</Text>
           <Text style={s.text}>{item.property_interest || 'Property not provided'}</Text>
           <Text style={s.muted}>Source: {item.source} · Imported {formatEnquiryDate(item.imported_at)}{`\n`}Worksheet: {item.worksheet} · Row {item.source_row}</Text>
