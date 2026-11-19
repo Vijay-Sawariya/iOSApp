@@ -73,6 +73,8 @@ export default function AddLeadScreen() {
   const params = useLocalSearchParams<{
     type?: string;
     monthlyEntryId?: string;
+    googleMapUrl?: string;
+    facing?: string;
     initialLeadType?: string;
     areaUnit?: string;
     legacyId?: string;
@@ -124,7 +126,7 @@ export default function AddLeadScreen() {
   );
   const [areaSize, setAreaSize] = useState(params.areaSize || '');
   const [areaUnit, setAreaUnit] = useState(params.areaUnit || 'YD');
-  const [facing, setFacing] = useState('');
+  const [facing, setFacing] = useState(params.facing || '');
   const [selectedFacings, setSelectedFacings] = useState<string[]>([]); // For Clients multi-select
   
   // Budget (for Clients)
@@ -143,7 +145,7 @@ export default function AddLeadScreen() {
   const [parking, setParking] = useState('');
   const [lift, setLift] = useState('');
   const [notes, setNotes] = useState(params.notes || '');
-  const [googleMapUrl, setGoogleMapUrl] = useState('');
+  const [googleMapUrl, setGoogleMapUrl] = useState(params.googleMapUrl || '');
   
   // New Inventory fields
   const [possessionMonth, setPossessionMonth] = useState('');

@@ -68,7 +68,7 @@ test('existing-lead search escapes phone query text', async () => {
   assert.match(h.requests[0].url, /enquiry-management\/12\/leads\?q=%2B91%2098111$/);
 });
 
-test('reopening the same enquiry page reuses a short-lived session result', async () => {
+test('visited enquiry pages remain available throughout the session', async () => {
   const h = setup();
   const first = await h.api.getEnquiryManagement({ page: 1, q: '' });
   assert.equal(h.api.getCachedEnquiryManagement({ q: '', page: 1 }), first);
@@ -76,10 +76,10 @@ test('reopening the same enquiry page reuses a short-lived session result', asyn
   assert.equal(h.requests.length, 1);
   h.advance(30001);
   assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), first); // visible during background refresh
-  await h.api.getEnquiryManagement({ page: 1 });
+  const refreshed = await h.api.getEnquiryManagement({ page: 1 });
   assert.equal(h.requests.length, 2);
   h.advance(300001);
-  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), null);
+  assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), refreshed);
 });
 
 test('manual refresh bypasses fresh cache and concurrent reads share one request', async () => {

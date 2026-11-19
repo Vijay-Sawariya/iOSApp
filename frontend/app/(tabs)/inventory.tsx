@@ -1,3 +1,4 @@
+import { InventoryDirection } from '../../components/InventoryDirection';
 import * as Location from 'expo-location';
 import { confirmMapLocation } from '../../utils/confirmMapLocation';
 import { useSharedDropdowns } from '../../services/sharedDropdowns';
@@ -51,7 +52,7 @@ import {
   getAgingStyles,
 } from '../../constants/leadOptions';
 import { api } from '../../services/api';
-import { inventoryPropertyCategory, matchesInventoryPropertyFilter, hasUnpricedInventory } from '../../utils/inventoryProperty';
+import { inventoryPropertyCategory, matchesInventoryPropertyFilter, hasUnpricedInventory, inventoryPriceUpdatedOn } from '../../utils/inventoryProperty';
 import AssignLeadButton from '../../components/AssignLeadButton';
 import { canShowInventory, isUnavailableInventory, formatInventoryCopy, getInventoryAmenities, sortInventory } from '../../utils/inventory';
 import { colors, radii, shadows } from '../../constants/theme';
@@ -965,7 +966,7 @@ export default function InventoryLeadsScreen() {
             <View style={styles.dateMetaItem}>
               <Ionicons name="refresh-outline" size={13} color={colors.inkSubtle} />
               <Text style={styles.dateMetaText} numberOfLines={1}>
-                Updated {formatLeadDate(item.updated_on || item.updated_at)}
+                Price Updated On: {inventoryPriceUpdatedOn(item) ? formatLeadDate(inventoryPriceUpdatedOn(item)) : 'Not recorded'}
               </Text>
             </View>
           </View>
@@ -974,7 +975,7 @@ export default function InventoryLeadsScreen() {
             <View style={{ width: '100%' }}>          {/* Address & Location Row */}
           {(item.address || item.location || canViewData) && (
             <View style={styles.addressRow}>
-              <Ionicons name="location" size={16} color={canViewData ? "#3B82F6" : "#6B7280"} />
+              <Ionicons name="location" size={16} color={canViewData && hasMapUrl ? "#EA4335" : "#6B7280"} />
               {canViewData ? (
                 <TouchableOpacity
                   style={styles.locationLink}
@@ -1015,7 +1016,7 @@ export default function InventoryLeadsScreen() {
                     openMapUrl(item.Property_locationUrl!);
                   }}
                 >
-                  <Ionicons name="map" size={24} color="#FFFFFF" />
+                  <Ionicons name="map" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               )}
             </View>
@@ -1060,7 +1061,13 @@ export default function InventoryLeadsScreen() {
                 <Text style={[styles.tagText, { color: '#6366F1', marginLeft: 3 }]}>{item.floor}</Text>
               </View>
             )}
-            {item.building_facing && (
+            {canViewData ? <InventoryDirection value={item.building_facing || ''} onSave={async building_facing => {
+              const result = await api.updateLead(String(item.id), { building_facing });
+              const update = (lead: Lead) => lead.id === item.id ? { ...lead, building_facing } : lead;
+              setLeads(current => current.map(update));
+              setFilteredLeads(current => current.map(update));
+              if (result?.is_pending_sync) Alert.alert('Saved Offline', 'Direction saved on this device and will sync when internet is available.');
+            }} /> : !!item.building_facing && (
               <View style={[styles.tag, styles.facingTag]}>
                 <Ionicons name="compass-outline" size={12} color="#0891B2" />
                 <Text style={[styles.tagText, { color: '#0891B2', marginLeft: 3 }]}>{item.building_facing}</Text>
@@ -2620,6 +2627,8 @@ const styles = StyleSheet.create({
   },
   locationLink: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   whatsappButton: {
     width: 48,
@@ -2630,10 +2639,11 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   mapIconButton: {
-    marginLeft: 10,
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    marginLeft: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,

@@ -78,6 +78,9 @@ class Database:
             self.result = {'Field': 'inventory_status'}
         elif query.startswith('UPDATE monthly_inventory_entries SET inventory_status='):
             self.entry.update(inventory_status=args[0], status_changed_by=args[1])
+        elif query.startswith('UPDATE monthly_inventory_entries SET `'):
+            fields = [part.split('`')[1] for part in query.split(' SET ')[1].split(' WHERE ')[0].split(',')]
+            self.entry.update(zip(fields, args[:-1]))
         elif query.startswith('UPDATE monthly_inventory_entries'):
             self.entry['converted_lead_id'] = args[0]
         elif 'FOR UPDATE' in query:
@@ -135,6 +138,24 @@ class MonthlyTests(unittest.TestCase):
             self.assertEqual(self.client.post('/api/monthly-inventory/10/convert', json=PAYLOAD).status_code, 403)
             self.assertEqual(self.client.post('/api/monthly-inventory/10/delete').status_code, 403)
         self.assertEqual(self.db.queries, [])
+
+    def test_details_save_and_reload(self):
+        details = {'Property_locationUrl': 'https://www.google.com/maps?q=28.5,77.2', 'building_facing': 'South East'}
+        response = self.client.post('/api/monthly-inventory/10/details', json=details)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), details)
+        item = self.client.get('/api/monthly-inventory').json()['items'][0]
+        for key, value in details.items():
+            self.assertEqual(item[key], value)
+        self.assertIsNone(self.db.entry['converted_lead_id'])
+
+    def test_details_reject_invalid_values_and_unauthorized_access(self):
+        for payload in ({}, {'building_facing': 'Up'}, {'building_facing': None},
+                        {'Property_locationUrl': 'javascript:alert(1)'}, {'owner_name': 'Changed'}):
+            self.assertEqual(self.client.post('/api/monthly-inventory/10/details', json=payload).status_code, 422)
+        self.assertEqual(self.db.queries, [])
+        self.user['username'] = 'admin'
+        self.assertEqual(self.client.post('/api/monthly-inventory/10/details', json={'building_facing': 'North'}).status_code, 403)
 
     def test_status_save_restore_and_validation(self):
         for status in ('Sold', 'Hold', 'Invalid', 'Available'):

@@ -19,7 +19,6 @@ const WEB_PAGE = 'https://sagarhomelms.com/enquiry_management.php';
 export default function EnquiriesScreen() {
   const { user, hasFeature, featureFlagsLoading } = useAuth();
   const canViewEnquiries = !featureFlagsLoading && hasFeature('enquiry_management');
-  const [cardHeight, setCardHeight] = useState(0);
   const [tab, setTab] = useState<'general' | 'magicbricks'>('general');
   const [filters, setFilters] = useState(EMPTY);
   const [applied, setApplied] = useState(EMPTY);
@@ -35,12 +34,12 @@ export default function EnquiriesScreen() {
   const load = useCallback(async (forceNetwork = false, focusedItem?: any) => {
     if (!canViewEnquiries) return;
     const serial = ++request.current;
-    // Show the matching cached page immediately, then refresh expired data.
+    // Render the matching cached page immediately and always refresh in the background.
     const cached = api.getCachedEnquiryManagement({ ...applied, page, tab });
     if (!forceNetwork) setData(cached);
     setLoading(true); setError('');
     try {
-      const result = await api.getEnquiryManagement({ ...applied, page, tab }, { forceNetwork });
+      const result = await api.getEnquiryManagement({ ...applied, page, tab }, { forceNetwork: true });
       if (serial === request.current) {
         setData(focusedItem && !result.items.some((row: any) => row.id === focusedItem.id)
           ? { ...result, items: [focusedItem, ...result.items] } : result);
@@ -84,7 +83,7 @@ export default function EnquiriesScreen() {
           const questions = item.original?.questions || [];
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
-          return <View key={item.id} style={[s.card, { minHeight: cardHeight }]} onLayout={event => { const height = Math.ceil(event.nativeEvent.layout.height); setCardHeight(current => Math.max(current, height)); }}>
+          return <View key={item.id} style={s.card}>
             <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
             <View style={[s.row, { alignItems: 'center' }]}><TouchableOpacity style={{ flexShrink: 1 }} accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryContactBadges item={item} /></View><EnquiryPhone phone={item.phone || ''} />
             <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
@@ -100,7 +99,7 @@ export default function EnquiriesScreen() {
               {item.followup_count > 1 && <Text style={s.muted}>{item.followup_count} follow-ups · Open Follow-up details below for history</Text>}
             </View>}
             {item.last_conversation && <View style={s.card}><Text style={s.text}>Last conversation · {item.last_conversation.outcome}</Text><Text style={s.muted}>{item.last_conversation.remarks}</Text><Text style={s.muted}>{formatEnquiryDate(item.last_conversation.created_at)}</Text></View>}
-            <View style={{ marginTop: 'auto' }}><EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
+            <View><EnquiryCardActions item={item} users={data.users || []} canAssign={!!data.can_assign} onChanged={changes => {
               const updated = { ...item, ...changes };
               request.current++;
               setData((current: any) => current ? { ...current, items: changes.is_deleted ? current.items.filter((row:any)=>row.id!==item.id) : current.items.map((row: any) => row.id === item.id ? updated : row) } : current);

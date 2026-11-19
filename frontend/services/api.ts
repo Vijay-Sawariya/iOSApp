@@ -9,7 +9,7 @@ let authToken: string | null = null;
 // Brief, session-only reuse for expensive performance reports.
 const performanceCache = new Map<string, { data: any; expires: number }>();
 const performanceRequests = new Map<string, Promise<any>>();
-// Short-lived, session-only cache: never persist enquiry contact details to disk.
+// Session-only cache: keep visited pages available while refreshing; never persist enquiry contact details to disk.
 const enquiryPages = new Map<string, { data: any; expires: number }>();
 const enquiryRequests = new Map<string, Promise<any>>();
 let enquiryGeneration = 0;
@@ -286,8 +286,8 @@ export const api = {
   },
   getCachedEnquiryManagement: (params: Record<string, string | number | boolean> = {}) => {
     const cached = enquiryPages.get(enquiryQuery(params));
-    // Show a recent page immediately while an expired result refreshes on focus.
-    return cached && cached.expires + 270000 > Date.now() ? cached.data : null;
+    // Retain visited pages for this session, including while offline.
+    return cached?.data ?? null;
   },
   getEnquiryManagement: async (params: Record<string, string | number | boolean> = {}, options: { forceNetwork?: boolean } = {}) => {
     const query = enquiryQuery(params);
@@ -361,6 +361,18 @@ export const api = {
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory?${query}`, { headers: getHeaders() });
     notifyAuthFailure(response);
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not load monthly inventory. Please retry when connected.'));
+    return response.json();
+  },
+  updateMonthlyInventoryDetails: async (id: number, data: { Property_locationUrl?: string; building_facing?: string }) => {
+    const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/${id}/details`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
+    notifyAuthFailure(response);
+    if (!response.ok) {
+      const message = await getApiErrorMessage(response, 'Could not save inventory details.');
+      if (response.status === 404 && message.trim().toLowerCase() === 'not found') {
+        throw new Error('Monthly Books location and direction saving is not available on the server yet. Please ask the administrator to update the backend, then try again.');
+      }
+      throw new Error(message);
+    }
     return response.json();
   },
   updateMonthlyInventoryStatus: async (id: number, status: string) => {

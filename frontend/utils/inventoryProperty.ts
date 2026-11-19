@@ -15,3 +15,12 @@ export function hasUnpricedInventory(lead: any): boolean {
   return Number(lead.budget_min || 0) === 0 && Number(lead.budget_max || 0) === 0 &&
     !(lead.floor_pricing || []).some((price: any) => Number(price.floor_amount || 0) > 0);
 }
+
+/** Match the web LMS: floor prices take priority; metadata edits never change this date. */
+export function inventoryPriceUpdatedOn(lead: any): string | null {
+  const floors = lead.floor_pricing || [];
+  const amounts = floors.length ? floors.map((price: any) => price.floor_amount)
+    : [Number(lead.budget_max) || lead.budget_min];
+  if (!amounts.some((amount: any) => Number(amount) > 0)) return null;
+  return lead.price_updated_on || lead.created_at || null;
+}

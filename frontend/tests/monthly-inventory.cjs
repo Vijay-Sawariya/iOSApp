@@ -52,3 +52,9 @@ test('multiple locations remain separate query values including names containing
     'locations=GK%201&locations=Colony%2C%20West&page=1');
   assert.equal(exportsObject.monthlyInventoryQuery({ locations: [], page: 1 }), 'page=1');
 });
+
+ test('conversion retains captured map and inventory direction', () => {
+  const params = conversionParams({ id: 10, category: 'residential_sale', Property_locationUrl: 'https://www.google.com/maps?q=28.5,77.2', building_facing: 'South East' });
+  assert.equal(params.googleMapUrl, 'https://www.google.com/maps?q=28.5,77.2');
+  assert.equal(params.facing, 'South East');
+});

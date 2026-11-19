@@ -1,4 +1,6 @@
 export type MonthlyEntry = {
+  Property_locationUrl?: string | null;
+  building_facing?: string | null;
   is_kothi?: boolean | 0 | 1;
   inventory_status?: 'Available' | 'Sold' | 'Hold' | 'Invalid';
   id: number; book_month: string; category: string; location: string; address: string;
@@ -25,6 +27,7 @@ export function bookFloors(raw: string): string {
 export function conversionParams(entry: MonthlyEntry): Record<string, string> {
   const rent = entry.category.endsWith('_rent');
   return {
+    googleMapUrl: entry.Property_locationUrl || '', facing: entry.building_facing || '',
     monthlyEntryId: String(entry.id), initialLeadType: 'builder', type: 'inventory',
     name: (entry.owner_name || '').toLowerCase().replace(/(^|[\s('-])(\p{L})/gu, (_, prefix, letter) => prefix + letter.toUpperCase()), phone: (entry.phone || '').split(',')[0].trim(), location: entry.location || '',
     address: entry.address || '', floor: bookFloors(entry.floor), bhk: (entry.configuration || '').replace(/(\d+)BR/gi, '$1 BHK').replace(/\+/g, ','),

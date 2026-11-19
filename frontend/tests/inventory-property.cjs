@@ -16,3 +16,12 @@ test('zero range includes blank and null prices but excludes priced floors', () 
  assert.equal(output.hasUnpricedInventory({budget_min:0,budget_max:0,floor_pricing:[{floor_amount:5}]}),false);
  assert.equal(output.hasUnpricedInventory({budget_min:2,budget_max:0}),false);
 });
+
+test('price date matches web LMS floor priority and creation fallback', () => {
+ const lead = { created_at: '2020-01-01', updated_on: '2026-11-18', budget_max: 5 };
+ assert.equal(output.inventoryPriceUpdatedOn(lead), '2020-01-01');
+ assert.equal(output.inventoryPriceUpdatedOn({...lead, price_updated_on:'2026-10-01'}), '2026-10-01');
+ assert.equal(output.inventoryPriceUpdatedOn({...lead, floor_pricing:[{floor_amount:0}]}), null);
+ assert.equal(output.inventoryPriceUpdatedOn({...lead, budget_max:0}), null);
+ assert.equal(output.inventoryPriceUpdatedOn({...lead, budget_max:0, floor_pricing:[{floor_amount:2}]}), '2020-01-01');
+});

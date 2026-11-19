@@ -1,5 +1,8 @@
+import * as Location from 'expo-location';
+import { confirmMapLocation } from '../utils/confirmMapLocation';
+import { InventoryDirection } from '../components/InventoryDirection';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, FlatList, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -28,7 +31,35 @@ const categories: Record<string, string> = {
   'Commercial sale': 'commercial_sale', 'Commercial rent': 'commercial_rent',
 };
 
-function BookCard({ item, onPdf, onDelete, deleting, onStatusSaved }: { onStatusSaved: (id: number, status: MonthlyEntry['inventory_status']) => void; item: MonthlyEntry; onPdf: (id: number) => void; onDelete: (id: number) => void; deleting: boolean }) {
+function BookCard({ onDetailsSaved, item, onPdf, onDelete, deleting, onStatusSaved }: { onDetailsSaved: (id: number, details: Partial<MonthlyEntry>) => void; onStatusSaved: (id: number, status: MonthlyEntry['inventory_status']) => void; item: MonthlyEntry; onPdf: (id: number) => void; onDelete: (id: number) => void; deleting: boolean }) {
+  const [capturing, setCapturing] = useState(false);
+  const mapUrl = item.Property_locationUrl?.trim();
+  const hasMapUrl = Boolean(mapUrl);
+  const openMap = () => {
+    if (mapUrl) void Linking.openURL(mapUrl).catch(() => Alert.alert('Unable to open map', 'Please try again.'));
+  };
+  const saveDetails = async (details: { Property_locationUrl?: string; building_facing?: string }) => {
+    await api.updateMonthlyInventoryDetails(item.id, details);
+    onDetailsSaved(item.id, details);
+  };
+  const captureLocation = async () => {
+    if (capturing) return;
+    setCapturing(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Location permission required', 'Allow location access in Settings to capture the inventory location.');
+        return;
+      }
+      const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const url = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
+      if (!(await confirmMapLocation(url, item.owner_name))) return;
+      await saveDetails({ Property_locationUrl: url });
+      Alert.alert('Location saved', 'The Google Maps location has been saved for this inventory.');
+    } catch (error: any) {
+      Alert.alert('Unable to save location', error?.message || 'Check location services and try again.');
+    } finally { setCapturing(false); }
+  };
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState<string>(item.inventory_status || 'Available');
   const [draftStatus, setDraftStatus] = useState(status);
@@ -40,9 +71,24 @@ function BookCard({ item, onPdf, onDelete, deleting, onStatusSaved }: { onStatus
     {status !== 'Available' && <Text style={{ color: '#9a3412', fontWeight: '700' }}>{status} · Avoid availability calls</Text>}
     <Text style={styles.cardTitle}>{item.owner_name || 'Inventory entry'}</Text>
     {!!item.phone && <PhoneNumbers phone={item.phone} textStyle={styles.phone} />}
-    <Text selectable style={styles.address}>{[item.address, item.location].filter(Boolean).join(', ')}</Text>
+    <View style={styles.addressRow}>
+      <Ionicons name="location" size={16} color={hasMapUrl ? '#EA4335' : '#6B7280'} />
+      <TouchableOpacity style={styles.locationLink} accessibilityRole="button"
+        accessibilityLabel={hasMapUrl ? 'Open inventory location in Google Maps' : 'Capture current inventory location'}
+        disabled={!hasMapUrl && capturing} onPress={() => hasMapUrl ? openMap() : void captureLocation()}>
+        <Text numberOfLines={2} style={[styles.address, { flexShrink: 1, color: colors.primary, textDecorationLine: 'underline' }]}>
+          {[item.address, item.location].filter(Boolean).join(', ') || 'Capture location'}
+        </Text>
+        {capturing && <ActivityIndicator size="small" color={colors.primary} />}
+      </TouchableOpacity>
+      {hasMapUrl && <TouchableOpacity style={styles.mapIconButton} hitSlop={8} accessibilityRole="button"
+        accessibilityLabel="Open inventory location in Google Maps" onPress={openMap}>
+        <Ionicons name="map" size={16} color="#FFFFFF" />
+      </TouchableOpacity>}
+    </View>
     <Text style={styles.muted}>{item.book_month.slice(0, 7)} · {item.category.replace('_', ' ')}</Text>
     <View style={styles.tags}>
+      <InventoryDirection value={item.building_facing || ''} onSave={building_facing => saveDetails({ building_facing })} />
       {isKothiBookEntry(item) && <Text style={[styles.tag, { backgroundColor: '#DBEAFE', color: '#1E40AF' }]}>Kothi</Text>}
       {[item.area_size ? `${item.area_size} ${item.area_unit}` : '', item.floor, item.configuration, item.entry_status,
         item.converted_lead_id ? 'Converted' : '', item.needs_review ? 'Review details' : ''].filter(Boolean).map((tag, i) =>
@@ -227,7 +273,7 @@ export default function MonthlyInventoryScreen() {
         {!!error && <View style={styles.errorBox}><Text style={styles.error}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => void load()}><Text style={styles.actionText}>Retry</Text></TouchableOpacity></View>}
       </View>}
       ListEmptyComponent={<View style={styles.empty}>{loading ? <ActivityIndicator color={colors.primary} /> : !error && <Text style={styles.muted}>No inventory found for these filters.</Text>}</View>}
-      renderItem={({ item }) => <BookCard item={item} onStatusSaved={(id, inventory_status) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, inventory_status } : entry))} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
+      renderItem={({ item }) => <BookCard item={item} onDetailsSaved={(id, details) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, ...details } : entry))} onStatusSaved={(id, inventory_status) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, inventory_status } : entry))} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
       ListFooterComponent={hasMore ? <TouchableOpacity accessibilityRole="button" disabled={loading || loadingMore} style={styles.loadMore} onPress={() => void load(page + 1)}>
         {loadingMore ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.actionText}>Load more</Text>}
       </TouchableOpacity> : null} />
@@ -261,8 +307,11 @@ const styles = StyleSheet.create({
   searchButton: { justifyContent: 'center', paddingHorizontal: 14, borderRadius: radii.sm, backgroundColor: colors.primary },
   card: { padding: 16, marginBottom: 12, borderRadius: radii.lg, backgroundColor: colors.surfaceRaised, borderWidth: 1, borderColor: colors.border, gap: 8 },
   cardTitle: { fontSize: 17, fontWeight: '700', color: colors.ink }, phone: { color: colors.accent, fontSize: 15, fontWeight: '600' },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  locationLink: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  mapIconButton: { marginLeft: 8, width: 28, height: 28, borderRadius: 8, flexShrink: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary },
   address: { color: colors.ink, fontSize: 15, lineHeight: 21 }, muted: { color: colors.inkMuted, fontSize: 12, lineHeight: 18 },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, tag: { fontSize: 11, color: colors.inkMuted, backgroundColor: colors.surfaceMuted, paddingVertical: 5, paddingHorizontal: 8, borderRadius: radii.pill },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }, tag: { fontSize: 11, color: colors.inkMuted, backgroundColor: colors.surfaceMuted, paddingVertical: 5, paddingHorizontal: 8, borderRadius: radii.pill },
   noteButton: { paddingVertical: 6 }, note: { fontSize: 13, lineHeight: 20, color: colors.inkMuted },
   actions: { flexDirection: 'row', gap: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 },
   action: { flex: 1, minHeight: 40, paddingVertical: 8, paddingHorizontal: 4, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.border, borderRadius: radii.sm },

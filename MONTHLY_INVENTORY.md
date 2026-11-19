@@ -26,3 +26,28 @@ Backend tests use isolated fixtures and never connect to production. Before rele
 Monthly book cards have a Status popup with Available, Sold, Hold and Invalid. Unavailable cards have a colored edge and warning; all other card actions remain usable. The API writes inventory_status, status_changed_at and status_changed_by on monthly_inventory_entries. Deploy the matching web schema support and open Monthly Inventory once to initialize these columns before using the mobile status action. Missing columns return a setup error rather than silently losing status changes.
 
 Seller inventory uses icon-only Residential/Commercial markers, an address/phone row, the four Property Type sale/rent filters, and explicit 0–0 budget matching for zero/null/blank prices with no positive floor price. Blank budget bounds remain unrestricted.
+
+### Inventory location and direction
+
+Before deploying the location/direction capture feature, apply
+`backend/migrations/20261119_monthly_inventory_location_direction.sql` once to the
+shared LMS database. Monthly book cards capture the device's GPS location after
+permission and map confirmation; tapping a saved address opens Google Maps.
+Both inventory lists offer the eight compass directions, stored as
+`building_facing`. Monthly entries retain their own location and direction;
+conversion pre-fills both values in the inventory form. Changes to an existing
+linked lead remain independent.
+
+
+#### Troubleshooting “Not Found” when saving
+
+Location and direction both use `POST /api/monthly-inventory/{entry_id}/details`.
+A plain FastAPI `404 {"detail":"Not Found"}` means the running API does not
+have this route; rebuilding the phone app cannot add it. Apply the location and
+direction migration above and deploy the updated `backend/monthly_inventory.py`
+to the API host configured by `EXPO_PUBLIC_BACKEND_URL` (default:
+`https://sagar-home-api.onrender.com`). Restart/redeploy the API service and verify
+its `/openapi.json` includes the POST details route before retrying on the phone.
+The route's own “Inventory entry not found.” response instead means that the
+entry was deleted or is no longer available. Missing database columns return
+503 after the route is deployed and require the migration, not another app build.
