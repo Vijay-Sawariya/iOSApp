@@ -7,6 +7,7 @@ const ts = require('typescript');
 
 function setup() {
   const requests = [], removed = [];
+  const stored = new Map();
   let now = 100000;
   class TestDate extends Date { static now() { return now; } }
   let response = { ok: true, status: 200, json: async () => ({ lead_id: 42 }) };
@@ -18,7 +19,7 @@ function setup() {
     fetch: async (url, options) => { requests.push({ url, options }); return response; },
     require: name => {
       if (name === '../constants/config') return { API_URL: 'https://api.example.test' };
-      if (name === './cacheService') return { CACHE_KEYS: { REMINDERS: 'reminders', URGENT_FOLLOWUPS: 'urgent', LEADS_CLIENTS: 'clients', LEADS_INVENTORY: 'inventory', LEAD_DETAIL_PREFIX: 'lead_' }, cacheService: { remove: async key => removed.push(key) } };
+      if (name === './cacheService') return { CACHE_KEYS: { REMINDERS: 'reminders', URGENT_FOLLOWUPS: 'urgent', LEADS_CLIENTS: 'clients', LEADS_INVENTORY: 'inventory', LEAD_DETAIL_PREFIX: 'lead_' }, cacheService: { get: async key => stored.get(key) ?? null, set: async (key, value) => { stored.set(key, value); }, remove: async key => removed.push(key) } };
       return {};
     },
   });
@@ -111,4 +112,26 @@ test('an old in-flight response cannot repopulate cache after an edit', async ()
   resolve({ items: [{ id: 1, status: 'New' }] });
   await list;
   assert.equal(h.api.getCachedEnquiryManagement({ page: 1 }), null);
+});
+
+
+test('saved pages survive session reset and are isolated by account and tab', async () => {
+  const h = setup();
+  const params = { page: 1, tab: 'magicbricks' };
+  await h.api.getEnquiryManagement(params, { accountId: '7' });
+  h.setAuthToken('renewed-token');
+  assert.equal(h.api.getCachedEnquiryManagement(params), null);
+  assert.equal(await h.api.getStoredEnquiryManagement(params, '9'), null);
+  assert.equal(await h.api.getStoredEnquiryManagement({ ...params, tab: 'general' }, '7'), null);
+  assert.equal((await h.api.getStoredEnquiryManagement(params, '7')).lead_id, 42);
+  assert.equal(h.requests.length, 1);
+});
+
+test('disk cache never replaces newer network data', async () => {
+  const h = setup();
+  const params = { page: 1, tab: 'general' };
+  await h.api.getEnquiryManagement(params, { accountId: '7' });
+  h.response({ ok: true, json: async () => ({ items: [{ id: 99 }] }) });
+  await h.api.getEnquiryManagement(params, { forceNetwork: true });
+  assert.equal((await h.api.getStoredEnquiryManagement(params, '7')).items[0].id, 99);
 });

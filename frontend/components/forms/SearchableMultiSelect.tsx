@@ -5,6 +5,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
   FlatList,
   TextInput,
 } from 'react-native';
@@ -77,7 +79,7 @@ export const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
           setSearchQuery('');
         }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{label}</Text>
@@ -107,6 +109,8 @@ export const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
             </View>
 
             <FlatList
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               data={filteredOptions}
               keyExtractor={(item) => item}
               initialNumToRender={15}
@@ -147,7 +151,7 @@ export const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
               <Text style={styles.doneText}>Done ({selectedValues.length} selected)</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -205,8 +209,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '80%',
-    minHeight: 300,
+    height: '80%',
+    flexShrink: 1,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -238,7 +242,7 @@ const styles = StyleSheet.create({
     color: '#1F2937',
   },
   optionsList: {
-    flexGrow: 1,
+    flex: 1,
   },
   optionItem: {
     flexDirection: 'row',

@@ -138,6 +138,15 @@ test('default inventory order is newest created first, independent of edits and 
   assert.deepEqual(Array.from(sortInventory(rows), row => row.id), [3, 2, 1, 5, 4]);
   assert.equal(rows[0].id, 1);
 });
+test('initial inventory order compares creation time within the same date', () => {
+  const rows = [
+    { id: 90, created_at: '2026-11-20 09:15:00' },
+    { id: 12, created_at: '2026-11-20T17:45:00' },
+    { id: 80, created_at: '2026-11-20 12:30:00' },
+  ];
+  assert.deepEqual(Array.from(sortInventory(rows), row => row.id), [12, 80, 90]);
+});
+
 test('search groups by location before sorting addresses and puts blank locations last', () => {
   const rows = [
     { id: 1, location: 'Vasant Vihar', address: 'A-1' },

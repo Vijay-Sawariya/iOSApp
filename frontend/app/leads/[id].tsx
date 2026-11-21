@@ -1,3 +1,4 @@
+import { loadInventoryEditPricing } from '../../utils/inventoryEditPricing';
 import { canViewLeadContacts } from '../../utils/contactAccess';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -677,6 +678,12 @@ export default function LeadDetailScreen() {
     return ['seller', 'owner', 'landlord', 'builder', 'agent'].includes(type);
   };
 
+  const inventoryFloorPricing = isInventoryLead()
+    ? loadInventoryEditPricing(lead).floorPrices.map(row => ({
+        floor_label: row.floor, floor_amount: Number(row.price),
+      }))
+    : [];
+
   const isClientLead = (): boolean => {
     const type = safeStr(lead.lead_type).toLowerCase();
     return ['buyer', 'tenant'].includes(type);
@@ -688,7 +695,7 @@ export default function LeadDetailScreen() {
     if (!strValue) return null;
     return (
       <View style={styles.detailRow}>
-        <Ionicons name={icon as any} size={20} color="#6B7280" />
+        <Ionicons name={icon as any} size={18} color="#6B7280" />
         <Text style={styles.detailLabel}>{label}</Text>
         <Text style={styles.detailValue}>{strValue}</Text>
       </View>
@@ -834,17 +841,17 @@ export default function LeadDetailScreen() {
           <View style={styles.headerActions}>
             {canManageLead ? (
               <TouchableOpacity style={styles.headerIconButton} onPress={handleEdit}>
-                <Ionicons name="create-outline" size={22} color="#3B82F6" />
+                <Ionicons name="create-outline" size={18} color="#3B82F6" />
               </TouchableOpacity>
             ) : null}
             {isInventoryLead() ? (
               <TouchableOpacity style={styles.headerIconButton} onPress={handleCopyDetails}>
-                <Ionicons name="copy-outline" size={22} color="#10B981" />
+                <Ionicons name="copy-outline" size={18} color="#10B981" />
               </TouchableOpacity>
             ) : null}
             {canManageLead ? (
               <TouchableOpacity style={styles.headerIconButton} onPress={handleDelete}>
-                <Ionicons name="trash-outline" size={22} color="#EF4444" />
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -867,19 +874,19 @@ export default function LeadDetailScreen() {
         <View style={styles.actionButtons}>
           {lead.phone && canViewData ? (
             <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-              <Ionicons name="call" size={24} color="#3B82F6" />
+              <Ionicons name="call-outline" size={20} color="#3B82F6" />
               <Text style={styles.actionButtonText}>{'Call'}</Text>
             </TouchableOpacity>
           ) : null}
           {lead.phone && canViewData ? (
             <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
-              <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
+              <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
               <Text style={styles.actionButtonText}>{'WhatsApp'}</Text>
             </TouchableOpacity>
           ) : null}
           {lead.email ? (
             <TouchableOpacity style={styles.actionButton} onPress={handleEmail}>
-              <Ionicons name="mail" size={24} color="#6B7280" />
+              <Ionicons name="mail-outline" size={20} color="#6B7280" />
               <Text style={styles.actionButtonText}>{'Email'}</Text>
             </TouchableOpacity>
           ) : null}
@@ -890,7 +897,7 @@ export default function LeadDetailScreen() {
               accessibilityRole="button"
               accessibilityLabel="Open location in Google Maps"
             >
-              <Ionicons name="map" size={26} color="#FFFFFF" />
+              <Ionicons name="map-outline" size={20} color="#FFFFFF" />
               <Text style={styles.mapActionButtonText}>Google Maps</Text>
             </TouchableOpacity>
           ) : null}
@@ -917,7 +924,7 @@ export default function LeadDetailScreen() {
         <View style={styles.commandStats}>
           {commandStats.map((item) => (
             <View key={item.label} style={styles.commandStat}>
-              <Text style={[styles.commandStatValue, { color: item.color }]} numberOfLines={1}>{item.value}</Text>
+              <Text style={[styles.commandStatValue, { color: item.color }]}>{item.value}</Text>
               <Text style={styles.commandStatLabel}>{item.label}</Text>
             </View>
           ))}
@@ -991,8 +998,6 @@ export default function LeadDetailScreen() {
         </View>
       </View>
 
-      <LeadCollaborationPanel leadId={String(id)} />
-
       {/* Contact Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{'Contact Information'}</Text>
@@ -1002,7 +1007,7 @@ export default function LeadDetailScreen() {
         {/* Location - Hyperlinked if Property_locationUrl exists */}
         {lead.location && (
           <View style={styles.detailRow}>
-            <Ionicons name="location" size={20} color="#6B7280" />
+            <Ionicons name="location" size={18} color="#6B7280" />
             <Text style={styles.detailLabel}>Location</Text>
             {lead.Property_locationUrl ? (
               <TouchableOpacity 
@@ -1021,7 +1026,7 @@ export default function LeadDetailScreen() {
         {/* Address - Hyperlinked if Property_locationUrl exists */}
         {displayAddress && (
           <View style={styles.detailRow}>
-            <Ionicons name="home" size={20} color="#6B7280" />
+            <Ionicons name="home" size={18} color="#6B7280" />
             <Text style={styles.detailLabel}>Address</Text>
             {lead.Property_locationUrl ? (
               <TouchableOpacity 
@@ -1048,25 +1053,32 @@ export default function LeadDetailScreen() {
         {isInventoryLead() ? renderDetailRow('expand', 'Bedroom Dimensions', bedroomDimensions) : null}
         {renderDetailRow('car', 'Parking', lead.car_parking_number)}
         {renderDetailRow('arrow-up', 'Lift', lead.lift_available)}
-        {(lead.budget_min || lead.budget_max) ? (
+        {renderDetailRow('compass-outline', 'Direction', lead.building_facing)}
+        {renderDetailRow('calendar-outline', 'Possession Date', lead.possession_on ? formatLeadDate(lead.possession_on) : null)}
+        {renderDetailRow('time-outline', 'Property Age', (() => {
+          const age = lead.property_age ?? lead.how_old;
+          if (age == null || String(age).trim() === '') return null;
+          return /^\d+$/.test(String(age)) ? `${age} ${Number(age) === 1 ? 'year' : 'years'}` : age;
+        })())}
+        {!isInventoryLead() && (lead.budget_min || lead.budget_max) ? (
           <View style={styles.detailRow}>
-            <Ionicons name="cash" size={20} color="#6B7280" />
+            <Ionicons name="cash" size={18} color="#6B7280" />
             <Text style={styles.detailLabel}>{'Budget'}</Text>
             <Text style={styles.detailValue}>{formatBudget()}</Text>
           </View>
         ) : null}
         <View style={styles.detailRow}>
-          <Ionicons name="flag" size={20} color="#6B7280" />
+          <Ionicons name="flag" size={18} color="#6B7280" />
           <Text style={styles.detailLabel}>{'Status'}</Text>
           <Text style={styles.detailValue}>{safeStr(lead.lead_status) || 'New'}</Text>
         </View>
       </View>
 
       {/* Floor Pricing - For Inventory Leads */}
-      {isInventoryLead() && lead.floor_pricing && lead.floor_pricing.length > 0 ? (
+      {isInventoryLead() && inventoryFloorPricing.length > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{'Floor-wise Pricing'}</Text>
-          <FloorPricingGrid floorPricing={lead.floor_pricing} unit={lead.unit} />
+          <FloorPricingGrid floorPricing={inventoryFloorPricing} unit={lead.unit} />
         </View>
       ) : null}
 
@@ -1368,7 +1380,7 @@ export default function LeadDetailScreen() {
                       <Text style={styles.pdfFilename} numberOfLines={1}>{safeStr(pdf.filename)}</Text>
                       <Text style={styles.pdfSize}>{`${Math.round(pdf.size / 1024)} KB`}</Text>
                     </View>
-                    <Ionicons name="open-outline" size={20} color="#6B7280" />
+                    <Ionicons name="open-outline" size={18} color="#6B7280" />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1426,6 +1438,8 @@ export default function LeadDetailScreen() {
           <Text style={styles.noFollowupsText}>{'No activity logged yet'}</Text>
         )}
       </View>
+
+      <LeadCollaborationPanel leadId={String(id)} />
 
       {/* Spacing at bottom */}
       <View style={styles.bottomSpacing} />
@@ -1700,23 +1714,27 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   actionButton: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '28%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
     padding: 12,
     borderRadius: 12,
-    marginRight: 8,
   },
   actionButtonText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#4B5563',
-    marginTop: 4,
   },
   mapActionButton: { backgroundColor: '#2563EB' },
-  mapActionButtonText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF', marginTop: 4 },
+  mapActionButtonText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
   commandCenter: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
@@ -1813,6 +1831,8 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: '#FFFFFF',
     padding: 16,
+    marginHorizontal: 12,
+    borderRadius: 14,
     marginTop: 12,
   },
   bottomSpacing: {
@@ -1851,7 +1871,7 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },

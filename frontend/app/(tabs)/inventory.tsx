@@ -84,11 +84,12 @@ const formatLeadDate = (value?: string | null) => {
   const normalized = value.includes('T') ? value : value.replace(' ', 'T');
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-IN', {
+  const shortDate = date.toLocaleDateString('en-GB', {
     day: '2-digit',
-    month: 'short',
-    year: 'numeric',
+    month: '2-digit',
+    year: '2-digit',
   });
+  return shortDate;
 };
 
 export default function InventoryLeadsScreen() {
@@ -959,14 +960,14 @@ export default function InventoryLeadsScreen() {
           <View style={styles.dateMetaRow}>
             <View style={styles.dateMetaItem}>
               <Ionicons name="add-circle-outline" size={13} color={colors.inkSubtle} />
-              <Text style={styles.dateMetaText} numberOfLines={1}>
+              <Text style={styles.dateMetaText}>
                 Created {formatLeadDate(item.created_at)}
               </Text>
             </View>
-            <View style={styles.dateMetaItem}>
+            <View style={[styles.dateMetaItem, { flex: 1.3 }]}>
               <Ionicons name="refresh-outline" size={13} color={colors.inkSubtle} />
-              <Text style={styles.dateMetaText} numberOfLines={1}>
-                Price Updated On: {inventoryPriceUpdatedOn(item) ? formatLeadDate(inventoryPriceUpdatedOn(item)) : 'Not recorded'}
+              <Text style={styles.dateMetaText}>
+                Price Updated {inventoryPriceUpdatedOn(item) ? formatLeadDate(inventoryPriceUpdatedOn(item)) : 'Not recorded'}
               </Text>
             </View>
           </View>

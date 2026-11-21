@@ -9,7 +9,7 @@ let authToken: string | null = null;
 // Brief, session-only reuse for expensive performance reports.
 const performanceCache = new Map<string, { data: any; expires: number }>();
 const performanceRequests = new Map<string, Promise<any>>();
-// Session-only cache: keep visited pages available while refreshing; never persist enquiry contact details to disk.
+// Keep visited pages immediately available while refreshing.
 const enquiryPages = new Map<string, { data: any; expires: number }>();
 const enquiryRequests = new Map<string, Promise<any>>();
 let enquiryGeneration = 0;
@@ -289,7 +289,17 @@ export const api = {
     // Retain visited pages for this session, including while offline.
     return cached?.data ?? null;
   },
-  getEnquiryManagement: async (params: Record<string, string | number | boolean> = {}, options: { forceNetwork?: boolean } = {}) => {
+  getStoredEnquiryManagement: async (params: Record<string, string | number | boolean>, accountId: string) => {
+    const generation = enquiryGeneration;
+    const query = enquiryQuery(params);
+    const data = await cacheService.get<any>(`cache_enquiries_${encodeURIComponent(accountId)}_${query}`);
+    if (generation !== enquiryGeneration) return null;
+    // A disk read must never replace a newer network response.
+    if (enquiryPages.has(query)) return enquiryPages.get(query)!.data;
+    if (data) enquiryPages.set(query, { data, expires: 0 });
+    return data;
+  },
+  getEnquiryManagement: async (params: Record<string, string | number | boolean> = {}, options: { forceNetwork?: boolean; accountId?: string } = {}) => {
     const query = enquiryQuery(params);
     const cached = enquiryPages.get(query);
     if (!options.forceNetwork && cached && cached.expires > Date.now()) return cached.data;
@@ -303,6 +313,9 @@ export const api = {
       if (generation === enquiryGeneration) {
         if (enquiryPages.size >= 20) enquiryPages.delete(enquiryPages.keys().next().value!);
         enquiryPages.set(query, { data, expires: Date.now() + 30000 });
+        if (options.accountId) {
+          void cacheService.set(`cache_enquiries_${encodeURIComponent(options.accountId)}_${query}`, data).catch(() => {});
+        }
       }
       return data;
     })();

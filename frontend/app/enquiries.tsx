@@ -38,15 +38,23 @@ export default function EnquiriesScreen() {
     const cached = api.getCachedEnquiryManagement({ ...applied, page, tab });
     if (!forceNetwork) setData(cached);
     setLoading(true); setError('');
+    let refreshed = false;
+    // Read saved data alongside the network request so neither waits for the other.
+    if (!cached && !forceNetwork && user?.id != null) {
+      void api.getStoredEnquiryManagement({ ...applied, page, tab }, String(user.id)).then(stored => {
+        if (stored && !refreshed && serial === request.current) setData(stored);
+      }).catch(() => {});
+    }
     try {
-      const result = await api.getEnquiryManagement({ ...applied, page, tab }, { forceNetwork: true });
+      const result = await api.getEnquiryManagement({ ...applied, page, tab }, { forceNetwork: true, accountId: user?.id == null ? undefined : String(user.id) });
+      refreshed = true;
       if (serial === request.current) {
         setData(focusedItem && !result.items.some((row: any) => row.id === focusedItem.id)
           ? { ...result, items: [focusedItem, ...result.items] } : result);
       }
     } catch (e: any) { if (serial === request.current) setError(e.message || 'Unable to load enquiries.'); }
     finally { if (serial === request.current) setLoading(false); }
-  }, [applied, page, tab, canViewEnquiries]);
+  }, [applied, page, tab, canViewEnquiries, user?.id]);
   useFocusEffect(useCallback(() => { load(); return () => { request.current++; }; }, [load]));
   const employeeChoices = [{ value: '', label: 'All accessible' }, { value: 'none', label: 'Unassigned' }, ...(data?.users || []).map((u: any) => ({ value: String(u.id), label: u.full_name || u.username }))];
   const update = (key: keyof typeof EMPTY, value: string | boolean) => setFilters(f => ({ ...f, [key]: value }));
@@ -59,7 +67,7 @@ export default function EnquiriesScreen() {
       <View style={{ flex: 1 }}><Text style={s.title}>Enquiry Management</Text><Text style={s.subtitle}>Website, Meta Ad and Magicbricks enquiries</Text></View>
       <TouchableOpacity accessibilityLabel="Refresh enquiries" onPress={() => load(true)}><Ionicons name="refresh" size={22} color={colors.primary} /></TouchableOpacity>
     </View>
-    <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={() => load(true)} />}>
+    <ScrollView ref={scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading && !data} onRefresh={() => load(true)} />}>
       <View style={s.row}>{(['general','magicbricks'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="tab" accessibilityState={{selected:tab===value}} onPress={() => { if (value === tab) return; request.current++; setTab(value); setPage(1); setData(api.getCachedEnquiryManagement({ ...applied, page: 1, tab: value })); setError(''); }} style={{flex:1,padding:12,borderRadius:10,backgroundColor:tab===value?colors.primary:colors.surfaceRaised,borderWidth:1,borderColor:colors.border}}><Text style={{color:tab===value?'#fff':colors.ink,fontWeight:'700',fontSize:12,textAlign:'center'}}>{value==='magicbricks'?'Magic Brick Enquiries':'Website & Meta Ad'}</Text></TouchableOpacity>)}</View>
       <Text style={s.muted}>Qualify enquiries before converting them to Main Leads.</Text>
       {error ? <View style={s.card}><Text style={s.error}>{error}</Text><Button title="Retry" onPress={() => load(true)} /></View> : null}
@@ -75,7 +83,7 @@ export default function EnquiriesScreen() {
           {(['due', 'duplicates'] as const).map(key => <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: filters[key] }} key={key} onPress={() => update(key, !filters[key])} style={s.row}>
             <Ionicons name={filters[key] ? 'checkbox' : 'square-outline'} size={24} color={colors.primary} /><Text style={s.text}>{key === 'due' ? 'Follow-ups due' : 'Possible repeat enquiries'}</Text>
           </TouchableOpacity>)}
-          <View style={s.row}><Button title="Apply filters" disabled={loading} onPress={() => { setPage(1); setApplied({ ...filters }); }} />
+          <View style={s.row}><Button title="Apply filters" disabled={loading && !data} onPress={() => { setPage(1); setApplied({ ...filters }); }} />
             <Button title="Clear" secondary onPress={() => { setFilters(EMPTY); setApplied({ ...EMPTY }); setPage(1); }} /></View>
         </View> : null}
         <Text style={s.heading}>Enquiries ({data.total})</Text>
@@ -108,9 +116,9 @@ export default function EnquiriesScreen() {
           </View>;
         })}
         <View style={[s.row, { justifyContent: 'space-between' }]}>
-          <Button title="Previous" secondary disabled={loading || data.page <= 1} onPress={() => { setPage(data.page - 1); scroll.current?.scrollTo({ y: 0 }); }} />
+          <Button title="Previous" secondary disabled={(loading && !data) || data.page <= 1} onPress={() => { setPage(data.page - 1); scroll.current?.scrollTo({ y: 0 }); }} />
           <Text style={s.muted}>Page {data.page} of {data.pages}</Text>
-          <Button title="Next" secondary disabled={loading || data.page >= data.pages} onPress={() => { setPage(data.page + 1); scroll.current?.scrollTo({ y: 0 }); }} />
+          <Button title="Next" secondary disabled={(loading && !data) || data.page >= data.pages} onPress={() => { setPage(data.page + 1); scroll.current?.scrollTo({ y: 0 }); }} />
         </View>
       </> : null}
       {tab==='general' && user?.role?.trim().toLowerCase() === 'admin' && <View style={s.card}>
