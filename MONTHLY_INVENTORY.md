@@ -34,9 +34,19 @@ Before deploying the location/direction capture feature, apply
 shared LMS database. Monthly book cards capture the device's GPS location after
 permission and map confirmation; tapping a saved address opens Google Maps.
 Both inventory lists offer the eight compass directions, stored as
-`building_facing`. Monthly entries retain their own location and direction;
-conversion pre-fills both values in the inventory form. Changes to an existing
-linked lead remain independent.
+`building_facing`. Captures are shared between active inventory leads and monthly
+entries with the same normalized property address and locality (ignoring case,
+spacing, dashes, commas and periods). Empty addresses/localities never match;
+different floors and book months at the same property share these building details.
+Saving either field from either screen updates that field on all matching records
+in the same transaction. Existing captures reconcile automatically when either
+list loads, without requiring users to recapture or running a data migration.
+Each field resolves independently: the highest-ID lead with a nonblank value wins,
+then the newest book month and highest entry ID. Historical conflicting stored
+values remain untouched until a new capture replaces that field on all records.
+Conversion pre-fills the resolved values in the inventory form. Deploy
+`backend/property_capture.py` with `server.py` and `monthly_inventory.py`; the
+existing location/direction column migration is still required.
 
 
 #### Troubleshooting “Not Found” when saving
