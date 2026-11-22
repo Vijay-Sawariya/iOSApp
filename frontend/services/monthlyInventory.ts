@@ -1,6 +1,7 @@
 export type MonthlyEntry = {
   Property_locationUrl?: string | null;
   building_facing?: string | null;
+  construction_stage?: string | null;
   is_kothi?: boolean | 0 | 1;
   inventory_status?: 'Available' | 'Sold' | 'Hold' | 'Invalid';
   id: number; book_month: string; category: string; location: string; address: string;

@@ -1,3 +1,4 @@
+import { ConstructionStage } from '../../components/ConstructionStage';
 import { InventoryDirection } from '../../components/InventoryDirection';
 import * as Location from 'expo-location';
 import { confirmMapLocation } from '../../utils/confirmMapLocation';
@@ -1062,6 +1063,14 @@ export default function InventoryLeadsScreen() {
                 <Text style={[styles.tagText, { color: '#6366F1', marginLeft: 3 }]}>{item.floor}</Text>
               </View>
             )}
+            {canViewData ? <ConstructionStage value={item.construction_stage || ''} onSave={async construction_stage => {
+              const result = await api.updateLead(String(item.id), { construction_stage });
+              const key = (value: string | null | undefined) => (value || '').toUpperCase().replace(/[\s.,-]+/g, '');
+              const update = (lead: Lead) => lead.id === item.id || (key(item.address) && key(item.location) && key(lead.address) === key(item.address) && key(lead.location) === key(item.location)) ? { ...lead, construction_stage } : lead;
+              setLeads(current => current.map(update));
+              setFilteredLeads(current => current.map(update));
+              if (result?.is_pending_sync) Alert.alert('Saved Offline', 'Construction stage will sync to matching inventory and monthly books when internet is available.');
+            }} /> : !!item.construction_stage && <View style={styles.tag}><Text style={styles.tagText}>{item.construction_stage}</Text></View>}
             {canViewData ? <InventoryDirection value={item.building_facing || ''} onSave={async building_facing => {
               const result = await api.updateLead(String(item.id), { building_facing });
               const update = (lead: Lead) => lead.id === item.id ? { ...lead, building_facing } : lead;

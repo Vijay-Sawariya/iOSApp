@@ -376,7 +376,7 @@ export const api = {
     if (!response.ok) throw new Error(await getApiErrorMessage(response, 'Could not load monthly inventory. Please retry when connected.'));
     return response.json();
   },
-  updateMonthlyInventoryDetails: async (id: number, data: { Property_locationUrl?: string; building_facing?: string }) => {
+  updateMonthlyInventoryDetails: async (id: number, data: { Property_locationUrl?: string; building_facing?: string; construction_stage?: string }) => {
     const response = await fetchWithTimeout(`${API_URL}/api/monthly-inventory/${id}/details`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(data) });
     notifyAuthFailure(response);
     if (!response.ok) {

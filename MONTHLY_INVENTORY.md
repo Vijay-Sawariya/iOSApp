@@ -61,3 +61,18 @@ its `/openapi.json` includes the POST details route before retrying on the phone
 The route's own “Inventory entry not found.” response instead means that the
 entry was deleted or is no longer available. Missing database columns return
 503 after the route is deployed and require the migration, not another app build.
+
+## Shared construction stages
+
+Inventory and Monthly Books cards support nine construction stages and Not specified
+to clear a stage. Changes share automatically by normalized address and locality,
+including other floors and book months. Focus/refresh reloads changes from web or
+other devices. Inventory edits use the existing offline queue; monthly edits are online.
+Stage changes preserve price dates and do not change availability.
+
+Deploy the updated backend (`construction_stage.py`, `property_capture.py`,
+`monthly_inventory.py`, `server.py`) and rebuild the frontend. Install
+`backend/migrations/20261122_construction_stage.sql` once on the shared database,
+or load the updated web homepage to install the same columns automatically.
+Do not apply the web and iOS copies of the migration twice.
+Run `python3 backend/test_construction_stage.py` for isolated validation/sharing checks.

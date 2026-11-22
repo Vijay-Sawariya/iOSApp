@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import { confirmMapLocation } from '../utils/confirmMapLocation';
+import { ConstructionStage } from '../components/ConstructionStage';
 import { InventoryDirection } from '../components/InventoryDirection';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, FlatList, Modal, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -38,7 +39,7 @@ function BookCard({ onDetailsSaved, item, onPdf, onDelete, deleting, onStatusSav
   const openMap = () => {
     if (mapUrl) void Linking.openURL(mapUrl).catch(() => Alert.alert('Unable to open map', 'Please try again.'));
   };
-  const saveDetails = async (details: { Property_locationUrl?: string; building_facing?: string }) => {
+  const saveDetails = async (details: { Property_locationUrl?: string; building_facing?: string; construction_stage?: string }) => {
     await api.updateMonthlyInventoryDetails(item.id, details);
     onDetailsSaved(item.id, details);
   };
@@ -88,6 +89,7 @@ function BookCard({ onDetailsSaved, item, onPdf, onDelete, deleting, onStatusSav
     </View>
     <Text style={styles.muted}>{item.book_month.slice(0, 7)} · {item.category.replace('_', ' ')}</Text>
     <View style={styles.tags}>
+      <ConstructionStage value={item.construction_stage || ''} onSave={construction_stage => saveDetails({ construction_stage })} />
       <InventoryDirection value={item.building_facing || ''} onSave={building_facing => saveDetails({ building_facing })} />
       {isKothiBookEntry(item) && <Text style={[styles.tag, { backgroundColor: '#DBEAFE', color: '#1E40AF' }]}>Kothi</Text>}
       {[item.area_size ? `${item.area_size} ${item.area_unit}` : '', item.floor, item.configuration, item.entry_status,
@@ -273,7 +275,11 @@ export default function MonthlyInventoryScreen() {
         {!!error && <View style={styles.errorBox}><Text style={styles.error}>{error}</Text><TouchableOpacity accessibilityRole="button" onPress={() => void load()}><Text style={styles.actionText}>Retry</Text></TouchableOpacity></View>}
       </View>}
       ListEmptyComponent={<View style={styles.empty}>{loading ? <ActivityIndicator color={colors.primary} /> : !error && <Text style={styles.muted}>No inventory found for these filters.</Text>}</View>}
-      renderItem={({ item }) => <BookCard item={item} onDetailsSaved={(id, details) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, ...details } : entry))} onStatusSaved={(id, inventory_status) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, inventory_status } : entry))} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
+      renderItem={({ item }) => <BookCard item={item} onDetailsSaved={(id, details) => setItems(previous => {
+        const source = previous.find(entry => entry.id === id);
+        const key = (value: string | null | undefined) => (value || '').toUpperCase().replace(/[\s.,-]+/g, '');
+        return previous.map(entry => entry.id === id || (source && key(source.address) && key(source.location) && key(entry.address) === key(source.address) && key(entry.location) === key(source.location)) ? { ...entry, ...details } : entry);
+      })} onStatusSaved={(id, inventory_status) => setItems(previous => previous.map(entry => entry.id === id ? { ...entry, inventory_status } : entry))} onDelete={confirmDelete} deleting={deletingId === item.id} onPdf={id => { setPdfError(''); setPdfId(id); }} />}
       ListFooterComponent={hasMore ? <TouchableOpacity accessibilityRole="button" disabled={loading || loadingMore} style={styles.loadMore} onPress={() => void load(page + 1)}>
         {loadingMore ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.actionText}>Load more</Text>}
       </TouchableOpacity> : null} />

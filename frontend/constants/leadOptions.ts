@@ -203,6 +203,7 @@ export interface Lead {
   parking?: number | boolean | string | null;
   stilt?: number | boolean | string | null;
   building_facing: string | null;
+  construction_stage?: string | null;
   floor_pricing?: FloorPricing[];
   created_at?: string | null;
   updated_on?: string | null;
