@@ -1,3 +1,4 @@
+import EnquiryPropertyDetails from '../components/EnquiryPropertyDetails';
 import EnquiryContactBadges from '../components/EnquiryContactBadges';
 import EnquiryPhone from '../components/EnquiryPhone';
 import React, { useCallback, useRef, useState } from 'react';
@@ -91,16 +92,15 @@ export default function EnquiriesScreen() {
           const questions = item.original?.questions || [];
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
-          return <View key={item.id} style={s.card}>
+          return <View key={item.id} style={[s.card, { padding: 14, gap: 8 }]}>
             <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
-            <View style={[s.row, { alignItems: 'center' }]}><TouchableOpacity style={{ flexShrink: 1 }} accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryContactBadges item={item} /></View><EnquiryPhone phone={item.phone || ''} />
-            <Text style={s.text}>{item.property_interest || 'Location not provided'}</Text>
-            <Text style={s.muted} numberOfLines={1} ellipsizeMode="tail">Listing URL: {item.listing_url ? <Text accessibilityRole="link" style={{color:colors.primary}} onPress={() => { Linking.openURL(item.listing_url).catch(() => setError('Unable to open listing.')); }}>{item.listing_url}</Text> : 'Not provided'}</Text>
+            <View style={[s.row, { alignItems: 'center' }]}><TouchableOpacity style={{ flexShrink: 1 }} accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryPhone phone={item.phone || ''} /><EnquiryContactBadges item={item} /></View>
+            <EnquiryPropertyDetails item={item} compact />
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}
-            <Text style={s.muted}>Best time to call: {bestTime ? bestTime.replace(/_/g, ' ') : 'Not provided'}</Text>
-            <View style={[s.row, { alignItems: 'flex-start', borderTopWidth: 1, borderColor: colors.border, paddingTop: 12 }]}>
-              <View style={{ flex: 1, gap: 4 }}><Text style={s.muted}>Assigned to</Text><Text style={s.text}>{item.employee || 'Unassigned'}</Text></View>
-              <View style={{ flex: 1, gap: 4 }}><Text style={s.muted}>Imported</Text><Text style={s.text}>{formatEnquiryDate(item.imported_at)}</Text></View>
+            {!!bestTime && <Text style={s.muted}>Best time to call: {String(bestTime).replace(/_/g, ' ')}</Text>}
+            <View style={[s.row, { alignItems: 'flex-start', borderTopWidth: 1, borderColor: colors.border, paddingTop: 8 }]}>
+              <Text style={[s.muted, { flexShrink: 1 }]}>Assigned to <Text style={s.text}>{item.employee || 'Unassigned'}</Text></Text>
+              <Text style={[s.muted, { flexShrink: 1 }]}>Imported {formatEnquiryDate(item.imported_at)}</Text>
             </View>
             {item.next_followup && <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 12, gap: 6 }}>
               <EnquiryFollowupSummary followup={item.next_followup} />

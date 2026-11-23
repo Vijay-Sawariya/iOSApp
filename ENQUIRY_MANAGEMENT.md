@@ -75,3 +75,18 @@ Deploy the Python backend (including `enquiry_push.py`) and rebuild/install the 
 Acceptance: register a phone; save a unique enquiry through the existing Magicbricks webhook and through the general import; verify the correct tab/card; background/lock the phone and verify both notifications; tap each to open its enquiry; verify staff cannot open another owner's records; test Junk/Agent/restore, deletion, follow-ups and conversion. No production deployment, credentials provisioning, physical-device test or App Store submission was performed.
 
 Local backend regression: `python -m unittest test_enquiry_management test_enquiry_push -q`. Tests use database doubles and a fake push sender, never live notifications or production data.
+
+## Provider details and compact enquiry cards
+
+The list and detail screens show listing ID, response ID and the latest provider
+message. Missing/unsafe listing URLs are hidden. Budgets use Indian digit grouping
+and words (including ₹1,00,00,00,000 = One Hundred Crore). Location and configuration
+wrap together, IDs have a separator, and list messages show three lines with Read
+more only for longer text. The detail screen shows the full message.
+
+Deploy `backend/enquiry_provider.py` with the updated `enquiry_management.py`, then
+rebuild the frontend. The list endpoint now selects `current_json` and returns only
+compact `provider_details`; full source snapshots remain in detail. No migration
+is required. Pull to refresh existing cached pages after deploying.
+Validation: `python3 backend/test_enquiry_provider.py`, frontend TypeScript check,
+and `require('./tests/enquiry-provider.cjs')()` from the frontend directory.

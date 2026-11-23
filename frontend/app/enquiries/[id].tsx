@@ -1,3 +1,4 @@
+import EnquiryPropertyDetails from '../../components/EnquiryPropertyDetails';
 import EnquiryContactBadges from '../../components/EnquiryContactBadges';
 import { useSharedDropdowns } from '../../services/sharedDropdowns';
 import React, { useCallback, useRef, useState } from 'react';
@@ -85,16 +86,14 @@ export default function EnquiryDetailScreen() {
         <View style={s.card}>
           <View style={s.row}><View style={[s.row, { flex: 1, alignItems: 'center' }]}><Text style={s.heading}>{item.full_name}</Text><EnquiryContactBadges item={item} /></View><Text style={[s.badge, readOnly ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{readOnly && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
           <Text style={s.text}>{item.phone}{item.email ? `\n${item.email}` : ''}</Text>
-          <Text style={s.text}>{item.property_interest || 'Property not provided'}</Text>
+          <EnquiryPropertyDetails item={item} />
           <Text style={s.muted}>Source: {item.source} · Imported {formatEnquiryDate(item.imported_at)}{`\n`}Worksheet: {item.worksheet} · Row {item.source_row}</Text>
-          <Text style={s.muted}>Listing URL: {item.listing_url ? <Text accessibilityRole="link" style={{color:colors.primary}} onPress={()=>{Linking.openURL(item.listing_url).catch(()=>Alert.alert('Unable to open listing'));}}>{item.listing_url}</Text> : 'Not provided'}</Text>
-          {!!item.original?.message && <Text selectable style={s.muted}>{item.original.message}</Text>}
           {!!item.original?.campaign && <Text style={s.muted}>Campaign: {item.original.campaign}{`\n`}Source serial: {item.original.source_serial} · Quality: {item.original.quality_index}</Text>}
           <View style={s.row}>
             <Button title="Call" secondary onPress={() => { Linking.openURL(`tel:${item.phone}`).catch(() => Alert.alert('Unable to open dialler')); }} />
             <Button title="WhatsApp" secondary onPress={() => { const digits = String(item.phone).replace(/\D/g, ''); const phone = digits.length === 10 ? `91${digits}` : digits; Linking.openURL(`https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${item.full_name}, `)}`).catch(() => Alert.alert('Unable to open WhatsApp')); }} />
           </View>
-          {(item.original?.questions || []).map((question: string, index: number) => <View key={index}><Text style={s.label}>{question.replace(/_/g, ' ')}</Text><Text style={s.text}>{String(item.original?.answers?.[index] || 'No answer supplied').replace(/_/g, ' ')}</Text></View>)}
+          {(item.source === 'Magicbricks' ? [] : item.original?.questions || []).map((question: string, index: number) => <View key={index}><Text style={s.label}>{question.replace(/_/g, ' ')}</Text><Text style={s.text}>{String(item.original?.answers?.[index] || 'No answer supplied').replace(/_/g, ' ')}</Text></View>)}
           {item.source_changed && <><Text style={s.warning}>Source data changed. Original contact values and workflow were preserved.</Text><Text selectable style={s.muted}>{JSON.stringify(item.current, null, 2)}</Text></>}
           {data.matching_lead_count > 0 && <Text style={s.warning}>{data.matching_lead_count} matching Main Lead(s). Use Link existing lead to avoid duplicates.</Text>}
           {data.duplicates.map((d: any) => <TouchableOpacity key={d.id} onPress={() => router.push(`/enquiries/${d.id}` as any)}><Text style={[s.text, { color: colors.primary }]}>Repeat enquiry #{d.id} · {d.property_interest}</Text></TouchableOpacity>)}
