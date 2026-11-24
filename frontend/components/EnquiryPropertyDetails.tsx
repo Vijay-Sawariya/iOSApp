@@ -10,8 +10,10 @@ export default function EnquiryPropertyDetails({ item, compact = false }: { item
   const [longMessage, setLongMessage] = useState(false);
   useEffect(() => { setExpanded(false); setLongMessage(false); }, [item.id, details.message]);
   const magic = item.source === 'Magicbricks';
+  const hasFacts = !!(details.location || details.configuration || budget.figures);
   return <View style={styles.content}>
     {magic ? <View style={styles.facts}>
+      {!hasFacts && <Text style={styles.body}>{item.property_interest?.trim() || 'Property details not provided by Magicbricks.'}</Text>}
       <View style={styles.row}>
         {!!details.location && <Text style={styles.value}><Text style={styles.label}>Location </Text>{details.location}</Text>}
         {!!details.configuration && <Text style={styles.configuration}>{details.configuration}</Text>}

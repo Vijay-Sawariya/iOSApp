@@ -22,5 +22,11 @@ module.exports = function () {
   assert.equal(current.listing_id,'new'); assert.equal(current.response_id,'123'); assert.equal(current.message,'New message'); assert.equal(current.listing_url,'');
   assert.equal(exported.enquiryProviderDetails({original:{provider_fields:{listing_URL:'javascript:alert(1)'}}}).listing_url,'');
   assert.equal(exported.enquiryProviderDetails({provider_details:{listing_id:'from-api'}}).listing_id,'from-api');
+  const legacy = exported.enquiryProviderDetails({provider_details:{location:'',configuration:'',budget:''},original:{questions:['Budget','Configuration','Location'],answers:['80 L','2 BHK','Salt Lake']}});
+  assert.equal(legacy.location, 'Salt Lake');
+  assert.equal(legacy.configuration, '2 BHK');
+  assert.equal(legacy.budget, '80 L');
+  const property = fs.readFileSync(path.join(__dirname, '../components/EnquiryPropertyDetails.tsx'), 'utf8');
+  assert.match(property, /Property details not provided by Magicbricks/);
   return 'PASS: nine Indian budget formats, current provider details, cleared/unsafe links and API fields.';
 };
