@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../services/api';
-import { formatEnquiryDate, enquiryStatusLabel } from '../../services/enquiryPresentation';
+import { formatEnquiryDate, enquiryStatusLabel, enquiryLeadTypeLabel } from '../../services/enquiryPresentation';
 import EnquiryCardActions from '../../components/EnquiryCardActions';
 import { colors } from '../../constants/theme';
 import { AMENITIES, BHK_OPTIONS, CLIENT_STATUSES, FACINGS, FLOORS, LEAD_SOURCES, LOCATIONS, PROPERTY_TYPES, UNITS } from '../../constants/leadOptions';
@@ -84,7 +84,7 @@ export default function EnquiryDetailScreen() {
       {loading && !item ? <EnquiryLoading /> : null}
       {item && <>
         <View style={s.card}>
-          <View style={s.row}><View style={[s.row, { flex: 1, alignItems: 'center' }]}><Text style={s.heading}>{item.full_name}</Text><EnquiryContactBadges item={item} /></View><Text style={[s.badge, readOnly ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{readOnly && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
+          <View style={s.row}><View style={[s.row, { flex: 1, alignItems: 'center' }]}><Text style={s.heading}>{item.full_name}</Text><EnquiryContactBadges item={item} /></View><Text style={[s.badge, readOnly ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.source === 'Magicbricks' ? enquiryLeadTypeLabel(item) : (readOnly && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status))}</Text></View>
           <Text style={s.text}>{item.phone}{item.email ? `\n${item.email}` : ''}</Text>
           <EnquiryPropertyDetails item={item} />
           <Text style={s.muted}>Source: {item.source} · Imported {formatEnquiryDate(item.imported_at)}{`\n`}Worksheet: {item.worksheet} · Row {item.source_row}</Text>

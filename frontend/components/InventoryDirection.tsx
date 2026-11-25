@@ -3,25 +3,27 @@ import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } fr
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii } from '../constants/theme';
 
-export const INVENTORY_DIRECTIONS = ['North', 'North East', 'East', 'South East', 'South', 'South West', 'West', 'North West'];
+export const INVENTORY_DIRECTIONS = ['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest'];
 
 export function InventoryDirection({ value, onSave }: { value: string; onSave: (direction: string) => Promise<void> }) {
+  const directionKey = value.trim().replace(/[\s-]+/g, '').toLowerCase();
+  const currentDirection = INVENTORY_DIRECTIONS.find(direction => direction.toLowerCase() === directionKey) || value;
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
   const select = async (direction: string) => {
     if (saving) return;
-    if (direction === value) { setOpen(false); return; }
+    if (direction === currentDirection) { setOpen(false); return; }
     setSaving(true);
     try { await onSave(direction); setOpen(false); }
     catch (error: any) { Alert.alert('Unable to save direction', error?.message || 'Please try again.'); }
     finally { setSaving(false); }
   };
   return <>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Inventory direction: ${value || 'Not set'}. Tap to change`}
+    <Pressable accessibilityRole="button" accessibilityLabel={`Inventory direction: ${currentDirection || 'Not set'}. Tap to change`}
       accessibilityState={{ disabled: saving, expanded: open }} disabled={saving} hitSlop={6}
       style={({ pressed }) => [styles.chip, pressed && { opacity: 0.7 }]} onPress={() => setOpen(true)}>
       {saving ? <ActivityIndicator size="small" color="#0891B2" /> : <Ionicons name="compass-outline" size={14} color="#0891B2" />}
-      <Text style={styles.chipText}>{value || 'Add direction'}</Text>
+      <Text style={styles.chipText}>{currentDirection || 'Add direction'}</Text>
       <Ionicons name="chevron-down" size={12} color="#0891B2" />
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => !saving && setOpen(false)}>
@@ -36,10 +38,10 @@ export function InventoryDirection({ value, onSave }: { value: string; onSave: (
           </View>
           <View style={styles.options}>
             {INVENTORY_DIRECTIONS.map(direction => <Pressable key={direction} accessibilityRole="radio"
-              accessibilityState={{ checked: direction === value, disabled: saving }} disabled={saving}
-              style={[styles.option, direction === value && styles.selected]} onPress={() => void select(direction)}>
-              <Text style={[styles.optionText, direction === value && styles.selectedText]}>{direction}</Text>
-              {direction === value && <Ionicons name="checkmark" size={16} color="#0891B2" />}
+              accessibilityState={{ checked: direction === currentDirection, disabled: saving }} disabled={saving}
+              style={[styles.option, direction === currentDirection && styles.selected]} onPress={() => void select(direction)}>
+              <Text style={[styles.optionText, direction === currentDirection && styles.selectedText]}>{direction}</Text>
+              {direction === currentDirection && <Ionicons name="checkmark" size={16} color="#0891B2" />}
             </Pressable>)}
           </View>
           {saving && <ActivityIndicator accessibilityLabel="Saving direction" color="#0891B2" />}

@@ -8,7 +8,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { formatEnquiryDate, enquiryStatusLabel } from '../services/enquiryPresentation';
+import { formatEnquiryDate, enquiryStatusLabel, enquiryLeadTypeLabel } from '../services/enquiryPresentation';
 import EnquiryFollowupSummary from '../components/EnquiryFollowupSummary';
 import EnquiryCardActions from '../components/EnquiryCardActions';
 import { colors } from '../constants/theme';
@@ -93,7 +93,7 @@ export default function EnquiriesScreen() {
           const bestIndex = questions.findIndex((q: string) => /(?:best|preferred|convenient).*time.*(?:call|contact)|(?:call|contact).*time/i.test(q.replace(/_/g, ' ')));
           const bestTime = item.original?.answers?.[bestIndex];
           return <View key={item.id} style={[s.card, { padding: 14, gap: 8 }]}>
-            <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status)}</Text></View>
+            <View style={[s.row, { justifyContent: 'space-between' }]}><Text style={s.muted}>#{item.id} · {item.source}</Text><Text style={[s.badge, item.main_lead_id ? s.convertedBadge : item.status === 'Invalid' ? s.invalidBadge : null]}>{item.source === 'Magicbricks' ? enquiryLeadTypeLabel(item) : (item.main_lead_id && !['Invalid','Agent enquiry'].includes(item.status) ? 'Qualified · Converted' : enquiryStatusLabel(item.status))}</Text></View>
             <View style={[s.row, { alignItems: 'center' }]}><TouchableOpacity style={{ flexShrink: 1 }} accessibilityRole="button" disabled={item.status === 'Invalid'} onPress={() => router.push(`/enquiries/${item.id}` as any)}><Text style={s.heading}>{item.full_name}</Text></TouchableOpacity><EnquiryPhone phone={item.phone || ''} /><EnquiryContactBadges item={item} /></View>
             <EnquiryPropertyDetails item={item} compact />
             {!!item.possible_duplicate && <Text style={s.warning}>Possible repeat enquiry</Text>}

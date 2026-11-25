@@ -14,3 +14,12 @@ export function formatEnquiryDate(value?: string | null): string {
 }
 
 export const enquiryStatusLabel = (status: string) => status === 'Invalid' ? 'Junk/Invalid' : status;
+
+/** Display the current imported lead type on Magicbricks cards. */
+export function enquiryLeadTypeLabel(item: any): string {
+  const value = item.current?.parsed_lead?.lead_type ?? item.lead_type;
+  if (typeof value !== 'string' || !value.trim()) return 'Not Provided';
+  return value.trim().split(/[\s_-]+/).map((word: string) =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join('');
+}
